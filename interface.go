@@ -12,7 +12,7 @@ const UndefGroupKey = GroupKey(-1)
 // Index is the top level index, thread safe
 type Index interface {
 	// GetGroups gets group ids for the multihashes
-	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (bool, error)) error
+	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
 	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 }

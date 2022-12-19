@@ -44,7 +44,7 @@ type Group struct {
 	jb   *jbob.JBOB
 }
 
-func OpenGroup(db *sql.DB, index iface.Index, id int64, path string, writable bool, create bool) (*Group, error) {
+func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, writable bool, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -58,7 +58,7 @@ func OpenGroup(db *sql.DB, index iface.Index, id int64, path string, writable bo
 		jbOpenFunc = jbob.Create
 	}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "jbidx"), filepath.Join(groupPath, "jbdata"))
+	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"))
 	if err != nil {
 		return nil, xerrors.Errorf("open jbob: %w", err)
 	}
@@ -166,8 +166,16 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 }
 
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
-	//TODO implement me
-	panic("implement me")
+	// right now we just read from jbob
+	return m.jb.View(c, func(cidx int, found bool, data []byte) error {
+		// TODO: handle not found better?
+		if !found {
+			return xerrors.Errorf("group: block not found")
+		}
+
+		cb(cidx, data)
+		return nil
+	})
 }
 
 func (m *Group) Close() error {
