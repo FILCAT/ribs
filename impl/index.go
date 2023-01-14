@@ -16,9 +16,42 @@ func NewIndex(db *sql.DB) *Index {
 	return &Index{db: db}
 }
 
-func (i *Index) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (bool, error)) error {
-	//TODO implement me
-	panic("implement me")
+func (i *Index) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (more bool, err error)) error {
+	stmt, err := i.db.Prepare(`select "group" from "index" where hash = ?`) // todo limit?
+	if err != nil {
+		return xerrors.Errorf("prepare query: %w", err)
+	}
+
+	// todo: parallelize?
+
+	var groups []iface.GroupKey
+	for _, m := range mh {
+		r, err := stmt.QueryContext(ctx, m)
+		if err != nil {
+			return xerrors.Errorf("query: %w", err)
+		}
+
+		groups = groups[:0]
+		for r.Next() {
+			var g iface.GroupKey
+			if err := r.Scan(&g); err != nil {
+				return xerrors.Errorf("scan: %w", err)
+			}
+
+			groups = append(groups, g)
+		}
+
+		more, err := cb([][]iface.GroupKey{groups})
+		if err != nil {
+			return xerrors.Errorf("callback: %w", err)
+		}
+
+		if !more {
+			return nil
+		}
+	}
+
+	return nil
 }
 
 func (i *Index) AddGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
