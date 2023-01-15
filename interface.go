@@ -21,15 +21,18 @@ type Index interface {
 // All underlying storage backends contain all blocks referenced by the group in
 // the top level index.
 type Group interface {
-	// Data interface
-
 	// Put returns the number of blocks written
 	Put(ctx context.Context, c []multihash.Multihash, datas [][]byte) (int, error)
 	Unlink(ctx context.Context, c []multihash.Multihash) error
 	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
+	Sync(ctx context.Context) error
+
+	// Finalize marks the group as finalized, meaning no more writes will be accepted,
+	// a more optimized index will get generated, then the gropu will be queued for
+	// replication / offloading.
+	Finalize(ctx context.Context) error
 
 	Close() error
-	Sync(ctx context.Context) error
 }
 
 // user

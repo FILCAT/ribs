@@ -141,6 +141,8 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 	if writeBlocks < len(datas) {
 		// this group is full
 		m.writable = false
+
+		// todo queue for finalizing
 	}
 
 	_, err = m.db.ExecContext(ctx, `begin transaction;
@@ -176,6 +178,12 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 		cb(cidx, data)
 		return nil
 	})
+}
+
+func (m *Group) Finalize(ctx context.Context) error {
+	// Generate BBST
+
+	// drop slow index
 }
 
 func (m *Group) Close() error {
