@@ -33,7 +33,7 @@ var _ Source = (*testSource)(nil)
 
 func TestBSSTCreate(t *testing.T) {
 
-	n := int64(10000)
+	n := int64(1342128)
 
 	bsst, err := Create("/tmp/a.bsst", n, &testSource{n: n})
 	require.NoError(t, err)
@@ -44,6 +44,11 @@ func TestBSSTCreate(t *testing.T) {
 		h, err := bsst.Has([]mh.Multihash{c})
 		require.NoError(t, err)
 		require.True(t, h[0]) // todo probably full buckets
+
+		r, err := bsst.Get([]mh.Multihash{c})
+		require.NoError(t, err)
+		require.Equal(t, offs[0], r[0])
+
 		got++
 		return nil
 	})
