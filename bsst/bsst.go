@@ -71,7 +71,7 @@ STATUS:
 */
 
 type BSSTHeader struct {
-	Buckets    int64
+	L0Buckets  int64
 	BucketSize int64
 	Entries    int64
 	Salt       [32]byte
@@ -97,7 +97,7 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 	}
 
 	header := &BSSTHeader{
-		Buckets:    Entries / MeanEntriesPerBucket,
+		L0Buckets:  Entries / MeanEntriesPerBucket,
 		BucketSize: BucketSize,
 		Entries:    Entries,
 
@@ -189,7 +189,7 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 
 	var ents uint64
 	var level int
-	levelBuckets := uint64(header.Buckets)
+	levelBuckets := uint64(header.L0Buckets)
 	prevLevelBuckets := uint64(0)
 
 	for len(nextLevel) > 0 {
@@ -215,6 +215,11 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 				}
 			}
 
+			// update bloom filter first, so that even if this entry won't fit in this level, we know that it doesn't
+			// exist in one i/o if it's not in bloom
+			bloomHead[bloomEntIdx/8] |= 1 << (bloomEntIdx % 8)
+
+			// check if we have space for this entry
 			if bucketEnts >= BucketUserEntries {
 				nextLevel = append(nextLevel, hash)
 				continue
@@ -231,15 +236,17 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 
 			bucketEnts++
 			ents++
-
-			// update bloom filter
-			bloomHead[bloomEntIdx/8] |= 1 << (bloomEntIdx % 8)
 		}
 
 		// flush last buckets
 		for inBucket < levelBuckets+prevLevelBuckets { // todo is the condition right?
 			if err := flushBucket(levelBuckets + prevLevelBuckets); err != nil {
 				return nil, err
+			}
+
+			// todo could only do this once
+			for i := range bloomHead[:BucketBloomFilterSize] {
+				bloomHead[i] = 0
 			}
 		}
 
@@ -285,16 +292,16 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 		fmt.Printf("bs %d: %d\n", k, bSizes[uint64(k)])
 	}
 
-	fmt.Println("ents ", ents, " bkt ", header.Buckets, " ibe ", ibe)
+	fmt.Println("ents ", ents, " bkt ", header.L0Buckets, " ibe ", ibe)
 
 	bss.h = header
 
 	return bss, nil
 }
 
-func bucketInd(k [32]byte, bucketRange uint64) (uint64, uint64) {
+func bucketInd(k [32]byte, bucketRange, prevLevelBuckets uint64) (uint64, uint64) {
 	hashidx := binary.BigEndian.Uint64(k[:8])
-	bucketIdx := hashidx / bucketRange
+	bucketIdx := prevLevelBuckets + (hashidx / bucketRange)
 	bloomEntIdx := (hashidx % bucketRange) / (bucketRange / BucketBloomFilterEntries)
 
 	return bucketIdx, bloomEntIdx
@@ -332,75 +339,80 @@ func (h *BSST) Has(c []multihash.Multihash) ([]bool, error) {
 
 	var bucketBuf [BucketSize]byte
 
-	bucketRange := math.MaxUint64 / uint64(h.h.Buckets)
+top:
 	for i, k := range keys {
-		bucketIdx, bloomEntIdx := bucketInd(k, bucketRange)
+		levelBuckets := uint64(h.h.L0Buckets)
+		prevLevelBuckets := uint64(0)
 
-		if _, err := h.f.ReadAt(bucketBuf[:], int64(bucketIdx+1)*BucketSize); err != nil { // todo use mmap so we get page caching for free
-			return nil, xerrors.Errorf("read bucket: %w", err)
-		}
+		for level := int64(0); level < h.h.Levels; level++ {
+			bucketRange := math.MaxUint64 / levelBuckets
+			bucketIdx, bloomEntIdx := bucketInd(k, bucketRange, prevLevelBuckets)
 
-		// check if exists in bloom
-		bloomOff := uint64(BucketUserEntries * EntrySize)
-		if bucketBuf[bloomOff+bloomEntIdx/8]&(1<<(bloomEntIdx%8)) == 0 {
-			// definitely not in bucket
-			continue
-		}
-
-		// calculate minimum possible offset from bloom filter
-		// note: this assumes 32byte bloom
-		b0 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+0 : bloomOff+8]) // LE because smallest byte is first
-		b1 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+8 : bloomOff+16])
-		b2 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+16 : bloomOff+24])
-		b3 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+24 : bloomOff+32])
-
-		// now generate a mask that is bloomEntIdx bits long
-		mLast := uint64(0xffffffffffffffff) >> (63 - (bloomEntIdx % 64))
-
-		var inM1, inM2, inM3 uint64
-
-		/*
-			if bloomEntIdx > 63 {
-				inM1 = 1
+			if _, err := h.f.ReadAt(bucketBuf[:], int64(bucketIdx+1)*BucketSize); err != nil { // todo use mmap so we get page caching for free
+				return nil, xerrors.Errorf("read bucket: %w", err)
 			}
-			if bloomEntIdx > 127 {
-				inM2 = 1
+
+			// check if exists in bloom
+			bloomOff := uint64(BucketUserEntries * EntrySize)
+			if bucketBuf[bloomOff+bloomEntIdx/8]&(1<<(bloomEntIdx%8)) == 0 {
+				// definitely not in bucket or next levels
+				continue
 			}
-			if bloomEntIdx > 191 {
-				inM3 = 1
+
+			// calculate minimum possible offset from bloom filter
+			// note: this assumes 32byte bloom
+			b0 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+0 : bloomOff+8]) // LE because smallest byte is first
+			b1 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+8 : bloomOff+16])
+			b2 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+16 : bloomOff+24])
+			b3 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+24 : bloomOff+32])
+
+			// now generate a mask that is bloomEntIdx bits long
+			mLast := uint64(0xffffffffffffffff) >> (63 - (bloomEntIdx % 64))
+
+			var inM1, inM2, inM3 uint64
+
+			/*
+				if bloomEntIdx > 63 {
+					inM1 = 1
+				}
+				if bloomEntIdx > 127 {
+					inM2 = 1
+				}
+				if bloomEntIdx > 191 {
+					inM3 = 1
+				}
+			*/
+			// bloomEntIdx is 0 <= x < 256
+
+			/*
+				inM0 = true
+				inM1 = bei:b7 | bei:b6
+				inM2 = bei:b7
+				inM3 = bei:b7 & bei:b6
+			*/
+
+			bei6 := bloomEntIdx >> 6
+
+			inM2 = (bloomEntIdx >> 7) & 1
+			inM1 = inM2 | bei6
+			inM3 = inM2 & bei6
+
+			m0 := mLast | (-inM1)
+			m1 := (mLast & (-inM1)) | (-inM2)
+			m2 := (mLast & (-inM2)) | (-inM3)
+			m3 := mLast & (-inM3)
+
+			// count bits
+			minOffIdx := (bits.OnesCount64(b0&m0) + bits.OnesCount64(b1&m1) + bits.OnesCount64(b2&m2) + bits.OnesCount64(b3&m3)) - 1
+			for entIdx := minOffIdx; entIdx < BucketUserEntries; entIdx++ {
+				if bytes.Equal(bucketBuf[entIdx*EntrySize:entIdx*EntrySize+EntKeyBytes], k[:EntKeyBytes]) {
+					out[i] = true
+					continue top
+				}
 			}
-		*/
-		// bloomEntIdx is 0 <= x < 256
 
-		/*
-			inM0 = true
-			inM1 = bei:b7 | bei:b6
-			inM2 = bei:b7
-			inM3 = bei:b7 & bei:b6
-		*/
-
-		bei6 := bloomEntIdx >> 6
-
-		inM2 = (bloomEntIdx >> 7) & 1
-		inM1 = inM2 | bei6
-		inM3 = inM2 & bei6
-
-		m0 := mLast | (-inM1)
-		m1 := (mLast & (-inM1)) | (-inM2)
-		m2 := (mLast & (-inM2)) | (-inM3)
-		m3 := mLast & (-inM3)
-
-		// count bits
-		minOffIdx := (bits.OnesCount64(b0&m0) + bits.OnesCount64(b1&m1) + bits.OnesCount64(b2&m2) + bits.OnesCount64(b3&m3)) - 1
-		for entIdx := minOffIdx; entIdx < BucketUserEntries; entIdx++ {
-			if bytes.Equal(bucketBuf[entIdx*EntrySize:entIdx*EntrySize+EntKeyBytes], k[:EntKeyBytes]) {
-				out[i] = true
-				break
-			}
-		}
-
-		if !out[i] {
-			fmt.Println("false")
+			prevLevelBuckets += levelBuckets
+			levelBuckets = (levelBuckets + LevelFactor - 1) / LevelFactor
 		}
 	}
 
@@ -420,73 +432,59 @@ func (h *BSST) Get(c []multihash.Multihash) ([]int64, error) {
 
 	var bucketBuf [BucketSize]byte
 
-	bucketRange := math.MaxUint64 / uint64(h.h.Buckets)
+top:
 	for i, k := range keys {
-		out[i] = -1
+		levelBuckets := uint64(h.h.L0Buckets)
+		prevLevelBuckets := uint64(0)
 
-		bucketIdx, bloomEntIdx := bucketInd(k, bucketRange)
+		for level := int64(0); level < h.h.Levels; level++ {
+			bucketRange := math.MaxUint64 / levelBuckets
+			bucketIdx, bloomEntIdx := bucketInd(k, bucketRange, prevLevelBuckets)
 
-		if _, err := h.f.ReadAt(bucketBuf[:], int64(bucketIdx+1)*BucketSize); err != nil { // todo use mmap so we get page caching for free
-			return nil, xerrors.Errorf("read bucket: %w", err)
-		}
-
-		// check if exists in bloom
-		bloomOff := uint64(BucketUserEntries * EntrySize)
-		if bucketBuf[bloomOff+bloomEntIdx/8]&(1<<(bloomEntIdx%8)) == 0 {
-			// definitely not in bucket
-			continue
-		}
-
-		// calculate minimum possible offset from bloom filter
-		// note: this assumes 32byte bloom
-		b0 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+0 : bloomOff+8]) // LE because smallest byte is first
-		b1 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+8 : bloomOff+16])
-		b2 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+16 : bloomOff+24])
-		b3 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+24 : bloomOff+32])
-
-		// now generate a mask that is bloomEntIdx bits long
-		mLast := uint64(0xffffffffffffffff) >> (63 - (bloomEntIdx % 64))
-
-		var inM1, inM2, inM3 uint64
-
-		/*
-			if bloomEntIdx > 63 {
-				inM1 = 1
+			if _, err := h.f.ReadAt(bucketBuf[:], int64(bucketIdx+1)*BucketSize); err != nil { // todo use mmap so we get page caching for free
+				return nil, xerrors.Errorf("read bucket: %w", err)
 			}
-			if bloomEntIdx > 127 {
-				inM2 = 1
+
+			// check if exists in bloom
+			bloomOff := uint64(BucketUserEntries * EntrySize)
+			if bucketBuf[bloomOff+bloomEntIdx/8]&(1<<(bloomEntIdx%8)) == 0 {
+				// definitely not in bucket
+				continue
 			}
-			if bloomEntIdx > 191 {
-				inM3 = 1
+
+			// calculate minimum possible offset from bloom filter
+			// note: this assumes 32byte bloom
+			b0 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+0 : bloomOff+8]) // LE because smallest byte is first
+			b1 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+8 : bloomOff+16])
+			b2 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+16 : bloomOff+24])
+			b3 := binary.LittleEndian.Uint64(bucketBuf[bloomOff+24 : bloomOff+32])
+
+			// now generate a mask that is bloomEntIdx bits long
+			mLast := uint64(0xffffffffffffffff) >> (63 - (bloomEntIdx % 64))
+
+			var inM1, inM2, inM3 uint64
+			bei6 := bloomEntIdx >> 6
+
+			inM2 = (bloomEntIdx >> 7) & 1
+			inM1 = inM2 | bei6
+			inM3 = inM2 & bei6
+
+			m0 := mLast | (-inM1)
+			m1 := (mLast & (-inM1)) | (-inM2)
+			m2 := (mLast & (-inM2)) | (-inM3)
+			m3 := mLast & (-inM3)
+
+			// count bits
+			minOffIdx := (bits.OnesCount64(b0&m0) + bits.OnesCount64(b1&m1) + bits.OnesCount64(b2&m2) + bits.OnesCount64(b3&m3)) - 1
+			for entIdx := minOffIdx; entIdx < BucketUserEntries; entIdx++ {
+				if bytes.Equal(bucketBuf[entIdx*EntrySize:entIdx*EntrySize+EntKeyBytes], k[:EntKeyBytes]) {
+					out[i] = int64(binary.LittleEndian.Uint64(bucketBuf[entIdx*EntrySize+EntKeyBytes : entIdx*EntrySize+EntKeyBytes+8]))
+					continue top
+				}
 			}
-		*/
-		// bloomEntIdx is 0 <= x < 256
 
-		/*
-			inM0 = true
-			inM1 = bei:b7 | bei:b6
-			inM2 = bei:b7
-			inM3 = bei:b7 & bei:b6
-		*/
-
-		bei6 := bloomEntIdx >> 6
-
-		inM2 = (bloomEntIdx >> 7) & 1
-		inM1 = inM2 | bei6
-		inM3 = inM2 & bei6
-
-		m0 := mLast | (-inM1)
-		m1 := (mLast & (-inM1)) | (-inM2)
-		m2 := (mLast & (-inM2)) | (-inM3)
-		m3 := mLast & (-inM3)
-
-		// count bits
-		minOffIdx := (bits.OnesCount64(b0&m0) + bits.OnesCount64(b1&m1) + bits.OnesCount64(b2&m2) + bits.OnesCount64(b3&m3)) - 1
-		for entIdx := minOffIdx; entIdx < BucketUserEntries; entIdx++ {
-			if bytes.Equal(bucketBuf[entIdx*EntrySize:entIdx*EntrySize+EntKeyBytes], k[:EntKeyBytes]) {
-				out[i] = int64(binary.LittleEndian.Uint64(bucketBuf[entIdx*EntrySize+EntKeyBytes : entIdx*EntrySize+EntKeyBytes+8]))
-				break
-			}
+			prevLevelBuckets += levelBuckets
+			levelBuckets = (levelBuckets + LevelFactor - 1) / LevelFactor
 		}
 	}
 

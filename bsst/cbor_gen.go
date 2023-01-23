@@ -30,24 +30,24 @@ func (t *BSSTHeader) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Buckets (int64) (int64)
-	if len("Buckets") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"Buckets\" was too long")
+	// t.L0Buckets (int64) (int64)
+	if len("L0Buckets") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"L0Buckets\" was too long")
 	}
 
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Buckets"))); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("L0Buckets"))); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, string("Buckets")); err != nil {
+	if _, err := io.WriteString(w, string("L0Buckets")); err != nil {
 		return err
 	}
 
-	if t.Buckets >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Buckets)); err != nil {
+	if t.L0Buckets >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.L0Buckets)); err != nil {
 			return err
 		}
 	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Buckets-1)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.L0Buckets-1)); err != nil {
 			return err
 		}
 	}
@@ -220,8 +220,8 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 		}
 
 		switch name {
-		// t.Buckets (int64) (int64)
-		case "Buckets":
+		// t.L0Buckets (int64) (int64)
+		case "L0Buckets":
 			{
 				maj, extra, err := cr.ReadHeader()
 				var extraI int64
@@ -244,7 +244,7 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 					return fmt.Errorf("wrong type for int64 field: %d", maj)
 				}
 
-				t.Buckets = int64(extraI)
+				t.L0Buckets = int64(extraI)
 			}
 			// t.BucketSize (int64) (int64)
 		case "BucketSize":
