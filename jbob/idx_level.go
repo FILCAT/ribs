@@ -95,6 +95,36 @@ func (l *LevelDBIndex) Get(c []multihash.Multihash) ([]int64, error) {
 	return out, err
 }
 
+func (l *LevelDBIndex) Entries() (int64, error) {
+	// todo is super mega shit, keep a count in jbob
+	it := l.DB.NewIterator(nil, nil)
+	defer it.Release()
+
+	var count int64
+	for it.Next() {
+		count++
+	}
+
+	return count, nil
+}
+
+func (l *LevelDBIndex) List(f func(c multihash.Multihash, offs []int64) error) error {
+	it := l.DB.NewIterator(nil, nil)
+	defer it.Release()
+
+	for it.Next() {
+		if len(it.Value()) != 8 {
+			return xerrors.Errorf("invalid value length")
+		}
+		offs := int64(binary.LittleEndian.Uint64(it.Value()))
+		if err := f(it.Key(), []int64{offs}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // todo sync
 
 func (l *LevelDBIndex) Close() error {

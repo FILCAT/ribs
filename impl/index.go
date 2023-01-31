@@ -17,7 +17,7 @@ func NewIndex(db *sql.DB) *Index {
 }
 
 func (i *Index) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (more bool, err error)) error {
-	stmt, err := i.db.Prepare(`select "group" from "index" where hash = ?`) // todo limit?
+	stmt, err := i.db.Prepare(`select group_id from top_index where hash = ?`) // todo limit?
 	if err != nil {
 		return xerrors.Errorf("prepare query: %w", err)
 	}
@@ -60,7 +60,7 @@ func (i *Index) AddGroup(ctx context.Context, mh []multihash.Multihash, group if
 		return xerrors.Errorf("begin tx: %w", err)
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO "index" (hash, "group") VALUES (?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO top_index (hash, group_id) VALUES (?, ?)`)
 	if err != nil {
 		return xerrors.Errorf("prepare insert: %w", err)
 	}

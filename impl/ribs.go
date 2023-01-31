@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"database/sql"
+	logging "github.com/ipfs/go-log/v2"
 	iface "github.com/magik6k/carsplit/ribs"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 )
+
+var log = logging.Logger("ribs")
 
 const dbSchema = `
 
@@ -21,50 +24,60 @@ create table if not exists groups
         constraint groups_pk
             primary key autoincrement,
     blocks      integer not null,
-    bytes integer not null,
-    writable     integer not null
+    bytes integer not null,    
+    /* States
+	 * 0 - writable
+     * 1 - full
+     * 2 - bsst exists
+     * 3 - level index dropped
+     * 4 - vrcar done
+     * 5 - has commp, deals in flight
+     * 6 - offloaded
+     */
+    g_state     integer not null,
+    
+    /* jbob */
+    jb_recorded_head integer not null
 );
 
 create index if not exists groups_id_index
     on groups (id);
 
-create index if not exists groups_writable_index
-    on groups (writable);
-
-/* jbobs */
-create table if not exists g_jbob
-(
-    "group"       integer not null
-        constraint g_jbob_pk
-            primary key
-        constraint g_jbob_groups_id_fk
-            references groups,
-    recorded_head integer)
-    without rowid;
-
-create index if not exists g_jbob_group_index
-    on g_jbob ("group");
+create index if not exists groups_g_state_index
+    on groups (g_state);
 
 /* top level index */
 
-create table if not exists "index"
+create table if not exists top_index
 (
     hash    BLOB not null,
-    "group" integer
+    group_id integer
     constraint index_groups_id_fk
         references groups,
     constraint index_pk
-        primary key (hash, "group") on conflict ignore
+        primary key (hash, group_id) on conflict ignore
 )
     without rowid;
 
 create index if not exists index_group_index
-    on "index" ("group");
+    on top_index (group_id);
 
 create index if not exists index_hash_index
-    on "index" (hash);
+    on top_index (hash);
 
 `
+
+type GroupState int
+
+const (
+	GroupStateWritable GroupState = iota
+	GroupStateFull
+	GroupStateBSSTExists
+	GroupStateLevelIndexDropped
+	GroupStateVRCARDone
+	GroupStateHasCommp
+	GroupStateOffloaded
+)
 
 func Open(root string) (iface.RIBS, error) {
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
@@ -90,6 +103,7 @@ func Open(root string) (iface.RIBS, error) {
 type ribs struct {
 	root string
 
+	// todo hide this db behind an interface
 	db    *sql.DB
 	index iface.Index
 
@@ -107,9 +121,16 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		if err != nil || selectedGroup == iface.UndefGroupKey {
 			return
 		}
-		// if the group was filled, drop it from writableGroups
-		if !r.writableGroups[selectedGroup].writable {
+		// if the group was filled, drop it from writableGroups and start finalize
+		if r.writableGroups[selectedGroup].state != GroupStateWritable {
 			delete(r.writableGroups, selectedGroup)
+
+			go func() {
+				err := r.openGroups[selectedGroup].Finalize(context.TODO()) // todo queues / workers
+				if err != nil {
+					log.Errorf("finalizing group: %s", err)
+				}
+			}()
 		}
 	}()
 
@@ -122,17 +143,17 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	selectedGroup = iface.UndefGroupKey
 	{
-		res, err := r.db.Query("select id, blocks, bytes, writable from groups where writable = 1")
+		res, err := r.db.Query("select id, blocks, bytes, g_state from groups where g_state = 0")
 		if err != nil {
 			return iface.UndefGroupKey, xerrors.Errorf("finding writable groups: %w", err)
 		}
 
 		var blocks int64
 		var bytes int64
-		var writable bool
+		var state GroupState
 
 		for res.Next() {
-			err := res.Scan(&selectedGroup, &blocks, &bytes, &writable)
+			err := res.Scan(&selectedGroup, &blocks, &bytes, &state)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("scanning group: %w", err)
 			}
@@ -148,7 +169,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(r.db, r.index, selectedGroup, bytes, blocks, r.root, true, false)
+			g, err := OpenGroup(r.db, r.index, selectedGroup, bytes, blocks, r.root, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -161,12 +182,12 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	// no writable groups, create one
 
-	err = r.db.QueryRow("insert into groups (blocks, bytes, writable) values (0, 0, 1) returning id").Scan(&selectedGroup)
+	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state) values (0, 0, 0) returning id").Scan(&selectedGroup)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
 	}
 
-	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, true, true)
+	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -187,18 +208,18 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	// not open, open it
 
-	res, err := r.db.Query("select blocks, bytes, writable from groups where writable = 1 and id = ?", group)
+	res, err := r.db.Query("select blocks, bytes, g_state from groups where g_state = 1 and id = ?", group)
 	if err != nil {
 		return xerrors.Errorf("finding writable groups: %w", err)
 	}
 
 	var blocks int64
 	var bytes int64
-	var writable bool
+	var state GroupState
 	var found bool
 
 	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &writable)
+		err := res.Scan(&blocks, &bytes, &state)
 		if err != nil {
 			return xerrors.Errorf("scanning group: %w", err)
 		}
@@ -218,12 +239,12 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 		return xerrors.Errorf("group %d not found", group)
 	}
 
-	g, err := OpenGroup(r.db, r.index, group, bytes, blocks, r.root, writable, false)
+	g, err := OpenGroup(r.db, r.index, group, bytes, blocks, r.root, state, false)
 	if err != nil {
 		return xerrors.Errorf("opening group: %w", err)
 	}
 
-	if writable {
+	if state == GroupStateWritable {
 		r.writableGroups[group] = g
 	}
 	r.openGroups[group] = g
@@ -320,6 +341,7 @@ func (r *ribBatch) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) er
 		if err != nil {
 			return xerrors.Errorf("write to group: %w", err)
 		}
+
 		r.currentWriteTarget = gk
 	}
 

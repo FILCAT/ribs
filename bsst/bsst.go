@@ -38,16 +38,11 @@ const (
 	LevelFactor = 16384 // could be 24576, but we want to avoid deeper level misses
 )
 
-var levels = []int64{
-	1,
-	LevelFactor,
-	LevelFactor * LevelFactor,
-	LevelFactor * LevelFactor * LevelFactor,
-	LevelFactor * LevelFactor * LevelFactor * LevelFactor,
-}
+const BsstMagic = "BSST\x00\x00\x01\x00"
 
 type Source interface {
 	// List calls the callback with multihashes in sorted order.
+	// todo require source to be MHH sorted
 	List(func(c multihash.Multihash, offs []int64) error) error
 }
 
@@ -86,20 +81,16 @@ type BSST struct {
 	h *BSSTHeader
 }
 
-func Create(path string, Entries int64, source Source) (*BSST, error) {
+func Create(path string, entries int64, source Source) (*BSST, error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, xerrors.Errorf("open file: %w", err)
 	}
 
-	bss := &BSST{
-		f: f,
-	}
-
 	header := &BSSTHeader{
-		L0Buckets:  Entries / MeanEntriesPerBucket,
+		L0Buckets:  (entries + MeanEntriesPerBucket - 1) / entries / MeanEntriesPerBucket, // ceil entries / MeanEntriesPerBucket
 		BucketSize: BucketSize,
-		Entries:    Entries,
+		Entries:    entries,
 
 		Levels:      1,
 		LevelFactor: LevelFactor,
@@ -111,7 +102,7 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 
 	var hdrBuf [BucketSize]byte
 
-	copy(hdrBuf[:], "BSST\x00\x00\x01\x00")
+	copy(hdrBuf[:], BsstMagic)
 
 	if err := header.MarshalCBOR(bytes.NewBuffer(hdrBuf[8:])); err != nil {
 		return nil, xerrors.Errorf("marshal header: %w", err)
@@ -125,6 +116,8 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 	if err := f.Sync(); err != nil {
 		return nil, xerrors.Errorf("sync header: %w", err)
 	}
+
+	// <todo mhh sorted source>
 
 	// collect buckets
 	// todo this in-memory stuff won't scale
@@ -147,6 +140,8 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 	sort.Slice(nextLevel, func(i, j int) bool {
 		return bytes.Compare(nextLevel[i].mhh[:], nextLevel[j].mhh[:]) < 0
 	})
+
+	// </todo>
 
 	// write buckets
 	bufWriter := bufio.NewWriterSize(f, 4<<20)
@@ -294,9 +289,38 @@ func Create(path string, Entries int64, source Source) (*BSST, error) {
 
 	fmt.Println("ents ", ents, " bkt ", header.L0Buckets, " ibe ", ibe)
 
-	bss.h = header
+	if err := f.Close(); err != nil {
+		return nil, xerrors.Errorf("close written bsst: %w", err)
+	}
 
-	return bss, nil
+	// reopen in read-only mode
+	return Open(path)
+}
+
+func Open(path string) (*BSST, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
+	if err != nil {
+		return nil, xerrors.Errorf("open file: %w", err)
+	}
+
+	var hdrBuf [BucketSize]byte
+	if _, err := f.Read(hdrBuf[:]); err != nil {
+		return nil, xerrors.Errorf("read header: %w", err)
+	}
+
+	if !bytes.Equal(hdrBuf[:8], []byte(BsstMagic)) {
+		return nil, xerrors.Errorf("invalid magic")
+	}
+
+	var header BSSTHeader
+	if err := header.UnmarshalCBOR(bytes.NewReader(hdrBuf[8:])); err != nil {
+		return nil, xerrors.Errorf("unmarshal header: %w", err)
+	}
+
+	return &BSST{
+		f: f,
+		h: &header,
+	}, nil
 }
 
 func bucketInd(k [32]byte, bucketRange, prevLevelBuckets uint64) (uint64, uint64) {
@@ -489,4 +513,8 @@ top:
 	}
 
 	return out, nil
+}
+
+func (h *BSST) Close() error {
+	return h.f.Close()
 }

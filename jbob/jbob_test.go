@@ -53,4 +53,28 @@ func TestJbobBasic(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	// test finalization
+	require.NoError(t, jb.MarkReadOnly())
+	require.NoError(t, jb.Finalize())
+	require.NoError(t, jb.DropLevel())
+	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
+		require.True(t, found)
+		require.Equal(t, b, []byte("hello world"))
+		return nil
+	})
+
+	// test open finalized
+	_, err = jb.Close()
+	require.NoError(t, err)
+
+	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data"))
+	require.NoError(t, err)
+
+	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
+		require.True(t, found)
+		require.Equal(t, b, []byte("hello world"))
+		return nil
+	})
+	require.NoError(t, err)
 }

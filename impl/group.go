@@ -27,24 +27,26 @@ type Group struct {
 	path string
 	id   int64
 
-	committedBlocks int64
-	committedSize   int64
+	state GroupState
+
+	// db lock
+	// note: can be taken when jblk is held
+	dblk sync.Mutex
+
+	// jbob (with jblk)
+
+	jblk sync.RWMutex
 
 	inflightBlocks int64
 	inflightSize   int64
 
-	writable bool
+	committedBlocks int64
+	committedSize   int64
 
-	lk sync.Mutex
-
-	// // backends
-	// jbob
-
-	jblk sync.RWMutex
-	jb   *jbob.JBOB
+	jb *jbob.JBOB
 }
 
-func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, writable bool, create bool) (*Group, error) {
+func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, state GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -69,17 +71,25 @@ func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize
 
 		jb: jb,
 
-		path:     groupPath,
-		id:       id,
-		writable: writable,
+		committedBlocks: committedBlocks,
+		committedSize:   committedSize,
+
+		path:  groupPath,
+		id:    id,
+		state: state,
 	}, nil
 }
 
 func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int, error) {
-	// reserve space
-	m.lk.Lock()
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
 
-	availSpace := maxGroupSize - m.inflightSize
+	// reserve space
+	if m.state != GroupStateWritable {
+		return 0, nil
+	}
+
+	availSpace := maxGroupSize - m.committedSize // todo async - inflight
 
 	var writeSize int64
 	var writeBlocks int
@@ -93,65 +103,74 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 	}
 
 	if writeBlocks == 0 {
-		m.lk.Unlock()
 		return 0, nil
+	}
+
+	if writeBlocks < len(datas) {
+		// this group is full
+		m.state = GroupStateFull
 	}
 
 	m.inflightBlocks += int64(writeBlocks)
 	m.inflightSize += writeSize
 
-	defer func() {
-		m.lk.TryLock()
-		m.inflightBlocks -= int64(writeBlocks)
-		m.inflightSize -= writeSize
-		m.lk.Unlock()
-	}()
-
-	m.lk.Unlock()
-
 	// backend write
 
-	m.jblk.Lock()
+	// 1. (buffer) writes to jbob
+
 	err := m.jb.Put(c[:writeBlocks], datas[:writeBlocks])
-	m.jblk.Unlock()
 	if err != nil {
-		m.lk.Lock()
+		// todo handle properly (abort, close, check disk space / resources, repopen)
 		return 0, xerrors.Errorf("writing to jbob: %w", err)
 	}
 
-	// todo async commit
+	// <todo async commit>
+
+	// 2. commit jbob (so puts above are now on disk)
+
 	at, err := m.jb.Commit()
 	if err != nil {
-		m.lk.Lock()
+		// todo handle properly (abort, close, check disk space / resources, repopen)
 		return 0, xerrors.Errorf("committing jbob: %w", err)
 	}
 
-	// write idx
-	err = m.index.AddGroup(ctx, c[:writeBlocks], m.id)
-	if err != nil {
-		m.lk.Lock()
-		return 0, xerrors.Errorf("writing index: %w", err)
-	}
-
-	// update head
-	m.lk.Lock()
+	m.inflightBlocks -= int64(writeBlocks)
+	m.inflightSize -= writeSize
 	m.committedBlocks += int64(writeBlocks)
 	m.committedSize += writeSize
 
-	if writeBlocks < len(datas) {
-		// this group is full
-		m.writable = false
-
-		// todo queue for finalizing
+	// 3. write top-level index (before we update group head so replay is possible)
+	err = m.index.AddGroup(ctx, c[:writeBlocks], m.id)
+	if err != nil {
+		// todo handle properly (abort, close, check disk space / resources, repopen)
+		return 0, xerrors.Errorf("writing index: %w", err)
 	}
 
+	// 3.5 mark as read-only if full
+	// todo is this the right place to do this?
+	if m.state == GroupStateFull {
+		if err := m.jb.MarkReadOnly(); err != nil {
+			// todo handle properly (abort, close, check disk space / resources, repopen)
+			// todo combine with commit
+			return 0, xerrors.Errorf("mark jbob read-only: %w", err)
+		}
+	}
+
+	// 4. update head
+	m.committedBlocks += int64(writeBlocks)
+	m.committedSize += writeSize
+
+	m.dblk.Lock()
 	_, err = m.db.ExecContext(ctx, `begin transaction;
-		update groups set blocks = ?, bytes = ?, writable = ? where id = ?;
-		update g_jbob set recorded_head = ? where "group" = ?;
-		commit;`, m.committedBlocks, m.committedSize, m.writable, m.id, at, m.id)
+		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;
+		commit;`, m.committedBlocks, m.committedSize, m.state, at, m.id)
+	m.dblk.Unlock()
 	if err != nil {
+		// todo handle properly (retry, abort, close, check disk space / resources, repopen)
 		return 0, xerrors.Errorf("update group head: %w", err)
 	}
+
+	// </todo async commit>
 
 	return writeBlocks, nil
 }
@@ -181,9 +200,26 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 }
 
 func (m *Group) Finalize(ctx context.Context) error {
-	// Generate BBST
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
 
-	// drop slow index
+	if m.state == GroupStateFull {
+		return xerrors.Errorf("group not in state for finalization")
+	}
+
+	if err := m.jb.MarkReadOnly(); err != nil {
+		return xerrors.Errorf("mark read-only: %w", err)
+	}
+
+	if err := m.jb.Finalize(); err != nil {
+		return xerrors.Errorf("finalize jbob: %w", err)
+	}
+
+	if err := m.jb.DropLevel(); err != nil {
+		return xerrors.Errorf("removing leveldb index: %w", err)
+	}
+
+	return nil
 }
 
 func (m *Group) Close() error {
