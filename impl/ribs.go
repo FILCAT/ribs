@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	logging "github.com/ipfs/go-log/v2"
-	iface "github.com/magik6k/carsplit/ribs"
+	iface "github.com/lotus_web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"

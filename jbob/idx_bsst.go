@@ -1,7 +1,7 @@
 package jbob
 
 import (
-	"github.com/magik6k/carsplit/ribs/bsst"
+	"github.com/lotus_web3/ribs/bsst"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

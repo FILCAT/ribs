@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/magik6k/carsplit/ribs/bsst"
+	"github.com/lotus_web3/ribs/bsst"
 	"os"
 
 	gen "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/magik6k/carsplit/ribs/jbob"
+	"github.com/lotus_web3/ribs/jbob"
 )
 
 func main() {

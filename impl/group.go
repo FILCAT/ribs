@@ -3,8 +3,8 @@ package impl
 import (
 	"context"
 	"database/sql"
-	iface "github.com/magik6k/carsplit/ribs"
-	"github.com/magik6k/carsplit/ribs/jbob"
+	iface "github.com/lotus_web3/ribs"
+	"github.com/lotus_web3/ribs/jbob"
 	mh "github.com/multiformats/go-multihash"
 	"path/filepath"
 	"strconv"

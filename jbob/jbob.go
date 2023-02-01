@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/magik6k/carsplit/ribs/bsst"
+	"github.com/lotus_web3/ribs/bsst"
 	"math/bits"
 	"os"
 	"path/filepath"
