@@ -81,6 +81,10 @@ func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize
 }
 
 func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int, error) {
+	if len(datas) == 0 {
+		return 0, nil
+	}
+
 	m.jblk.Lock()
 	defer m.jblk.Unlock()
 
@@ -100,10 +104,6 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 		}
 		writeSize += int64(len(data))
 		writeBlocks++
-	}
-
-	if writeBlocks == 0 {
-		return 0, nil
 	}
 
 	if writeBlocks < len(datas) {
