@@ -88,7 +88,7 @@ func Create(path string, entries int64, source Source) (*BSST, error) {
 	}
 
 	header := &BSSTHeader{
-		L0Buckets:  (entries + MeanEntriesPerBucket - 1) / entries / MeanEntriesPerBucket, // ceil entries / MeanEntriesPerBucket
+		L0Buckets:  (entries + MeanEntriesPerBucket - 1) / MeanEntriesPerBucket, // ceil entries / MeanEntriesPerBucket
 		BucketSize: BucketSize,
 		Entries:    entries,
 
