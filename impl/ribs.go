@@ -90,14 +90,69 @@ func Open(root string) (iface.RIBS, error) {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
 
-	return &ribs{
+	r := &ribs{
 		root:  root,
 		db:    db,
 		index: NewIndex(db),
 
 		writableGroups: make(map[iface.GroupKey]*Group),
-		openGroups:     make(map[iface.GroupKey]*Group),
-	}, nil
+
+		// all open groups (including all writable)
+		openGroups: make(map[iface.GroupKey]*Group),
+
+		tasks: make(chan task, 16),
+
+		close:  make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+
+	// todo resume tasks
+
+	go r.groupWorker()
+
+	return r, nil
+}
+
+func (r *ribs) groupWorker() {
+	for {
+		select {
+		case task := <-r.tasks:
+			r.workerExecTask(task)
+		case <-r.close:
+			close(r.closed)
+			return
+		}
+	}
+}
+
+func (r *ribs) workerExecTask(task task) {
+	switch task.tt {
+	case taskTypeFinalize:
+		r.lk.Lock()
+		defer r.lk.Unlock()
+
+		g, ok := r.openGroups[task.group]
+		if !ok {
+			log.Errorw("group not open", "group", task.group, "task", task)
+			return
+		}
+
+		err := g.Finalize(context.TODO())
+		if err != nil {
+			log.Errorf("finalizing group: %s", err)
+		}
+	}
+}
+
+type taskType int
+
+const (
+	taskTypeFinalize taskType = iota
+)
+
+type task struct {
+	tt    taskType
+	group iface.GroupKey
 }
 
 type ribs struct {
@@ -109,8 +164,22 @@ type ribs struct {
 
 	lk sync.Mutex
 
+	close  chan struct{}
+	closed chan struct{}
+
+	tasks chan task
+
 	openGroups     map[int64]*Group
 	writableGroups map[int64]*Group
+}
+
+func (r *ribs) Close() error {
+	close(r.close)
+	<-r.closed
+
+	// todo close all open groups
+
+	return nil
 }
 
 func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
@@ -125,12 +194,10 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		if r.writableGroups[selectedGroup].state != GroupStateWritable {
 			delete(r.writableGroups, selectedGroup)
 
-			go func() {
-				err := r.openGroups[selectedGroup].Finalize(context.TODO()) // todo queues / workers
-				if err != nil {
-					log.Errorf("finalizing group: %s", err)
-				}
-			}()
+			r.tasks <- task{
+				tt:    taskTypeFinalize,
+				group: selectedGroup,
+			}
 		}
 	}()
 
@@ -182,7 +249,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	// no writable groups, create one
 
-	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state) values (0, 0, 0) returning id").Scan(&selectedGroup)
+	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state, jb_recorded_head) values (0, 0, 0, 0) returning id").Scan(&selectedGroup)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
 	}

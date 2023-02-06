@@ -44,4 +44,6 @@ func TestBasic(t *testing.T) {
 		require.Equal(t, b, []byte("hello world"))
 	})
 	require.NoError(t, err)
+
+	require.NoError(t, ri.Close())
 }

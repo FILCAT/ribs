@@ -2,6 +2,8 @@ package ribs
 
 import (
 	"context"
+	"io"
+
 	"github.com/multiformats/go-multihash"
 )
 
@@ -32,7 +34,7 @@ type Group interface {
 	// replication / offloading.
 	Finalize(ctx context.Context) error
 
-	Close() error
+	io.Closer
 }
 
 // user
@@ -75,4 +77,6 @@ type Session interface {
 
 type RIBS interface {
 	Session(ctx context.Context) Session
+
+	io.Closer
 }
