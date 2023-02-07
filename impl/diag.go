@@ -79,7 +79,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	return iface.GroupMeta{
 		State: state,
-		
+
 		Blocks: blocks,
 		Bytes:  bytes,
 	}, nil
