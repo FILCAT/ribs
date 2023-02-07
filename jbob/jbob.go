@@ -406,9 +406,11 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 
 /* Finalization */
 
+var ErrReadOnly = errors.New("already read-only")
+
 func (j *JBOB) MarkReadOnly() error {
 	if j.wIdx == nil {
-		return xerrors.Errorf("already read-only")
+		return ErrReadOnly
 	}
 
 	err := j.mutHead(func(h *Head) error {

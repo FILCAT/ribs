@@ -203,11 +203,11 @@ func (m *Group) Finalize(ctx context.Context) error {
 	m.jblk.Lock()
 	defer m.jblk.Unlock()
 
-	if m.state == GroupStateFull {
-		return xerrors.Errorf("group not in state for finalization")
+	if m.state != GroupStateFull {
+		return xerrors.Errorf("group not in state for finalization: %d", m.state)
 	}
 
-	if err := m.jb.MarkReadOnly(); err != nil {
+	if err := m.jb.MarkReadOnly(); err != nil && err != jbob.ErrReadOnly {
 		return xerrors.Errorf("mark read-only: %w", err)
 	}
 
