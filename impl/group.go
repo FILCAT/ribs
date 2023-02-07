@@ -27,7 +27,7 @@ type Group struct {
 	path string
 	id   int64
 
-	state GroupState
+	state iface.GroupState
 
 	// db lock
 	// note: can be taken when jblk is held
@@ -46,7 +46,7 @@ type Group struct {
 	jb *jbob.JBOB
 }
 
-func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, state GroupState, create bool) (*Group, error) {
+func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -89,7 +89,7 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 	defer m.jblk.Unlock()
 
 	// reserve space
-	if m.state != GroupStateWritable {
+	if m.state != iface.GroupStateWritable {
 		return 0, nil
 	}
 
@@ -108,7 +108,7 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 
 	if writeBlocks < len(datas) {
 		// this group is full
-		m.state = GroupStateFull
+		m.state = iface.GroupStateFull
 	}
 
 	m.inflightBlocks += int64(writeBlocks)
@@ -148,7 +148,7 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 
 	// 3.5 mark as read-only if full
 	// todo is this the right place to do this?
-	if m.state == GroupStateFull {
+	if m.state == iface.GroupStateFull {
 		if err := m.jb.MarkReadOnly(); err != nil {
 			// todo handle properly (abort, close, check disk space / resources, repopen)
 			// todo combine with commit
@@ -203,7 +203,7 @@ func (m *Group) Finalize(ctx context.Context) error {
 	m.jblk.Lock()
 	defer m.jblk.Unlock()
 
-	if m.state != GroupStateFull {
+	if m.state != iface.GroupStateFull {
 		return xerrors.Errorf("group not in state for finalization: %d", m.state)
 	}
 
@@ -215,8 +215,30 @@ func (m *Group) Finalize(ctx context.Context) error {
 		return xerrors.Errorf("finalize jbob: %w", err)
 	}
 
+	if err := m.advanceState(ctx, iface.GroupStateBSSTExists); err != nil {
+		return xerrors.Errorf("mark bsst exists: %w", err)
+	}
+
 	if err := m.jb.DropLevel(); err != nil {
 		return xerrors.Errorf("removing leveldb index: %w", err)
+	}
+
+	if err := m.advanceState(ctx, iface.GroupStateLevelIndexDropped); err != nil {
+		return xerrors.Errorf("mark level index dropped: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
+	m.dblk.Lock()
+	m.state = st
+
+	_, err := m.db.ExecContext(ctx, `update groups set g_state = ? where id = ?;`, m.state, m.id)
+	m.dblk.Unlock()
+	if err != nil {
+		// todo enter failed state
+		return xerrors.Errorf("update group state: %w", err)
 	}
 
 	return nil

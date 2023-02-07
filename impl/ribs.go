@@ -67,19 +67,19 @@ create index if not exists index_hash_index
 
 `
 
-type GroupState int
+type openOptions struct {
+	workerGate chan struct{} // for testing
+}
 
-const (
-	GroupStateWritable GroupState = iota
-	GroupStateFull
-	GroupStateBSSTExists
-	GroupStateLevelIndexDropped
-	GroupStateVRCARDone
-	GroupStateHasCommp
-	GroupStateOffloaded
-)
+type OpenOption func(*openOptions)
 
-func Open(root string) (iface.RIBS, error) {
+func WithWorkerGate(gate chan struct{}) OpenOption {
+	return func(o *openOptions) {
+		o.workerGate = gate
+	}
+}
+
+func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
@@ -88,6 +88,15 @@ func Open(root string) (iface.RIBS, error) {
 	_, err = db.Exec(dbSchema)
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
+	}
+
+	opt := &openOptions{
+		workerGate: make(chan struct{}),
+	}
+	close(opt.workerGate)
+
+	for _, o := range opts {
+		o(opt)
 	}
 
 	r := &ribs{
@@ -108,13 +117,13 @@ func Open(root string) (iface.RIBS, error) {
 
 	// todo resume tasks
 
-	go r.groupWorker()
+	go r.groupWorker(opt.workerGate)
 
 	return r, nil
 }
 
-func (r *ribs) groupWorker() {
-	for {
+func (r *ribs) groupWorker(gate <-chan struct{}) {
+	for range gate {
 		select {
 		case task := <-r.tasks:
 			r.workerExecTask(task)
@@ -191,7 +200,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 			return
 		}
 		// if the group was filled, drop it from writableGroups and start finalize
-		if r.writableGroups[selectedGroup].state != GroupStateWritable {
+		if r.writableGroups[selectedGroup].state != iface.GroupStateWritable {
 			delete(r.writableGroups, selectedGroup)
 
 			r.tasks <- task{
@@ -217,7 +226,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 		var blocks int64
 		var bytes int64
-		var state GroupState
+		var state iface.GroupState
 
 		for res.Next() {
 			err := res.Scan(&selectedGroup, &blocks, &bytes, &state)
@@ -254,7 +263,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
 	}
 
-	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, GroupStateWritable, true)
+	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, iface.GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -282,7 +291,7 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	var blocks int64
 	var bytes int64
-	var state GroupState
+	var state iface.GroupState
 	var found bool
 
 	for res.Next() {
@@ -311,7 +320,7 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 		return xerrors.Errorf("opening group: %w", err)
 	}
 
-	if state == GroupStateWritable {
+	if state == iface.GroupStateWritable {
 		r.writableGroups[group] = g
 	}
 	r.openGroups[group] = g

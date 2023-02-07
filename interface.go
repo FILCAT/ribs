@@ -19,6 +19,18 @@ type Index interface {
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 }
 
+type GroupState int
+
+const (
+	GroupStateWritable GroupState = iota
+	GroupStateFull
+	GroupStateBSSTExists
+	GroupStateLevelIndexDropped
+	GroupStateVRCARDone
+	GroupStateHasCommp
+	GroupStateOffloaded
+)
+
 // Group stores a bunch of blocks, abstracting away the storage backend.
 // All underlying storage backends contain all blocks referenced by the group in
 // the top level index.
@@ -77,6 +89,19 @@ type Session interface {
 
 type RIBS interface {
 	Session(ctx context.Context) Session
+	Diagnostics() Diag
 
 	io.Closer
+}
+
+type GroupMeta struct {
+	State GroupState
+
+	Blocks int64
+	Bytes  int64
+}
+
+type Diag interface {
+	Groups() ([]GroupKey, error)
+	GroupMeta(gk GroupKey) (GroupMeta, error)
 }
