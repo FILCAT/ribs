@@ -28,6 +28,8 @@ const (
 	GroupStateLevelIndexDropped
 	GroupStateVRCARDone
 	GroupStateHasCommp
+	GroupStateDealsInProgress
+	GroupStateDealsDone
 	GroupStateOffloaded
 )
 

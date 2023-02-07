@@ -31,8 +31,10 @@ create table if not exists groups
      * 2 - bsst exists
      * 3 - level index dropped
      * 4 - vrcar done
-     * 5 - has commp, deals in flight
-     * 6 - offloaded
+     * 5 - has commp
+     * 6 - deals started
+     * 7 - deals done
+     * 8 - offloaded
      */
     g_state     integer not null,
     
