@@ -2,6 +2,7 @@ package ribs
 
 import (
 	"context"
+	blocks "github.com/ipfs/go-block-format"
 	"io"
 
 	"github.com/multiformats/go-multihash"
@@ -38,7 +39,7 @@ const (
 // the top level index.
 type Group interface {
 	// Put returns the number of blocks written
-	Put(ctx context.Context, c []multihash.Multihash, datas [][]byte) (int, error)
+	Put(ctx context.Context, c []blocks.Block) (int, error)
 	Unlink(ctx context.Context, c []multihash.Multihash) error
 	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
 	Sync(ctx context.Context) error
@@ -61,7 +62,7 @@ type Batch interface {
 	//View(ctx context.Context, c []cid.Cid, cb func(cidx int, data []byte)) error
 
 	// Put queues writes to the blockstore
-	Put(ctx context.Context, c []multihash.Multihash, datas [][]byte) error
+	Put(ctx context.Context, b []blocks.Block) error
 
 	// Unlink makes a blocks not retrievable from the blockstore
 	// NOTE: this method is best-effort. Data may not be removed immediately,
@@ -85,6 +86,11 @@ type Session interface {
 	// * Callback `data` must not be referenced after the function returns
 	//   If the data is to be used after returning from the callback, it MUST be copied.
 	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
+
+	Has(ctx context.Context, c []multihash.Multihash) ([]bool, error)
+
+	// -1 means not found
+	GetSize(ctx context.Context, c []multihash.Multihash) ([]int64, error)
 
 	Batch(ctx context.Context) Batch
 }

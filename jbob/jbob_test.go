@@ -27,7 +27,7 @@ func TestJbobBasic(t *testing.T) {
 	b := blocks.NewBlock([]byte("hello world"))
 	h := b.Cid().Hash()
 
-	err = jb.Put([]multihash.Multihash{h}, [][]byte{b.RawData()})
+	err = jb.Put([]multihash.Multihash{h}, []blocks.Block{b})
 	require.NoError(t, err)
 
 	_, err = jb.Commit()

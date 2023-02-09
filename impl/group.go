@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"database/sql"
+	blocks "github.com/ipfs/go-block-format"
 	iface "github.com/lotus_web3/ribs"
 	"github.com/lotus_web3/ribs/jbob"
 	mh "github.com/multiformats/go-multihash"
@@ -80,8 +81,8 @@ func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize
 	}, nil
 }
 
-func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int, error) {
-	if len(datas) == 0 {
+func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
+	if len(b) == 0 {
 		return 0, nil
 	}
 
@@ -98,15 +99,15 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 	var writeSize int64
 	var writeBlocks int
 
-	for _, data := range datas {
-		if int64(len(data))+writeSize > availSpace {
+	for _, blk := range b {
+		if int64(len(blk.RawData()))+writeSize > availSpace {
 			break
 		}
-		writeSize += int64(len(data))
+		writeSize += int64(len(blk.RawData()))
 		writeBlocks++
 	}
 
-	if writeBlocks < len(datas) {
+	if writeBlocks < len(b) {
 		// this group is full
 		m.state = iface.GroupStateFull
 	}
@@ -118,7 +119,12 @@ func (m *Group) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) (int,
 
 	// 1. (buffer) writes to jbob
 
-	err := m.jb.Put(c[:writeBlocks], datas[:writeBlocks])
+	c := make([]mh.Multihash, len(b))
+	for i, blk := range b {
+		c[i] = blk.Cid().Hash()
+	}
+
+	err := m.jb.Put(c[:writeBlocks], b[:writeBlocks])
 	if err != nil {
 		// todo handle properly (abort, close, check disk space / resources, repopen)
 		return 0, xerrors.Errorf("writing to jbob: %w", err)

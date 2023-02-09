@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/lotus_web3/ribs/bsst"
 	"math/bits"
 	"os"
@@ -281,15 +282,15 @@ func (j *JBOB) mutHead(mut func(h *Head) error) error {
 	return nil
 }
 
-func (j *JBOB) Put(c []mh.Multihash, datas [][]byte) error {
+func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 	if j.wIdx == nil {
 		return xerrors.Errorf("cannot write to read-only jbob")
 	}
 
-	if len(c) != len(datas) {
-		return xerrors.Errorf("hash list length doesn't match datas length")
+	if len(c) != len(b) {
+		return xerrors.Errorf("hash list length doesn't match blocks length")
 	}
-	offsets := make([]int64, len(datas))
+	offsets := make([]int64, len(b))
 
 	entHead := []byte{0, 0, 0, 0, byte(entBlock)}
 
@@ -301,13 +302,14 @@ func (j *JBOB) Put(c []mh.Multihash, datas [][]byte) error {
 	// todo optimize (at least buffer) writes
 
 	// first append to log
-	for i, data := range datas {
+	for i, blk := range b {
 		if hasList[i] {
 			offsets[i] = -1
 			continue
 		}
 
 		offsets[i] = j.dataLen
+		data := blk.RawData()
 
 		binary.LittleEndian.PutUint32(entHead, uint32(len(data)))
 		if _, err := j.data.WriteAt(entHead, j.dataLen); err != nil {

@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"database/sql"
+	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	iface "github.com/lotus_web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
@@ -125,7 +126,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 }
 
 func (r *ribs) groupWorker(gate <-chan struct{}) {
-	for range gate {
+	for {
+		<-gate
 		select {
 		case task := <-r.tasks:
 			r.workerExecTask(task)
@@ -400,16 +402,12 @@ func (r *ribSession) Batch(ctx context.Context) iface.Batch {
 	}
 }
 
-func (r *ribBatch) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) error {
-	if len(c) != len(datas) {
-		return xerrors.Errorf("cids and data lengths mismatch")
-	}
-
+func (r *ribBatch) Put(ctx context.Context, b []blocks.Block) error {
 	// todo filter blocks that already exist
 	var done int
-	for done < len(c) {
+	for done < len(b) {
 		gk, err := r.r.withWritableGroup(r.currentWriteTarget, func(g *Group) error {
-			wrote, err := g.Put(ctx, c[done:], datas[done:])
+			wrote, err := g.Put(ctx, b[done:])
 			if err != nil {
 				return err
 			}
@@ -424,6 +422,16 @@ func (r *ribBatch) Put(ctx context.Context, c []mh.Multihash, datas [][]byte) er
 	}
 
 	return nil
+}
+
+func (r *ribSession) Has(ctx context.Context, c []mh.Multihash) ([]bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *ribSession) GetSize(ctx context.Context, c []mh.Multihash) ([]int64, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (r *ribBatch) Unlink(ctx context.Context, c []mh.Multihash) error {

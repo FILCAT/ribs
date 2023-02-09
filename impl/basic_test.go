@@ -37,7 +37,7 @@ func TestBasic(t *testing.T) {
 	b := blocks.NewBlock([]byte("hello world"))
 	h := b.Cid().Hash()
 
-	err = wb.Put(ctx, []multihash.Multihash{h}, [][]byte{b.RawData()})
+	err = wb.Put(ctx, []blocks.Block{b})
 	require.NoError(t, err)
 
 	err = wb.Flush(ctx)
@@ -83,7 +83,7 @@ func TestFullGroup(t *testing.T) {
 		b := blocks.NewBlock(blk[:])
 		h = b.Cid().Hash()
 
-		err = wb.Put(ctx, []multihash.Multihash{h}, [][]byte{b.RawData()})
+		err = wb.Put(ctx, []blocks.Block{b})
 		require.NoError(t, err)
 
 		err = wb.Flush(ctx)
