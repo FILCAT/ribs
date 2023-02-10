@@ -9,6 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -83,6 +84,10 @@ func WithWorkerGate(gate chan struct{}) OpenOption {
 }
 
 func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
+	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
+		return nil, xerrors.Errorf("make root dir: %w", err)
+	}
+
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)

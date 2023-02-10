@@ -82,7 +82,7 @@ type Session interface {
 	// NOTE:
 	// * Callback calls can happen out of order
 	// * Callback calls can happen in parallel
-	// * Callback `data` will be nil when block is not found
+	// * Callback will not be called for indexes where data is not found
 	// * Callback `data` must not be referenced after the function returns
 	//   If the data is to be used after returning from the callback, it MUST be copied.
 	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error

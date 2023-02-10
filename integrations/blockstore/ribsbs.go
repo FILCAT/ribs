@@ -72,6 +72,12 @@ func (b *Blockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 
 		out, _ = blocks.NewBlockWithCid(dcopy, c)
 	})
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		return nil, ipld.ErrNotFound{Cid: c}
+	}
 
 	return out, err
 }
