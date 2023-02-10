@@ -293,7 +293,7 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	// not open, open it
 
-	res, err := r.db.Query("select blocks, bytes, g_state from groups where g_state = 1 and id = ?", group)
+	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", group)
 	if err != nil {
 		return xerrors.Errorf("finding writable groups: %w", err)
 	}

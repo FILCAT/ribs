@@ -18,7 +18,7 @@ import (
 const (
 	// 100MB for now
 	// TODO: make this configurable
-	maxGroupSize = 100 << 20
+	maxGroupSize = 6000 << 20
 )
 
 type Group struct {
