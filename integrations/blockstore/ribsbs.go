@@ -18,6 +18,13 @@ type Blockstore struct {
 	sess ribs.Session
 }
 
+func New(ctx context.Context, r ribs.RIBS) *Blockstore {
+	return &Blockstore{
+		r:    r,
+		sess: r.Session(ctx),
+	}
+}
+
 func cidsToMhs(cids []cid.Cid) []multihash.Multihash {
 	mhs := make([]multihash.Multihash, len(cids))
 	for i, c := range cids {
