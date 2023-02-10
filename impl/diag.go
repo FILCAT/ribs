@@ -13,9 +13,9 @@ func (r *ribs) Groups() ([]iface.GroupKey, error) {
 	r.lk.Lock()
 	defer r.lk.Unlock()
 
-	res, err := r.db.Query("select id, from groups")
+	res, err := r.db.Query("select id from groups")
 	if err != nil {
-		return nil, xerrors.Errorf("finding writable groups: %w", err)
+		return nil, xerrors.Errorf("listing groups: %w", err)
 	}
 
 	var groups []iface.GroupKey
@@ -46,7 +46,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", gk)
 	if err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("finding writable groups: %w", err)
+		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
 
 	var blocks int64
@@ -79,6 +79,9 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	return iface.GroupMeta{
 		State: state,
+
+		MaxBlocks: maxGroupBlocks,
+		MaxBytes:  maxGroupSize,
 
 		Blocks: blocks,
 		Bytes:  bytes,

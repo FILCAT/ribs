@@ -19,6 +19,9 @@ const (
 	// 100MB for now
 	// TODO: make this configurable
 	maxGroupSize = 6000 << 20
+
+	// todo enforce this
+	maxGroupBlocks = 20 << 20
 )
 
 type Group struct {

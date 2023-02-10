@@ -7,9 +7,235 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Press+Start+2P">
     <script>
 
+        const states = [
+            "Writable",
+            "Full",
+            "BSSTExists",
+            "LevelIndexDropped",
+            "VRCARDone",
+            "HasCommp",
+            "DealsInProgress",
+            "DealsDone",
+            "Offloaded",
+        ]
+
+        function formatBytesBinary(bytes) {
+            const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+            let l = 0, n = parseInt(bytes, 10) || 0;
+            while (n >= 1024 && ++l) {
+                n = n / 1024;
+            }
+            return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
+        }
+
+        function formatNum(bytes) {
+            const units = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+            let l = 0, n = parseInt(bytes, 10) || 0;
+            while (n >= 1000 && ++l) {
+                n = n / 1000;
+            }
+            return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
+        }
+
+        function formatPercent(num) {
+            return (num * 100).toFixed(1) + '%';
+        }
+
+        let groupElems = {};
+
+        let loopId = 0;
+        const nonWritableRefreshEvery = 15;
+
+        async function refresh() {
+            loopId++;
+
+            let response = await fetch('http://127.0.0.1:9010/api/v0/groups');
+            let groups = await response.json();
+            let groupsDiv = document.querySelector('.groups');
+
+            for (let i = groups.length - 1; i >= 0; i--) {
+                let group = groups[i];
+
+                if(groupElems[group] !== undefined && groupElems[group].meta.State != 0) {
+                    if(loopId % nonWritableRefreshEvery != i % nonWritableRefreshEvery) {
+                        continue;
+                    }
+                }
+
+                let metaResp = await fetch(`http://127.0.0.1:9010/api/v0/group?group=${group}`);
+                let meta = await metaResp.json();
+
+                /*
+                * type GroupMeta struct {
+                    State GroupState
+
+                    MaxBlocks int64
+                    MaxBytes  int64
+
+                    Blocks int64
+                    Bytes  int64
+                }
+                * */
+
+                if(groupElems[group] === undefined) {
+                    let groupElem = document.createElement('div');
+                    groupElem.classList.add('group');
+
+                    let groupLeftElem = document.createElement('div');
+                    groupLeftElem.classList.add('group-left');
+
+                    let groupHeadElem = document.createElement('div');
+                    groupHeadElem.classList.add('group-head');
+
+                    let groupNameElem = document.createElement('div');
+                    groupNameElem.classList.add('group-name');
+                    groupNameElem.innerText = group;
+
+                    let groupStatusElem = document.createElement('div');
+                    groupStatusElem.classList.add('group-status');
+                    groupStatusElem.innerText = states[meta.State];
+
+                    let groupRowSizeElem = document.createElement('div');
+                    groupRowSizeElem.classList.add('group-row');
+                    let groupRowBlocksElem = document.createElement('div');
+
+                    groupRowBlocksElem.classList.add('group-row');
+                    let groupRightElem = document.createElement('div');
+
+                    groupRightElem.classList.add('group-right');
+                    let groupBarSizeElem = document.createElement('div');
+
+                    groupBarSizeElem.classList.add('group-bar');
+                    groupBarSizeElem.classList.add('group-bar-size');
+                    groupBarSizeElem.innerText = '.';
+                    let groupBarBlocksElem = document.createElement('div');
+
+                    groupBarBlocksElem.classList.add('group-bar');
+                    groupBarBlocksElem.classList.add('group-bar-blocks');
+                    groupBarBlocksElem.innerText = '.';
+
+                    groupHeadElem.appendChild(groupNameElem);
+
+                    groupHeadElem.appendChild(groupStatusElem);
+                    groupLeftElem.appendChild(groupHeadElem);
+
+                    groupLeftElem.appendChild(groupRowSizeElem);
+                    groupLeftElem.appendChild(groupRowBlocksElem);
+                    groupRightElem.appendChild(groupBarSizeElem);
+
+                    groupRightElem.appendChild(groupBarBlocksElem);
+                    groupElem.appendChild(groupLeftElem);
+
+                    groupElem.appendChild(groupRightElem);
+                    groupsDiv.appendChild(groupElem);
+
+                    groupElems[group] = {groupElem, groupRowSizeElem, groupRowBlocksElem, groupBarSizeElem, groupBarBlocksElem, meta}
+                }
+
+                groupElems[group].groupRowSizeElem.innerText = `${formatBytesBinary(meta.Bytes)} / ${formatBytesBinary(meta.MaxBytes)} (${formatPercent(meta.Bytes / meta.MaxBytes)})`;
+                groupElems[group].groupRowBlocksElem.innerText = `${formatNum(meta.Blocks)} / ${formatNum(meta.MaxBlocks)} (${formatPercent(meta.Blocks / meta.MaxBlocks)}) blocks`;
+                groupElems[group].groupBarSizeElem.style.width = `${formatPercent(meta.Bytes / meta.MaxBytes)}`;
+                groupElems[group].groupBarBlocksElem.style.width = `${formatPercent(meta.Blocks / meta.MaxBlocks)}`;
+            }
+
+            refresh();
+        };
+
+        refresh();
     </script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            background-color: #f0f0f0;
+            color: #000000;
+            font-family: 'Yantramanav', sans-serif;
+        }
+
+        .groups {
+            height: 100%;
+            width: 100%;
+        }
+
+        .group {
+            width: 100%;
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            box-sizing: border-box;
+            border-bottom: 1px solid #000000;
+        }
+
+        .group-left {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+
+            padding: 1em;
+            border-right: 1px solid #000000;
+        }
+
+        .group-head {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+
+        .group-right {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+
+            flex-grow: 1;
+            border: 1px solid #000000;
+        }
+
+        .group-bar {
+            flex-grow: 1;
+        }
+
+        .group-bar-size {
+            background-color: #00ff00;
+        }
+
+        .group-bar-blocks {
+            background-color: #0000ff;
+        }
+    </style>
 </head>
 <body>
-    Hello!
+<h1>Groups</h1>
+<div class="groups">
+
+    <div class="group">
+        <div class="group-left">
+            <div class="group-head">
+                <div class="group-name">
+                    Group 12
+                </div>
+                <div class="group-status">
+                    WRITABLE
+                </div>
+            </div>
+            <div class="group-row">
+                10.2GiB / 30 GiB (34.2%)
+            </div>
+            <div class="group-row">
+                123k / 20M (0.6%) blocks
+            </div>
+        </div>
+        <div class="group-right">
+            <div class="group-bar group-bar-size" style="width: 34%">.</div>
+            <div class="group-bar group-bar-blocks" style="width: 0.6%">.</div>
+        </div>
+    </div>
+
+</div>
 </body>
 </html>

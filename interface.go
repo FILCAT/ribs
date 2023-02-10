@@ -105,6 +105,9 @@ type RIBS interface {
 type GroupMeta struct {
 	State GroupState
 
+	MaxBlocks int64
+	MaxBytes  int64
+
 	Blocks int64
 	Bytes  int64
 }
