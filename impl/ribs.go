@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
-	iface "github.com/lotus_web3/ribs"
+	iface "github.com/lotus-web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"

@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	blocks "github.com/ipfs/go-block-format"
-	iface "github.com/lotus_web3/ribs"
+	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 	"io/fs"

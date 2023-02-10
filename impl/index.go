@@ -3,7 +3,7 @@ package impl
 import (
 	"context"
 	"database/sql"
-	iface "github.com/lotus_web3/ribs"
+	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

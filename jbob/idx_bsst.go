@@ -1,7 +1,7 @@
 package jbob
 
 import (
-	"github.com/lotus_web3/ribs/bsst"
+	"github.com/lotus-web3/ribs/bsst"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

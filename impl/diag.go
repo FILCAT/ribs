@@ -1,7 +1,7 @@
 package impl
 
 import (
-	iface "github.com/lotus_web3/ribs"
+	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 )
 

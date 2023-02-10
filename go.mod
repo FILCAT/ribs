@@ -1,4 +1,4 @@
-module github.com/lotus_web3/ribs
+module github.com/lotus-web3/ribs
 
 go 1.18
 

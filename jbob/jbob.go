@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/lotus_web3/ribs/bsst"
+	"github.com/lotus-web3/ribs/bsst"
 	"math/bits"
 	"os"
 	"path/filepath"
