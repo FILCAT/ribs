@@ -115,4 +115,6 @@ type GroupMeta struct {
 type Diag interface {
 	Groups() ([]GroupKey, error)
 	GroupMeta(gk GroupKey) (GroupMeta, error)
+
+	CrawlState() string
 }

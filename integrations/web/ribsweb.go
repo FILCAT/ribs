@@ -33,7 +33,13 @@ func (ri *RIBSWeb) Index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (ri *RIBSWeb) ApiGroups(w http.ResponseWriter, r *http.Request) {
+type state struct {
+	Groups []ribs.GroupKey
+
+	CrawlState string
+}
+
+func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 	gs, err := ri.ribs.Diagnostics().Groups()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -49,7 +55,10 @@ func (ri *RIBSWeb) ApiGroups(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(gs); err != nil {
+	if err := json.NewEncoder(w).Encode(&state{
+		Groups:     gs,
+		CrawlState: ri.ribs.Diagnostics().CrawlState(),
+	}); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -92,7 +101,7 @@ func Serve(listen string, ribs ribs.RIBS) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Index)
 
-	mux.HandleFunc("/api/v0/groups", handlers.ApiGroups)
+	mux.HandleFunc("/api/v0/state", handlers.ApiState)
 	mux.HandleFunc("/api/v0/group", handlers.ApiGroup)
 
 	return http.ListenAndServe(listen, mux)

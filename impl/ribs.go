@@ -10,6 +10,7 @@ import (
 	"golang.org/x/xerrors"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 var log = logging.Logger("ribs")
@@ -67,6 +68,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	// todo resume tasks
 
 	go r.groupWorker(opt.workerGate)
+	go r.spCrawler()
 
 	return r, nil
 }
@@ -123,6 +125,8 @@ type ribs struct {
 
 	lk sync.Mutex
 
+	/* storage */
+
 	workerClose  chan struct{}
 	workerClosed chan struct{}
 
@@ -133,6 +137,9 @@ type ribs struct {
 
 	openGroups     map[int64]*Group
 	writableGroups map[int64]*Group
+
+	/* sp tracker */
+	crawlState atomic.Pointer[string]
 }
 
 func (r *ribs) Close() error {

@@ -52,8 +52,12 @@
         async function refresh() {
             loopId++;
 
-            let response = await fetch('http://127.0.0.1:9010/api/v0/groups');
-            let groups = await response.json();
+            let response = await fetch('http://127.0.0.1:9010/api/v0/state');
+            let state = await response.json();
+
+            document.querySelector('#sp-tracker-state').innerHTML = state.CrawlState;
+
+            let groups = state.Groups;
             let groupsDiv = document.querySelector('.groups');
 
             for (let i = groups.length - 1; i >= 0; i--) {
@@ -154,6 +158,7 @@
             document.getElementById("total-bytes").innerText = formatBytesBinary(totalBytes);
             document.getElementById("total-blocks").innerText = formatNum(totalBlocks) + " blocks";
 
+            // todo this is flimsy
             setTimeout(refresh, 100);
         };
 
@@ -227,8 +232,7 @@
 </head>
 <body>
 <h2>SP Tracker</h2>
-<div>State: <b>Updating market SP set</b></div>
-<div>At: <b>0</b>; Know <b>0</b></div>
+<div id="sp-tracker-state"></div>
 <hr>
 <h2>Groups</h2>
 <div class="group">

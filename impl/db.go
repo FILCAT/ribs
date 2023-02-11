@@ -46,23 +46,25 @@ create index if not exists groups_g_state_index
 create table if not exists providers (
     id integer not null constraint providers_pk primary key,
     
-    ping_ok integer not null,
+    in_market integer not null,
     
-    boost_deals integer not null,
-    booster_http integer not null,
-    booster_bitswap integer not null,
+    ping_ok integer not null default 0,
     
-    indexed_success integer not null,
-    indexed_fail integer not null,
+    boost_deals integer not null default 0,
+    booster_http integer not null default 0,
+    booster_bitswap integer not null default 0,
     
-    deal_attempts integer not null,
-    deal_success integer not null,
-    deal_fail integer not null,
+    indexed_success integer not null default 0,
+    indexed_fail integer not null default 0,
     
-    retrprobe_success integer not null,
-    retrprobe_fail integer not null,
-    retrprobe_blocks integer not null,
-    retrprobe_bytes integer not null
+    deal_attempts integer not null default 0,
+    deal_success integer not null default 0,
+    deal_fail integer not null default 0,
+    
+    retrprobe_success integer not null default 0,
+    retrprobe_fail integer not null default 0,
+    retrprobe_blocks integer not null default 0,
+    retrprobe_bytes integer not null default 0
 );
 
 /* top level index */
@@ -267,4 +269,51 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		Blocks: blocks,
 		Bytes:  bytes,
 	}, nil
+}
+
+func (r *ribsDB) UpsertMarketActors(actors []int64) error {
+	/*_, err := r.db.Exec(`
+	begin transaction;
+	    update providers set in_market = 0 where in_market = 1;
+	    insert into providers (address, in_market) values (?, 1) on conflict (address) do update set in_market = 1;
+	end transaction;
+	`, actors)*/
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return xerrors.Errorf("begin transaction: %w", err)
+	}
+
+	_, err = tx.Exec("update providers set in_market = 0 where in_market = 1")
+	if err != nil {
+		if err := tx.Rollback(); err != nil {
+			log.Errorw("rollback UpsertMarketActors", "error", err)
+		}
+		return xerrors.Errorf("reset in_market: %w", err)
+	}
+
+	stmt, err := tx.Prepare("insert into providers (id, in_market) values (?, 1) on conflict (id) do update set in_market = 1")
+	if err != nil {
+		if err := tx.Rollback(); err != nil {
+			log.Errorw("rollback UpsertMarketActors", "error", err)
+		}
+		return xerrors.Errorf("prepare statement: %w", err)
+	}
+
+	for _, actor := range actors {
+		_, err = stmt.Exec(actor)
+		if err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Errorw("rollback UpsertMarketActors", "error", err)
+			}
+			return xerrors.Errorf("insert actor: %w", err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return xerrors.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
 }

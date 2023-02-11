@@ -21,3 +21,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	return r.db.GroupMeta(gk)
 }
+
+func (r *ribs) CrawlState() string {
+	return *r.crawlState.Load()
+}
