@@ -2,7 +2,6 @@ package impl
 
 import (
 	"context"
-	"database/sql"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	iface "github.com/lotus-web3/ribs"
@@ -10,66 +9,10 @@ import (
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
 var log = logging.Logger("ribs")
-
-const dbSchema = `
-
-/* groups */
-
-create table if not exists groups
-(
-    id        integer not null
-        constraint groups_pk
-            primary key autoincrement,
-    blocks      integer not null,
-    bytes integer not null,    
-    /* States
-	 * 0 - writable
-     * 1 - full
-     * 2 - bsst exists
-     * 3 - level index dropped
-     * 4 - vrcar done
-     * 5 - has commp
-     * 6 - deals started
-     * 7 - deals done
-     * 8 - offloaded
-     */
-    g_state     integer not null,
-    
-    /* jbob */
-    jb_recorded_head integer not null
-);
-
-create index if not exists groups_id_index
-    on groups (id);
-
-create index if not exists groups_g_state_index
-    on groups (g_state);
-
-/* top level index */
-
-create table if not exists top_index
-(
-    hash    BLOB not null,
-    group_id integer
-    constraint index_groups_id_fk
-        references groups,
-    constraint index_pk
-        primary key (hash, group_id) on conflict ignore
-)
-    without rowid;
-
-create index if not exists index_group_index
-    on top_index (group_id);
-
-create index if not exists index_hash_index
-    on top_index (hash);
-
-`
 
 type openOptions struct {
 	workerGate chan struct{} // for testing
@@ -88,14 +31,9 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
+	db, err := openRibsDB(root)
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
-	}
-
-	_, err = db.Exec(dbSchema)
-	if err != nil {
-		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
 
 	opt := &openOptions{
@@ -110,7 +48,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	r := &ribs{
 		root:  root,
 		db:    db,
-		index: NewIndex(db),
+		index: NewIndex(db.db),
 
 		writableGroups: make(map[iface.GroupKey]*Group),
 
@@ -177,7 +115,7 @@ type ribs struct {
 	root string
 
 	// todo hide this db behind an interface
-	db    *sql.DB
+	db    *ribsDB
 	index iface.Index
 
 	lk sync.Mutex
@@ -228,29 +166,13 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	selectedGroup = iface.UndefGroupKey
 	{
-		res, err := r.db.Query("select id, blocks, bytes, g_state from groups where g_state = 0")
-		if err != nil {
-			return iface.UndefGroupKey, xerrors.Errorf("finding writable groups: %w", err)
-		}
-
 		var blocks int64
 		var bytes int64
 		var state iface.GroupState
 
-		for res.Next() {
-			err := res.Scan(&selectedGroup, &blocks, &bytes, &state)
-			if err != nil {
-				return iface.UndefGroupKey, xerrors.Errorf("scanning group: %w", err)
-			}
-
-			break
-		}
-
-		if err := res.Err(); err != nil {
-			return iface.UndefGroupKey, xerrors.Errorf("iterating groups: %w", err)
-		}
-		if err := res.Close(); err != nil {
-			return iface.UndefGroupKey, xerrors.Errorf("closing group iterator: %w", err)
+		selectedGroup, blocks, bytes, state, err = r.db.GetWritableGroup()
+		if err != nil {
+			return iface.UndefGroupKey, xerrors.Errorf("finding writable groups: %w", err)
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
@@ -267,9 +189,9 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	// no writable groups, create one
 
-	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state, jb_recorded_head) values (0, 0, 0, 0) returning id").Scan(&selectedGroup)
+	selectedGroup, err = r.db.CreateGroup()
 	if err != nil {
-		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
+		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
 	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, iface.GroupStateWritable, true)
@@ -293,35 +215,9 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	// not open, open it
 
-	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", group)
+	blocks, bytes, state, err := r.db.OpenGroup(group)
 	if err != nil {
-		return xerrors.Errorf("finding writable groups: %w", err)
-	}
-
-	var blocks int64
-	var bytes int64
-	var state iface.GroupState
-	var found bool
-
-	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &state)
-		if err != nil {
-			return xerrors.Errorf("scanning group: %w", err)
-		}
-
-		found = true
-
-		break
-	}
-
-	if err := res.Err(); err != nil {
-		return xerrors.Errorf("iterating groups: %w", err)
-	}
-	if err := res.Close(); err != nil {
-		return xerrors.Errorf("closing group iterator: %w", err)
-	}
-	if !found {
-		return xerrors.Errorf("group %d not found", group)
+		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
 	g, err := OpenGroup(r.db, r.index, group, blocks, bytes, r.root, state, false)

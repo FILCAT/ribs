@@ -2,7 +2,6 @@ package impl
 
 import (
 	"context"
-	"database/sql"
 	blocks "github.com/ipfs/go-block-format"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/jbob"
@@ -25,7 +24,7 @@ const (
 )
 
 type Group struct {
-	db    *sql.DB
+	db    *ribsDB
 	index iface.Index
 
 	path string
@@ -50,7 +49,7 @@ type Group struct {
 	jb *jbob.JBOB
 }
 
-func OpenGroup(db *sql.DB, index iface.Index, id, committedBlocks, committedSize int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(db *ribsDB, index iface.Index, id, committedBlocks, committedSize int64, path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -170,9 +169,7 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	m.committedSize += writeSize
 
 	m.dblk.Lock()
-	_, err = m.db.ExecContext(ctx, `begin transaction;
-		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;
-		commit;`, m.committedBlocks, m.committedSize, m.state, at, m.id)
+	err = m.db.SetGroupHead(ctx, m.id, m.state, m.committedBlocks, m.committedSize, at)
 	m.dblk.Unlock()
 	if err != nil {
 		// todo handle properly (retry, abort, close, check disk space / resources, repopen)
@@ -241,16 +238,12 @@ func (m *Group) Finalize(ctx context.Context) error {
 
 func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	m.dblk.Lock()
+	defer m.dblk.Unlock()
+
 	m.state = st
 
-	_, err := m.db.ExecContext(ctx, `update groups set g_state = ? where id = ?;`, m.state, m.id)
-	m.dblk.Unlock()
-	if err != nil {
-		// todo enter failed state
-		return xerrors.Errorf("update group state: %w", err)
-	}
-
-	return nil
+	// todo enter failed state on error
+	return m.db.SetGroupState(ctx, m.id, st)
 }
 
 func (m *Group) Close() error {
