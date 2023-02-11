@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"github.com/minio/sha256-simd"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
@@ -153,14 +152,14 @@ func Create(path string, entries int64, source Source) (*BSST, error) {
 
 	var bloomHead [BucketBloomFilterSize]byte
 
-	bSizes := map[uint64]int64{}
+	//bSizes := map[uint64]int64{}
 
 	flushBucket := func(bucketIdx uint64) error {
 		if inBucket > bucketIdx {
 			panic("buckets not sorted")
 		}
 
-		bSizes[bucketEnts]++
+		//bSizes[bucketEnts]++
 
 		// pad up to BucketUserEntries entries
 		for bucketEnts < BucketUserEntries {
@@ -275,19 +274,19 @@ func Create(path string, entries int64, source Source) (*BSST, error) {
 	}
 
 	// print bSizes sorted by key
-	var keys []int
+	/*var keys []int
 	for k := range bSizes {
 		keys = append(keys, int(k))
 	}
-	sort.Ints(keys)
+	sort.Ints(keys)*/
 
-	var ibe int64
+	/*var ibe int64
 	for _, k := range keys {
 		ibe += bSizes[uint64(k)] * int64(k)
-		fmt.Printf("bs %d: %d\n", k, bSizes[uint64(k)])
-	}
+		//fmt.Printf("bs %d: %d\n", k, bSizes[uint64(k)])
+	}*/
 
-	fmt.Println("ents ", ents, " bkt ", header.L0Buckets, " ibe ", ibe)
+	//fmt.Println("ents ", ents, " bkt ", header.L0Buckets, " ibe ", ibe)
 
 	if err := f.Close(); err != nil {
 		return nil, xerrors.Errorf("close written bsst: %w", err)
