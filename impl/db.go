@@ -317,3 +317,14 @@ func (r *ribsDB) UpsertMarketActors(actors []int64) error {
 
 	return nil
 }
+
+func (r *ribsDB) UpdateProviderProtocols(provider int64, pres providerResult) error {
+	_, err := r.db.Exec(`
+	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ? where id = ?;
+	`, pres.PingOk, pres.BoostDeals, pres.BoosterHttp, pres.BoosterBitswap, provider)
+	if err != nil {
+		return xerrors.Errorf("update provider: %w", err)
+	}
+
+	return nil
+}
