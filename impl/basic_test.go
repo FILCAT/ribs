@@ -53,6 +53,8 @@ func TestBasic(t *testing.T) {
 }
 
 func TestFullGroup(t *testing.T) {
+	maxGroupSize = 100 << 20
+
 	td := t.TempDir()
 	t.Cleanup(func() {
 		if err := filepath.Walk(td, func(path string, info fs.FileInfo, err error) error {
@@ -105,8 +107,8 @@ func TestFullGroup(t *testing.T) {
 	require.Eventually(t, func() bool {
 		gs, err := ri.Diagnostics().GroupMeta(1)
 		require.NoError(t, err)
-		fmt.Println(gs.State)
-		return gs.State == iface.GroupStateLevelIndexDropped
+		fmt.Println("state now ", gs.State)
+		return gs.State == iface.GroupStateVRCARDone
 	}, 10*time.Second, 40*time.Millisecond)
 
 	workerGate <- struct{}{} // trigger a worker to allow processing close

@@ -2,6 +2,7 @@ package impl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/filecoin-project/boost/retrievalmarket/lp2pimpl"
 	"github.com/filecoin-project/go-address"
@@ -100,9 +101,20 @@ func (r *ribs) spCrawler() {
 				r.crawlState.Store(toPtr(fmt.Sprintf("<b>%s</b><div>At <b>%d</b></div>", crawlMarketList, n))) // todo use json
 			}
 
+			select {
+			case <-r.spCrawlClose:
+				return errors.New("stop")
+			default:
+			}
+
 			return nil
 		})
 		if err != nil {
+			select {
+			case <-r.spCrawlClose:
+				return
+			default:
+			}
 			panic(err)
 		}
 
@@ -123,6 +135,12 @@ func (r *ribs) spCrawler() {
 		var started, reachable, boost, bitswap, http int64
 
 		for _, actor := range actors {
+			select {
+			case <-r.spCrawlClose:
+				return
+			default:
+			}
+
 			throttle <- struct{}{}
 			started++
 

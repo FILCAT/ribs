@@ -18,13 +18,13 @@ import (
 	"os"
 )
 
-const (
+var (
 	// 100MB for now
 	// TODO: make this configurable
-	maxGroupSize = 6000 << 20
+	maxGroupSize int64 = 6000 << 20
 
 	// todo enforce this
-	maxGroupBlocks = 20 << 20
+	maxGroupBlocks int64 = 20 << 20
 )
 
 type Group struct {
@@ -240,7 +240,7 @@ func (m *Group) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (m *Group) GenTopCar() error {
+func (m *Group) GenTopCar(ctx context.Context) error {
 	m.jblk.RLock()
 	defer m.jblk.RLock()
 
@@ -253,7 +253,7 @@ func (m *Group) GenTopCar() error {
 	}
 
 	level := 1
-	const arity = 16 // 2048
+	const arity = 2048
 	var links []cid.Cid
 	var nextLevelLinks []cid.Cid
 
@@ -311,7 +311,7 @@ func (m *Group) GenTopCar() error {
 		return xerrors.Errorf("close level 1: %w", err)
 	}
 
-	for len(nextLevelLinks) > 0 {
+	for {
 		level++
 		fname := filepath.Join(m.path, "vcar", fmt.Sprintf("layer%d.cardata", level))
 		f, err := os.OpenFile(fname, os.O_CREATE|os.O_RDWR, 0644)
@@ -323,7 +323,12 @@ func (m *Group) GenTopCar() error {
 			f: f,
 		}
 
-		for _, link := range nextLevelLinks {
+		prevLevelLinks := nextLevelLinks
+
+		// this actually works because nextLevelLinks grow slower than prevLevelLinks
+		nextLevelLinks = nextLevelLinks[:0]
+
+		for _, link := range prevLevelLinks {
 			links = append(links, link)
 
 			if len(links) == arity {
@@ -351,6 +356,18 @@ func (m *Group) GenTopCar() error {
 		if err := f.Close(); err != nil {
 			return xerrors.Errorf("close level %d: %w", level, err)
 		}
+
+		if len(prevLevelLinks) == 1 {
+			break
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(m.path, "vcar", "layers"), []byte(fmt.Sprintf("%d", level)), 0644); err != nil {
+		return xerrors.Errorf("write layers file: %w", err)
+	}
+
+	if err := m.advanceState(ctx, iface.GroupStateVRCARDone); err != nil {
+		return xerrors.Errorf("mark level index dropped: %w", err)
 	}
 
 	return nil

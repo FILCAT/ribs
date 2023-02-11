@@ -87,10 +87,11 @@ func (r *ribs) groupWorker(gate <-chan struct{}) {
 }
 
 func (r *ribs) workerExecTask(task task) {
+	r.lk.Lock()
+	defer r.lk.Unlock()
+
 	switch task.tt {
 	case taskTypeFinalize:
-		r.lk.Lock()
-		defer r.lk.Unlock()
 
 		g, ok := r.openGroups[task.group]
 		if !ok {
@@ -102,6 +103,18 @@ func (r *ribs) workerExecTask(task task) {
 		if err != nil {
 			log.Errorf("finalizing group: %s", err)
 		}
+		fallthrough
+	case taskTypeMakeVCAR:
+		g, ok := r.openGroups[task.group]
+		if !ok {
+			log.Errorw("group not open", "group", task.group, "task", task)
+			return
+		}
+
+		err := g.GenTopCar(context.TODO())
+		if err != nil {
+			log.Errorf("generating top car: %s", err)
+		}
 	}
 }
 
@@ -109,6 +122,7 @@ type taskType int
 
 const (
 	taskTypeFinalize taskType = iota
+	taskTypeMakeVCAR
 )
 
 type task struct {
