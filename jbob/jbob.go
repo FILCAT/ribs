@@ -55,6 +55,8 @@ type JBOB struct {
 //
 //	HeadSize bytes. Null-Padded to exactly HeadSize
 type Head struct {
+	// todo version
+
 	// something that's not zero
 	Valid bool
 
@@ -72,7 +74,7 @@ type logEntryType byte
 const (
 	entInvalid logEntryType = iota
 
-	// entBlock data is encoded as [data]
+	// entBlock data is encoded as \0[mhlen: u2][data][multihash]
 	entBlock
 )
 
@@ -292,7 +294,7 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 	}
 	offsets := make([]int64, len(b))
 
-	entHead := []byte{0, 0, 0, 0, byte(entBlock)}
+	entHead := []byte{0, 0, 0, 0, byte(entBlock), 0, 0, 0}
 
 	hasList, err := j.rIdx.Has(c)
 	if err != nil {
@@ -311,7 +313,8 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 		offsets[i] = j.dataLen
 		data := blk.RawData()
 
-		binary.LittleEndian.PutUint32(entHead, uint32(len(data)))
+		binary.LittleEndian.PutUint32(entHead, 1+2+uint32(len(data))+uint32(len(c[i])))
+		binary.LittleEndian.PutUint16(entHead[6:], uint16(len(c[i])))
 		if _, err := j.data.WriteAt(entHead, j.dataLen); err != nil {
 			return xerrors.Errorf("writing entry header: %w", err)
 		}
@@ -320,7 +323,12 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 			return xerrors.Errorf("writing entry header: %w", err)
 		}
 
-		j.dataLen += int64(len(data)) + int64(len(entHead))
+		// todo separate 'unhashed' block type for small blocks
+		if _, err := j.data.WriteAt(c[i], j.dataLen+int64(len(entHead))+int64(len(data))); err != nil {
+			return xerrors.Errorf("writing entry header: %w", err)
+		}
+
+		j.dataLen += int64(len(data)) + int64(len(entHead)) + int64(len(c[i]))
 	}
 
 	// log the write
@@ -379,7 +387,7 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		}
 
 		// todo: optimization: keep len in index
-		var entHead [5]byte
+		var entHead [8]byte
 		if _, err := j.data.ReadAt(entHead[:], locs[i]); err != nil {
 			return xerrors.Errorf("reading entry header: %w", err)
 		}
@@ -387,8 +395,9 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		if entType != byte(entBlock) {
 			return xerrors.Errorf("unexpected entry type %d, expected block (1)", entType)
 		}
+		mhLen := uint32(binary.LittleEndian.Uint16(entHead[6:]))
 
-		entLen := binary.LittleEndian.Uint32(entHead[:4])
+		entLen := binary.LittleEndian.Uint32(entHead[:4]) - 1 - 2 - mhLen
 		if entLen > uint32(len(entBuf)) {
 			// expand buffer to next power of two if needed
 			entBuf = make([]byte, 1<<bits.Len32(entLen))
@@ -401,6 +410,48 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		if err := cb(i, true, entBuf[:entLen]); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+var ErrNotReadOnly = errors.New("not yet read-only")
+
+func (j *JBOB) Iterate(cb func(c mh.Multihash, data []byte) error) error {
+	if j.wIdx != nil {
+		return ErrNotReadOnly
+	}
+
+	var entHeadBuf [8]byte
+	entBuf := make([]byte, 1<<20)
+
+	for at := int64(0); at < j.dataLen; {
+		if _, err := j.data.ReadAt(entHeadBuf[:], at); err != nil {
+			return xerrors.Errorf("reading entry header: %w", err)
+		}
+
+		entLen := binary.LittleEndian.Uint32(entHeadBuf[:4]) - 1 - 2
+		entType := entHeadBuf[4]
+		mhLen := uint32(binary.LittleEndian.Uint16(entHeadBuf[6:]))
+
+		if entType != byte(entBlock) {
+			return xerrors.Errorf("unexpected entry type %d, expected block (1)", entType)
+		}
+
+		if entLen > uint32(len(entBuf)) {
+			// expand buffer to next power of two if needed
+			entBuf = make([]byte, 1<<bits.Len32(entLen))
+		}
+
+		if _, err := j.data.ReadAt(entBuf[:entLen], at+int64(len(entHeadBuf))); err != nil {
+			return xerrors.Errorf("reading entry: %w", err)
+		}
+
+		if err := cb(entBuf[entLen-mhLen:entLen], entBuf[:entLen-mhLen]); err != nil {
+			return err
+		}
+
+		at += int64(len(entHeadBuf)) + int64(entLen)
 	}
 
 	return nil

@@ -77,4 +77,11 @@ func TestJbobBasic(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	// test interate
+	err = jb.Iterate(func(hs multihash.Multihash, b []byte) error {
+		require.Equal(t, b, []byte("hello world"))
+		require.Equal(t, h, hs)
+		return nil
+	})
 }
