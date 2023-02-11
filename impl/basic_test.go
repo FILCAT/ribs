@@ -113,5 +113,12 @@ func TestFullGroup(t *testing.T) {
 
 	workerGate <- struct{}{} // trigger a worker to allow processing close
 
+	/*f, err := os.OpenFile("/tmp/ri.car", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	require.NoError(t, err)
+	defer f.Close()
+
+	err = ri.(*ribs).openGroups[1].writeCar(f)
+	require.NoError(t, err)*/
+
 	require.NoError(t, ri.Close())
 }
