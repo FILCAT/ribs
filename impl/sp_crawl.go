@@ -63,6 +63,8 @@ func (r *ribs) spCrawler() {
 			panic(err)
 		}
 
+		// todo at finality
+
 		mktAct, err := gw.StateGetActor(ctx, market.Address, head.Key())
 		if err != nil {
 			panic(err)
@@ -90,6 +92,8 @@ func (r *ribs) spCrawler() {
 				return err
 			}
 			actors = append(actors, int64(i))
+
+			// todo fileter out accounts
 
 			n++
 			if n%10 == 0 {

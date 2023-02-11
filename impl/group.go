@@ -2,7 +2,11 @@ package impl
 
 import (
 	"context"
+	"fmt"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	cbor "github.com/ipfs/go-ipld-cbor"
+	carutil "github.com/ipld/go-car/util"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/jbob"
 	mh "github.com/multiformats/go-multihash"
@@ -236,6 +240,122 @@ func (m *Group) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (m *Group) GenTopCar() error {
+	m.jblk.RLock()
+	defer m.jblk.RLock()
+
+	if err := os.Mkdir(filepath.Join(m.path, "vcar"), 0755); err != nil {
+		return xerrors.Errorf("make vcar dir: %w", err)
+	}
+
+	if m.state != iface.GroupStateLevelIndexDropped {
+		return xerrors.Errorf("group not in state for generating top CAR: %d", m.state)
+	}
+
+	level := 1
+	const arity = 16 // 2048
+	var links []cid.Cid
+	var nextLevelLinks []cid.Cid
+
+	makeLinkBlock := func() (blocks.Block, error) {
+		nd, err := cbor.WrapObject(links, mh.SHA2_256, -1)
+		if err != nil {
+			return nil, xerrors.Errorf("wrap links: %w", err)
+		}
+
+		links = links[:0]
+
+		nextLevelLinks = append(nextLevelLinks, nd.Cid())
+
+		return nd, nil
+	}
+
+	fname := filepath.Join(m.path, "vcar", fmt.Sprintf("layer%d.cardata", level))
+	f, err := os.OpenFile(fname, os.O_CREATE|os.O_RDWR, 0644)
+	outCdata := &cardata{
+		f: f,
+	}
+
+	err = m.jb.Iterate(func(c mh.Multihash, data []byte) error {
+		link := mhToRawCid(c)
+		links = append(links, link)
+
+		if len(links) == arity {
+			bk, err := makeLinkBlock()
+			if err != nil {
+				return xerrors.Errorf("make link block: %w", err)
+			}
+
+			if err := outCdata.writeBlock(bk.Cid(), bk.RawData()); err != nil {
+				return xerrors.Errorf("writing link block: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("iterate jbob: %w", err)
+	}
+
+	if len(links) > 0 {
+		bk, err := makeLinkBlock()
+		if err != nil {
+			return xerrors.Errorf("make link block: %w", err)
+		}
+
+		if err := outCdata.writeBlock(bk.Cid(), bk.RawData()); err != nil {
+			return xerrors.Errorf("writing link block: %w", err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		return xerrors.Errorf("close level 1: %w", err)
+	}
+
+	for len(nextLevelLinks) > 0 {
+		level++
+		fname := filepath.Join(m.path, "vcar", fmt.Sprintf("layer%d.cardata", level))
+		f, err := os.OpenFile(fname, os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return xerrors.Errorf("open cardata file: %w", err)
+		}
+
+		outCdata = &cardata{
+			f: f,
+		}
+
+		for _, link := range nextLevelLinks {
+			links = append(links, link)
+
+			if len(links) == arity {
+				bk, err := makeLinkBlock()
+				if err != nil {
+					return xerrors.Errorf("make link block: %w", err)
+				}
+
+				if err := outCdata.writeBlock(bk.Cid(), bk.RawData()); err != nil {
+					return xerrors.Errorf("writing link block: %w", err)
+				}
+			}
+		}
+
+		if len(links) > 0 {
+			bk, err := makeLinkBlock()
+			if err != nil {
+				return xerrors.Errorf("make link block: %w", err)
+			}
+
+			if err := outCdata.writeBlock(bk.Cid(), bk.RawData()); err != nil {
+				return xerrors.Errorf("writing link block: %w", err)
+			}
+		}
+		if err := f.Close(); err != nil {
+			return xerrors.Errorf("close level %d: %w", level, err)
+		}
+	}
+
+	return nil
+}
+
 func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	m.dblk.Lock()
 	defer m.dblk.Unlock()
@@ -254,6 +374,18 @@ func (m *Group) Close() error {
 func (m *Group) Sync(ctx context.Context) error {
 	//TODO implement me
 	panic("implement me")
+}
+
+type cardata struct {
+	f *os.File
+}
+
+func (c *cardata) writeBlock(ci cid.Cid, data []byte) error {
+	return carutil.LdWrite(c.f, ci.Bytes(), data)
+}
+
+func mhToRawCid(mh mh.Multihash) cid.Cid {
+	return cid.NewCidV1(cid.Raw, mh)
 }
 
 var _ iface.Group = &Group{}
