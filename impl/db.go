@@ -42,6 +42,29 @@ create index if not exists groups_id_index
 create index if not exists groups_g_state_index
     on groups (g_state);
 
+/* SP tracker */
+create table if not exists providers (
+    id integer not null constraint providers_pk primary key,
+    
+    ping_ok integer not null,
+    
+    boost_deals integer not null,
+    booster_http integer not null,
+    booster_bitswap integer not null,
+    
+    indexed_success integer not null,
+    indexed_fail integer not null,
+    
+    deal_attempts integer not null,
+    deal_success integer not null,
+    deal_fail integer not null,
+    
+    retrprobe_success integer not null,
+    retrprobe_fail integer not null,
+    retrprobe_blocks integer not null,
+    retrprobe_bytes integer not null
+);
+
 /* top level index */
 
 create table if not exists top_index

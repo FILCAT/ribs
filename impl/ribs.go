@@ -57,8 +57,11 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		tasks: make(chan task, 16),
 
-		close:  make(chan struct{}),
-		closed: make(chan struct{}),
+		workerClose:  make(chan struct{}),
+		workerClosed: make(chan struct{}),
+
+		spCrawlClose:  make(chan struct{}),
+		spCrawlClosed: make(chan struct{}),
 	}
 
 	// todo resume tasks
@@ -74,8 +77,8 @@ func (r *ribs) groupWorker(gate <-chan struct{}) {
 		select {
 		case task := <-r.tasks:
 			r.workerExecTask(task)
-		case <-r.close:
-			close(r.closed)
+		case <-r.workerClose:
+			close(r.workerClosed)
 			return
 		}
 	}
@@ -120,8 +123,11 @@ type ribs struct {
 
 	lk sync.Mutex
 
-	close  chan struct{}
-	closed chan struct{}
+	workerClose  chan struct{}
+	workerClosed chan struct{}
+
+	spCrawlClose  chan struct{}
+	spCrawlClosed chan struct{}
 
 	tasks chan task
 
@@ -130,8 +136,10 @@ type ribs struct {
 }
 
 func (r *ribs) Close() error {
-	close(r.close)
-	<-r.closed
+	close(r.workerClose)
+	close(r.spCrawlClose)
+	<-r.workerClosed
+	<-r.spCrawlClosed
 
 	// todo close all open groups
 

@@ -46,6 +46,9 @@
         let loopId = 0;
         const nonWritableRefreshEvery = 15;
 
+        let totalBlocks = 0;
+        let totalBytes = 0;
+
         async function refresh() {
             loopId++;
 
@@ -129,9 +132,18 @@
 
                     groupsDiv.insertBefore(groupElem, groupsDiv.firstChild);
 
+                    totalBlocks += meta.Blocks;
+                    totalBytes += meta.Bytes;
+
                     groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupBarSizeElem, groupBarBlocksElem, meta}
                 }
 
+                totalBlocks -= groupElems[group].meta.Blocks;
+                totalBytes -= groupElems[group].meta.Bytes;
+                totalBlocks += meta.Blocks;
+                totalBytes += meta.Bytes;
+
+                groupElems[group].meta = meta;
                 groupElems[group].groupStatusElem.innerText = states[meta.State];
                 groupElems[group].groupRowSizeElem.innerText = `${formatBytesBinary(meta.Bytes)} / ${formatBytesBinary(meta.MaxBytes)} (${formatPercent(meta.Bytes / meta.MaxBytes)})`;
                 groupElems[group].groupRowBlocksElem.innerText = `${formatNum(meta.Blocks)} / ${formatNum(meta.MaxBlocks)} (${formatPercent(meta.Blocks / meta.MaxBlocks)}) blocks`;
@@ -139,7 +151,10 @@
                 groupElems[group].groupBarBlocksElem.style.width = `${formatPercent(meta.Blocks / meta.MaxBlocks)}`;
             }
 
-            refresh();
+            document.getElementById("total-bytes").innerText = formatBytesBinary(totalBytes);
+            document.getElementById("total-blocks").innerText = formatNum(totalBlocks) + " blocks";
+
+            setTimeout(refresh, 100);
         };
 
         refresh();
@@ -211,7 +226,19 @@
     </style>
 </head>
 <body>
-<h1>Groups</h1>
+<h2>SP Tracker</h2>
+<div>State: <b>Updating market SP set</b></div>
+<div>At: <b>0</b>; Know <b>0</b></div>
+<hr>
+<h2>Groups</h2>
+<div class="group">
+    <div class="group-left">
+        <div class="group-head">
+            <div class="group-name">TOTAL</div>
+        </div><div class="group-row" id="total-bytes">0</div>
+        <div class="group-row" id="total-blocks"></div>
+    </div>
+</div>
 <div class="groups">
 </div>
 </body>
