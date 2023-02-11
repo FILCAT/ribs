@@ -93,7 +93,6 @@
 
                     let groupStatusElem = document.createElement('div');
                     groupStatusElem.classList.add('group-status');
-                    groupStatusElem.innerText = states[meta.State];
 
                     let groupRowSizeElem = document.createElement('div');
                     groupRowSizeElem.classList.add('group-row');
@@ -127,11 +126,13 @@
                     groupElem.appendChild(groupLeftElem);
 
                     groupElem.appendChild(groupRightElem);
-                    groupsDiv.appendChild(groupElem);
 
-                    groupElems[group] = {groupElem, groupRowSizeElem, groupRowBlocksElem, groupBarSizeElem, groupBarBlocksElem, meta}
+                    groupsDiv.insertBefore(groupElem, groupsDiv.firstChild);
+
+                    groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupBarSizeElem, groupBarBlocksElem, meta}
                 }
 
+                groupElems[group].groupStatusElem.innerText = states[meta.State];
                 groupElems[group].groupRowSizeElem.innerText = `${formatBytesBinary(meta.Bytes)} / ${formatBytesBinary(meta.MaxBytes)} (${formatPercent(meta.Bytes / meta.MaxBytes)})`;
                 groupElems[group].groupRowBlocksElem.innerText = `${formatNum(meta.Blocks)} / ${formatNum(meta.MaxBlocks)} (${formatPercent(meta.Blocks / meta.MaxBlocks)}) blocks`;
                 groupElems[group].groupBarSizeElem.style.width = `${formatPercent(meta.Bytes / meta.MaxBytes)}`;
@@ -212,30 +213,6 @@
 <body>
 <h1>Groups</h1>
 <div class="groups">
-
-    <div class="group">
-        <div class="group-left">
-            <div class="group-head">
-                <div class="group-name">
-                    Group 12
-                </div>
-                <div class="group-status">
-                    WRITABLE
-                </div>
-            </div>
-            <div class="group-row">
-                10.2GiB / 30 GiB (34.2%)
-            </div>
-            <div class="group-row">
-                123k / 20M (0.6%) blocks
-            </div>
-        </div>
-        <div class="group-right">
-            <div class="group-bar group-bar-size" style="width: 34%">.</div>
-            <div class="group-bar group-bar-blocks" style="width: 0.6%">.</div>
-        </div>
-    </div>
-
 </div>
 </body>
 </html>

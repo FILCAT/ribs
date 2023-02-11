@@ -41,7 +41,7 @@ func (ri *RIBSWeb) ApiGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sort.Slice(gs, func(i, j int) bool {
-		return gs[i] < gs[j]
+		return gs[i] > gs[j]
 	})
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")

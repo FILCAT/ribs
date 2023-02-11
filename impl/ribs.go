@@ -254,7 +254,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(r.db, r.index, selectedGroup, bytes, blocks, r.root, state, false)
+			g, err := OpenGroup(r.db, r.index, selectedGroup, blocks, bytes, r.root, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -324,7 +324,7 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 		return xerrors.Errorf("group %d not found", group)
 	}
 
-	g, err := OpenGroup(r.db, r.index, group, bytes, blocks, r.root, state, false)
+	g, err := OpenGroup(r.db, r.index, group, blocks, bytes, r.root, state, false)
 	if err != nil {
 		return xerrors.Errorf("opening group: %w", err)
 	}
