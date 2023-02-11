@@ -37,6 +37,7 @@ type state struct {
 	Groups []ribs.GroupKey
 
 	CrawlState string
+	Providers  []ribs.ProviderMeta
 }
 
 func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +59,7 @@ func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(&state{
 		Groups:     gs,
 		CrawlState: ri.ribs.Diagnostics().CrawlState(),
+		Providers:  ri.ribs.Diagnostics().ReachableProviders(),
 	}); err != nil {
 		http.Error(w, err.Error(), 500)
 		return

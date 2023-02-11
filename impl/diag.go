@@ -25,3 +25,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 func (r *ribs) CrawlState() string {
 	return *r.crawlState.Load()
 }
+
+func (r *ribs) ReachableProviders() []iface.ProviderMeta {
+	return r.db.ReachableProviders()
+}

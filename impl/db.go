@@ -108,6 +108,34 @@ func openRibsDB(root string) (*ribsDB, error) {
 	}, nil
 }
 
+func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
+	res, err := r.db.Query("select id, ping_ok, boost_deals, booster_http, booster_bitswap, indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail, retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes from providers where in_market = 1 and ping_ok = 1 order by (booster_bitswap+booster_http) asc , boost_deals asc , id desc")
+	if err != nil {
+		return nil
+	}
+
+	var out []iface.ProviderMeta
+
+	for res.Next() {
+		var pm iface.ProviderMeta
+		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap, &pm.IndexedSuccess, &pm.IndexedFail, &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail, &pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes)
+		if err != nil {
+			return nil
+		}
+
+		out = append(out, pm)
+	}
+
+	if err := res.Err(); err != nil {
+		return nil
+	}
+	if err := res.Close(); err != nil {
+		return nil
+	}
+
+	return out
+}
+
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
 	res, err := r.db.Query("select id, blocks, bytes, g_state from groups where g_state = 0")
 	if err != nil {

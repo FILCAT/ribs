@@ -42,6 +42,7 @@
         }
 
         let groupElems = {};
+        let providerElems = {};
 
         let loopId = 0;
         const nonWritableRefreshEvery = 15;
@@ -158,6 +159,31 @@
             document.getElementById("total-bytes").innerText = formatBytesBinary(totalBytes);
             document.getElementById("total-blocks").innerText = formatNum(totalBlocks) + " blocks";
 
+            for (let i = state.Providers.length - 1; i >= 0; i--) {
+                let provider = state.Providers[i];
+
+                if(providerElems[provider.ID] === undefined) {
+                    let providerElem = document.createElement('tr');
+                    providerElem.classList.add('provider');
+
+                    let providerAddrElem = document.createElement('td');
+                    providerAddrElem.classList.add('provider-addr');
+                    providerAddrElem.innerText = "f0" + provider.ID;
+
+                    let providerStatusElem = document.createElement('td');
+                    providerStatusElem.classList.add('provider-status');
+
+                    providerElem.appendChild(providerAddrElem);
+                    providerElem.appendChild(providerStatusElem);
+
+                    document.querySelector('.providers').appendChild(providerElem);
+
+                    providerElems[provider.ID] = {providerElem, providerStatusElem}
+                }
+
+                providerElems[provider.ID].providerStatusElem.innerText = `${provider.PingOk ? 'online' : 'offline'} ${provider.BoostDeals ? 'boost ' : ''}${provider.BoosterHttp ? 'http ' : ''}${provider.BoosterBitswap ? 'bitswap ' : ''}`;
+            }
+
             // todo this is flimsy
             setTimeout(refresh, 100);
         };
@@ -176,7 +202,6 @@
         }
 
         .groups {
-            height: 100%;
             width: 100%;
         }
 
@@ -243,7 +268,9 @@
         <div class="group-row" id="total-blocks"></div>
     </div>
 </div>
-<div class="groups">
-</div>
+<div class="groups"></div>
+<table class="providers">
+    <td>Address</td><td>Features</td>
+</table>
 </body>
 </html>

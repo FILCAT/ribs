@@ -117,4 +117,26 @@ type Diag interface {
 	GroupMeta(gk GroupKey) (GroupMeta, error)
 
 	CrawlState() string
+	ReachableProviders() []ProviderMeta
+}
+
+type ProviderMeta struct {
+	ID     int64
+	PingOk bool
+
+	BoostDeals     bool
+	BoosterHttp    bool
+	BoosterBitswap bool
+
+	IndexedSuccess int64
+	IndexedFail    int64
+
+	DealAttempts int64
+	DealSuccess  int64
+	DealFail     int64
+
+	RetrProbeSuccess int64
+	RetrProbeFail    int64
+	RetrProbeBlocks  int64
+	RetrProbeBytes   int64
 }
