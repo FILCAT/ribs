@@ -33,7 +33,11 @@ create table if not exists groups
     g_state     integer not null,
     
     /* jbob */
-    jb_recorded_head integer not null
+    jb_recorded_head integer not null,
+    
+    /* vrcar */
+    piece_size integer,
+    commp blob
 );
 
 create index if not exists groups_id_index
@@ -114,7 +118,7 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 		return nil
 	}
 
-	var out []iface.ProviderMeta
+	out := make([]iface.ProviderMeta, 0)
 
 	for res.Next() {
 		var pm iface.ProviderMeta
@@ -219,6 +223,15 @@ func (r *ribsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state ifa
 	_, err := r.db.ExecContext(ctx, `update groups set g_state = ? where id = ?;`, state, id)
 	if err != nil {
 		return xerrors.Errorf("update group state: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64) error {
+	_, err := r.db.ExecContext(ctx, `update groups set commp = ?, piece_size = ?, g_state = ? where id = ?;`, commp[:], paddedPieceSize, state, id)
+	if err != nil {
+		return xerrors.Errorf("update group commp: %w", err)
 	}
 
 	return nil

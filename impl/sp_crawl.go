@@ -161,7 +161,7 @@ func (r *ribs) spCrawler() {
 					defer stlk.Unlock()
 
 					if err != nil {
-						log.Errorw("error querying provider", "actor", actor, "err", err)
+						log.Debugw("error querying provider", "actor", actor, "err", err)
 					}
 
 					if err := r.db.UpdateProviderProtocols(actor, res); err != nil {

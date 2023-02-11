@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -379,6 +380,33 @@ func (m *Group) GenTopCar(ctx context.Context) error {
 	return nil
 }
 
+func (m *Group) GenCommP() error {
+	if m.state != iface.GroupStateVRCARDone {
+		return xerrors.Errorf("group not in state for generating top CAR: %d", m.state)
+	}
+
+	cc := new(commp.Calc)
+
+	err := m.writeCar(cc)
+	if err != nil {
+		return xerrors.Errorf("write car: %w", err)
+	}
+
+	commP, pps, err := cc.Digest()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("commP", commP)
+	fmt.Println("pps", pps)
+
+	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, commP, int64(pps)); err != nil {
+		return xerrors.Errorf("set commP: %w", err)
+	}
+
+	return nil
+}
+
 func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	m.dblk.Lock()
 	defer m.dblk.Unlock()
@@ -387,6 +415,16 @@ func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 
 	// todo enter failed state on error
 	return m.db.SetGroupState(ctx, m.id, st)
+}
+
+func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []byte, paddedPieceSize int64) error {
+	m.dblk.Lock()
+	defer m.dblk.Unlock()
+
+	m.state = state
+
+	// todo enter failed state on error
+	return m.db.SetCommP(ctx, m.id, state, commp, paddedPieceSize)
 }
 
 func (m *Group) Close() error {

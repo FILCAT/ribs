@@ -115,6 +115,18 @@ func (r *ribs) workerExecTask(task task) {
 		if err != nil {
 			log.Errorf("generating top car: %s", err)
 		}
+		fallthrough
+	case taskTypeGenCommP:
+		g, ok := r.openGroups[task.group]
+		if !ok {
+			log.Errorw("group not open", "group", task.group, "task", task)
+			return
+		}
+
+		err := g.GenCommP()
+		if err != nil {
+			log.Errorf("generating commP: %s", err)
+		}
 	}
 }
 
@@ -123,6 +135,7 @@ type taskType int
 const (
 	taskTypeFinalize taskType = iota
 	taskTypeMakeVCAR
+	taskTypeGenCommP
 )
 
 type task struct {
