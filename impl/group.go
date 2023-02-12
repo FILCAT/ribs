@@ -446,9 +446,9 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return xerrors.Errorf("get deal params: %w", err)
 	}
 
-	transferParams := &types2.HttpRequest{URL: "libp2p://" + "/p2p/" + h.ID().String()} // todo get from autonat / config
+	transferParams := &types2.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
 	transferParams.Headers = map[string]string{
-		"Authentication": string(reqToken),
+		"Authorization": string(reqToken),
 	}
 
 	paramsBytes, err := json.Marshal(transferParams)

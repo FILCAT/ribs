@@ -74,12 +74,14 @@ func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout tim
 
 func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	if req.Header.Get("Authorization") == "" {
+		log.Errorw("car request auth: no auth header", "url", req.URL)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	reqToken, err := r.verify(req.Context(), req.Header.Get("Authorization"))
 	if err != nil {
+		log.Errorw("car request auth: failed to verify token", "error", err, "url", req.URL)
 		http.Error(w, xerrors.Errorf("car request auth: %w", err).Error(), http.StatusUnauthorized)
 		return
 	}

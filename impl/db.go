@@ -130,7 +130,7 @@ create table if not exists providers (
 
 create view if not exists good_providers_view as 
 	select id, ping_ok, boost_deals, booster_http, booster_bitswap,
-       indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail,
+       indexed_success, indexed_fail,
        retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
        ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
     from providers where in_market = 1 and ping_ok = 1 and ask_ok = 1 and ask_verif_price <= %f and ask_price <= %f and ask_min_piece_size <= %d and ask_max_piece_size >= %d
@@ -186,7 +186,7 @@ func openRibsDB(root string) (*ribsDB, error) {
 
 func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
-       indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail,
+       indexed_success, indexed_fail,
        retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
        ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
     from good_providers_view`)
@@ -201,7 +201,7 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	for res.Next() {
 		var pm iface.ProviderMeta
 		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap,
-			&pm.IndexedSuccess, &pm.IndexedFail, &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
+			&pm.IndexedSuccess, &pm.IndexedFail, // &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
 			&pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes,
 			&pm.AskPrice, &pm.AskVerifiedPrice, &pm.AskMinPieceSize, &pm.AskMaxPieceSize)
 		if err != nil {
