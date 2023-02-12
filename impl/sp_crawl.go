@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/filecoin-project/boost/retrievalmarket/lp2pimpl"
 	"github.com/filecoin-project/go-address"
+	cborutil "github.com/filecoin-project/go-cbor-util"
+	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
@@ -15,12 +17,15 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/libp2p/go-libp2p"
+	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+const AskProtocolID = "/fil/storage/ask/1.1.0"
 
 var (
 	crawlInit           = "init"
@@ -210,6 +215,26 @@ func (r *ribs) spCrawler() {
 					}
 				}
 
+				s, err := pingP2P.NewStream(ctx, pi.ID, AskProtocolID)
+				if err != nil {
+					return
+				}
+				defer s.Close()
+
+				var resp network.AskResponse
+
+				askRequest := network.AskRequest{
+					Miner: maddr,
+				}
+
+				if err := doRpc(ctx, s, &askRequest, &resp); err != nil {
+					return
+				}
+
+				if err := r.db.UpdateProviderStorageAsk(actor, resp.Ask.Ask); err != nil {
+					log.Errorw("error updating provider ask", "actor", actor, "err", err)
+				}
+
 			}(actor)
 		}
 
@@ -256,4 +281,27 @@ func GetAddrInfo(ctx context.Context, api api.Gateway, maddr address.Address) (*
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}, nil
+}
+func doRpc(ctx context.Context, s inet.Stream, req interface{}, resp interface{}) error {
+	errc := make(chan error)
+	go func() {
+		if err := cborutil.WriteCborRPC(s, req); err != nil {
+			errc <- fmt.Errorf("failed to send request: %w", err)
+			return
+		}
+
+		if err := cborutil.ReadCborRPC(s, resp); err != nil {
+			errc <- fmt.Errorf("failed to read response: %w", err)
+			return
+		}
+
+		errc <- nil
+	}()
+
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

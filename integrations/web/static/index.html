@@ -41,6 +41,23 @@
             return (num * 100).toFixed(1) + '%';
         }
 
+        function formatFil(n) {
+            if (n === 0) {
+                return '0';
+            }
+
+            const units = ['aFIL', 'fFIL', 'pFIL', 'nFIL', 'uFIL', 'mFIL', 'FIL'];
+            let l = 0;
+            while (l+1 < units.length && n >= 1000 && ++l) {
+                n = n / 1000;
+            }
+
+            return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
+        }
+
+        const avgMonthDays = 30.436875; //
+        const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;
+
         let groupElems = {};
         let providerElems = {};
 
@@ -170,18 +187,29 @@
                     providerAddrElem.classList.add('provider-addr');
                     providerAddrElem.innerText = "f0" + provider.ID;
 
-                    let providerStatusElem = document.createElement('td');
-                    providerStatusElem.classList.add('provider-status');
+                    let providerPieceSizesElem = document.createElement('td');
+                    providerPieceSizesElem.classList.add('provider-piece-sizes');
+
+                    let providerPriceElem = document.createElement('td');
+                    providerPriceElem.classList.add('provider-price');
+
+                    let providerFeaturesElem = document.createElement('td');
+                    providerFeaturesElem.classList.add('provider-features');
 
                     providerElem.appendChild(providerAddrElem);
-                    providerElem.appendChild(providerStatusElem);
+                    providerElem.appendChild(providerPieceSizesElem);
+                    providerElem.appendChild(providerPriceElem);
+                    providerElem.appendChild(providerFeaturesElem);
 
                     document.querySelector('.providers').appendChild(providerElem);
 
-                    providerElems[provider.ID] = {providerElem, providerStatusElem}
+                    providerElems[provider.ID] = {providerElem, providerPieceSizesElem, providerPriceElem, providerFeaturesElem}
                 }
 
-                providerElems[provider.ID].providerStatusElem.innerText = `${provider.PingOk ? 'online' : 'offline'} ${provider.BoostDeals ? 'boost ' : ''}${provider.BoosterHttp ? 'http ' : ''}${provider.BoosterBitswap ? 'bitswap ' : ''}`;
+                providerElems[provider.ID].providerPieceSizesElem.innerText = `${formatBytesBinary(provider.AskMinPieceSize)} to ${formatBytesBinary(provider.AskMaxPieceSize)}`;
+                providerElems[provider.ID].providerPriceElem.innerText = `${formatFil(provider.AskPrice*epochToMonth)} (${formatFil(provider.AskVerifiedPrice*epochToMonth)})`;
+
+                providerElems[provider.ID].providerFeaturesElem.innerText = `${provider.PingOk ? 'online' : 'offline'} ${provider.BoostDeals ? 'boost ' : ''}${provider.BoosterHttp ? 'http ' : ''}${provider.BoosterBitswap ? 'bitswap ' : ''}`;
             }
 
             // todo this is flimsy
@@ -270,7 +298,7 @@
 </div>
 <div class="groups"></div>
 <table class="providers">
-    <td>Address</td><td>Features</td>
+    <td>Address</td><td>Piece Sizes</td><td><abbr title="FIL/GiB/mo">Price (Fil+)</abbr></td><td>Features</td>
 </table>
 </body>
 </html>

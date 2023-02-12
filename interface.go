@@ -139,4 +139,11 @@ type ProviderMeta struct {
 	RetrProbeFail    int64
 	RetrProbeBlocks  int64
 	RetrProbeBytes   int64
+
+	// price in fil/gib/epoch
+	AskPrice         float64
+	AskVerifiedPrice float64
+
+	AskMinPieceSize float64
+	AskMaxPieceSize float64
 }

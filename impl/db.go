@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"database/sql"
+	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
@@ -68,7 +69,13 @@ create table if not exists providers (
     retrprobe_success integer not null default 0,
     retrprobe_fail integer not null default 0,
     retrprobe_blocks integer not null default 0,
-    retrprobe_bytes integer not null default 0
+    retrprobe_bytes integer not null default 0,
+    
+    ask_ok integer not null default 0,
+    ask_price integer not null default 0,
+    ask_verif_price integer not null default 0,
+    ask_min_piece_size integer not null default 0,
+    ask_max_piece_size integer not null default 0
 );
 
 /* top level index */
@@ -113,8 +120,13 @@ func openRibsDB(root string) (*ribsDB, error) {
 }
 
 func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
-	res, err := r.db.Query("select id, ping_ok, boost_deals, booster_http, booster_bitswap, indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail, retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes from providers where in_market = 1 and ping_ok = 1 order by (booster_bitswap+booster_http) asc , boost_deals asc , id desc")
+	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
+       indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail,
+       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
+       ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
+    from providers where in_market = 1 and ping_ok = 1 and ask_ok = 1 order by (booster_bitswap+booster_http) asc, boost_deals asc, id desc`)
 	if err != nil {
+		log.Errorw("querying providers", "error", err)
 		return nil
 	}
 
@@ -122,8 +134,12 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 
 	for res.Next() {
 		var pm iface.ProviderMeta
-		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap, &pm.IndexedSuccess, &pm.IndexedFail, &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail, &pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes)
+		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap,
+			&pm.IndexedSuccess, &pm.IndexedFail, &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
+			&pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes,
+			&pm.AskPrice, &pm.AskVerifiedPrice, &pm.AskMinPieceSize, &pm.AskMaxPieceSize)
 		if err != nil {
+			log.Errorw("scanning provider", "error", err)
 			return nil
 		}
 
@@ -131,13 +147,124 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	}
 
 	if err := res.Err(); err != nil {
+		log.Errorw("scanning providers", "error", err)
 		return nil
 	}
 	if err := res.Close(); err != nil {
+		log.Errorw("closing providers", "error", err)
 		return nil
 	}
 
 	return out
+}
+
+func (r *ribsDB) SelectDealProviders() ([]int64, error) {
+	// only reachable, with boost_deals
+	// 6 at random
+	// 2 of them with booster_http
+	// 2 of them with booster_bitswap
+
+	var withHttp []int64
+	var withBitswap []int64
+	var random []int64
+
+	res, err := r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 order by random() limit 6")
+	if err != nil {
+		return nil, xerrors.Errorf("finding providers: %w", err)
+	}
+
+	for res.Next() {
+		var id int64
+		err := res.Scan(&id)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning provider: %w", err)
+		}
+
+		random = append(random, id)
+	}
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating providers: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing providers: %w", err)
+	}
+
+	res, err = r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 and booster_http = 1 order by random() limit 2")
+	if err != nil {
+		return nil, xerrors.Errorf("finding providers: %w", err)
+	}
+
+	for res.Next() {
+		var id int64
+		err := res.Scan(&id)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning provider: %w", err)
+		}
+
+		withHttp = append(withHttp, id)
+	}
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating providers: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing providers: %w", err)
+	}
+
+	res, err = r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 and booster_bitswap = 1 order by random() limit 2")
+	if err != nil {
+		return nil, xerrors.Errorf("finding providers: %w", err)
+	}
+
+	for res.Next() {
+		var id int64
+		err := res.Scan(&id)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning provider: %w", err)
+		}
+
+		withBitswap = append(withBitswap, id)
+	}
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating providers: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing providers: %w", err)
+	}
+
+	// now, we have 6 random providers, 2 with http, 2 with bitswap
+	// dedupe, get up to 6, prefer http, prefer bitswap
+
+	have := make(map[int64]struct{})
+
+	for _, id := range withHttp {
+		have[id] = struct{}{}
+	}
+
+	for _, id := range withBitswap {
+		have[id] = struct{}{}
+	}
+
+	for _, id := range random {
+		if len(have) >= 6 {
+			break
+		}
+
+		have[id] = struct{}{}
+	}
+
+	out := make([]int64, 0, len(have))
+
+	for id := range have {
+		out = append(out, id)
+	}
+
+	return out, nil
 }
 
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
@@ -363,6 +490,17 @@ func (r *ribsDB) UpdateProviderProtocols(provider int64, pres providerResult) er
 	_, err := r.db.Exec(`
 	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ? where id = ?;
 	`, pres.PingOk, pres.BoostDeals, pres.BoosterHttp, pres.BoosterBitswap, provider)
+	if err != nil {
+		return xerrors.Errorf("update provider: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.StorageAsk) error {
+	_, err := r.db.Exec(`
+	update providers set ask_price = ?, ask_verif_price = ?, ask_min_piece_size = ?, ask_max_piece_size = ?, ask_ok = 1 where id = ?;
+	`, ask.Price.String(), ask.VerifiedPrice.String(), ask.MinPieceSize, ask.MaxPieceSize, provider)
 	if err != nil {
 		return xerrors.Errorf("update provider: %w", err)
 	}
