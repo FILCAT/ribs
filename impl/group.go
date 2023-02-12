@@ -150,11 +150,6 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 		return 0, xerrors.Errorf("committing jbob: %w", err)
 	}
 
-	m.inflightBlocks -= int64(writeBlocks)
-	m.inflightSize -= writeSize
-	m.committedBlocks += int64(writeBlocks)
-	m.committedSize += writeSize
-
 	// 3. write top-level index (before we update group head so replay is possible)
 	err = m.index.AddGroup(ctx, c[:writeBlocks], m.id)
 	if err != nil {
@@ -173,6 +168,8 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	}
 
 	// 4. update head
+	m.inflightBlocks -= int64(writeBlocks)
+	m.inflightSize -= writeSize
 	m.committedBlocks += int64(writeBlocks)
 	m.committedSize += writeSize
 
