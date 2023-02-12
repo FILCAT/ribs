@@ -384,7 +384,7 @@ func (m *Group) GenCommP() error {
 
 	cc := new(commp.Calc)
 
-	err := m.writeCar(cc)
+	carSize, root, err := m.writeCar(cc)
 	if err != nil {
 		return xerrors.Errorf("write car: %w", err)
 	}
@@ -397,7 +397,7 @@ func (m *Group) GenCommP() error {
 	fmt.Println("commP", commP)
 	fmt.Println("pps", pps)
 
-	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, commP, int64(pps)); err != nil {
+	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, commP, int64(pps), root, carSize); err != nil {
 		return xerrors.Errorf("set commP: %w", err)
 	}
 
@@ -414,14 +414,14 @@ func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	return m.db.SetGroupState(ctx, m.id, st)
 }
 
-func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []byte, paddedPieceSize int64) error {
+func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []byte, paddedPieceSize int64, root cid.Cid, carSize int64) error {
 	m.dblk.Lock()
 	defer m.dblk.Unlock()
 
 	m.state = state
 
 	// todo enter failed state on error
-	return m.db.SetCommP(ctx, m.id, state, commp, paddedPieceSize)
+	return m.db.SetCommP(ctx, m.id, state, commp, paddedPieceSize, root, carSize)
 }
 
 func (m *Group) Close() error {
@@ -434,27 +434,39 @@ func (m *Group) Sync(ctx context.Context) error {
 	panic("implement me")
 }
 
-func (m *Group) writeCar(w io.Writer) error {
+type sizerWriter struct {
+	w io.Writer
+	s int64
+}
+
+func (s *sizerWriter) Write(p []byte) (int, error) {
+	w, err := s.w.Write(p)
+	s.s += int64(w)
+	return w, err
+}
+
+// returns car size and root cid
+func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
 	// read layers file
 	ls, err := os.ReadFile(filepath.Join(m.path, "vcar", "layers"))
 	if err != nil {
-		return xerrors.Errorf("read layers file: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("read layers file: %w", err)
 	}
 
 	layerCount, err := strconv.Atoi(string(ls))
 	if err != nil {
-		return xerrors.Errorf("parse layers file: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("parse layers file: %w", err)
 	}
 
 	// read arity file
 	as, err := os.ReadFile(filepath.Join(m.path, "vcar", "arity"))
 	if err != nil {
-		return xerrors.Errorf("read arity file: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("read arity file: %w", err)
 	}
 
 	arity, err := strconv.Atoi(string(as))
 	if err != nil {
-		return xerrors.Errorf("parse arity file: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("parse arity file: %w", err)
 	}
 
 	var layers []*cardata
@@ -463,7 +475,7 @@ func (m *Group) writeCar(w io.Writer) error {
 		fname := filepath.Join(m.path, "vcar", fmt.Sprintf("layer%d.cardata", i))
 		f, err := os.OpenFile(fname, os.O_RDONLY, 0644)
 		if err != nil {
-			return xerrors.Errorf("open cardata file: %w", err)
+			return 0, cid.Undef, xerrors.Errorf("open cardata file: %w", err)
 		}
 
 		layers = append(layers, &cardata{
@@ -483,18 +495,21 @@ func (m *Group) writeCar(w io.Writer) error {
 	// read root block, which is the only block in the last layer
 	rcid, _, err := carutil.ReadNode(layers[len(layers)-1].br)
 	if err != nil {
-		return xerrors.Errorf("reading root block: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("reading root block: %w", err)
 	}
+
+	sw := &sizerWriter{w: w}
+	w = sw
 
 	if err := car.WriteHeader(&car.CarHeader{
 		Roots:   []cid.Cid{rcid},
 		Version: 1,
 	}, w); err != nil {
-		return xerrors.Errorf("write car header: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("write car header: %w", err)
 	}
 	_, err = layers[len(layers)-1].f.Seek(0, io.SeekStart)
 	if err != nil {
-		return xerrors.Errorf("seeking to start of last layer: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("seeking to start of last layer: %w", err)
 	}
 	layers[len(layers)-1].br.Reset(layers[len(layers)-1].f)
 
@@ -537,10 +552,10 @@ func (m *Group) writeCar(w io.Writer) error {
 		return nil
 	})
 	if err != nil {
-		return xerrors.Errorf("iterate jbob: %w", err)
+		return 0, cid.Undef, xerrors.Errorf("iterate jbob: %w", err)
 	}
 
-	return nil
+	return sw.s, rcid, nil
 }
 
 type cardata struct {

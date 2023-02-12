@@ -85,7 +85,8 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	err = r.withReadableGroup(reqToken.Group, func(group *Group) error {
-		return group.writeCar(w)
+		_, _, err := group.writeCar(w)
+		return err
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

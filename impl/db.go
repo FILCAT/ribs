@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
@@ -63,7 +64,9 @@ create table if not exists groups
     
     /* vrcar */
     piece_size integer,
-    commp blob
+    commp blob,
+    car_size integer,
+    root blob
 );
 
 create index if not exists groups_id_index
@@ -71,6 +74,30 @@ create index if not exists groups_id_index
 
 create index if not exists groups_g_state_index
     on groups (g_state);
+
+/* deals */
+create table if not exists deals (
+    uuid text not null constraint deals_pk primary key,
+
+    client_addr text not null,
+    provider_addr text not null,
+
+    group_id integer not null,
+    price_afil_gib_epoch integer not null,
+    verified integer not null,
+    keep_unsealed integer not null,
+
+    end_epoch integer not null,
+
+    sent integer not null,
+    deal_id integer,
+    active integer not null,
+
+    /* retrieval checks */
+    retrieval_probes_started integer not null,
+    retrieval_probes_success integer not null,
+    retrieval_probes_fail integer not null
+);
 
 /* SP tracker */
 create table if not exists providers (
@@ -396,8 +423,9 @@ func (r *ribsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state ifa
 	return nil
 }
 
-func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64) error {
-	_, err := r.db.ExecContext(ctx, `update groups set commp = ?, piece_size = ?, g_state = ? where id = ?;`, commp[:], paddedPieceSize, state, id)
+func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64, root cid.Cid, carSize int64) error {
+	_, err := r.db.ExecContext(ctx, `update groups set commp = ?, piece_size = ?, root = ?, car_size = ?, g_state = ? where id = ?;`,
+		commp[:], paddedPieceSize, root.Bytes(), carSize, state, id)
 	if err != nil {
 		return xerrors.Errorf("update group commp: %w", err)
 	}
