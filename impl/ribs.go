@@ -4,6 +4,8 @@ import (
 	"context"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
@@ -17,6 +19,7 @@ var log = logging.Logger("ribs")
 
 type openOptions struct {
 	workerGate chan struct{} // for testing
+	hostGetter func(...libp2p.Option) (host.Host, error)
 }
 
 type OpenOption func(*openOptions)
@@ -24,6 +27,12 @@ type OpenOption func(*openOptions)
 func WithWorkerGate(gate chan struct{}) OpenOption {
 	return func(o *openOptions) {
 		o.workerGate = gate
+	}
+}
+
+func WithHostGetter(hg func(...libp2p.Option) (host.Host, error)) OpenOption {
+	return func(o *openOptions) {
+		o.hostGetter = hg
 	}
 }
 
@@ -39,6 +48,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	opt := &openOptions{
 		workerGate: make(chan struct{}),
+		hostGetter: libp2p.New,
 	}
 	close(opt.workerGate)
 
@@ -65,10 +75,19 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		spCrawlClosed: make(chan struct{}),
 	}
 
+	host, err := opt.hostGetter()
+	if err != nil {
+		return nil, xerrors.Errorf("creating host: %w", err)
+	}
+
 	// todo resume tasks
 
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
+
+	if err := r.setupCarServer(context.TODO(), host); err != nil {
+		return nil, xerrors.Errorf("setup car server: %w", err)
+	}
 
 	return r, nil
 }
