@@ -13,6 +13,8 @@ import (
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp" // enable secp signatures
 	"github.com/mitchellh/go-homedir"
 	"golang.org/x/xerrors"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -65,6 +67,39 @@ func (w *LocalWallet) WalletSign(ctx context.Context, addr address.Address, msg 
 	}
 
 	return sigs.Sign(key.ActSigType(ki.Type), ki.PrivateKey, msg)
+}
+
+func (w *LocalWallet) WalletList(ctx context.Context) ([]address.Address, error) {
+	all, err := w.keystore.List()
+	if err != nil {
+		return nil, xerrors.Errorf("listing keystore: %w", err)
+	}
+
+	sort.Strings(all)
+
+	seen := map[address.Address]struct{}{}
+	out := make([]address.Address, 0, len(all))
+	for _, a := range all {
+		if strings.HasPrefix(a, KNamePrefix) {
+			name := strings.TrimPrefix(a, KNamePrefix)
+			addr, err := address.NewFromString(name)
+			if err != nil {
+				return nil, xerrors.Errorf("converting name to address: %w", err)
+			}
+			if _, ok := seen[addr]; ok {
+				continue // got duplicate with a different prefix
+			}
+			seen[addr] = struct{}{}
+
+			out = append(out, addr)
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].String() < out[j].String()
+	})
+
+	return out, nil
 }
 
 func (w *LocalWallet) GetDefault() (address.Address, error) {

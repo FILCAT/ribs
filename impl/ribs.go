@@ -2,6 +2,7 @@ package impl
 
 import (
 	"context"
+	"fmt"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
@@ -65,10 +66,28 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		return nil, xerrors.Errorf("open wallet: %w", err)
 	}
 
-	_, err = wallet.GetDefault()
+	defWallet, err := wallet.GetDefault()
 	if err != nil {
-		return nil, xerrors.Errorf("get default wallet: %w", err)
+		wl, err := wallet.WalletList(context.TODO())
+		if err != nil {
+			return nil, xerrors.Errorf("get wallet list: %w", err)
+		}
+
+		if len(wl) != 1 || len(wl) == 0 {
+			return nil, xerrors.Errorf("no default wallet or more than one wallet: %#v", wl)
+		}
+
+		if err := wallet.SetDefault(wl[0]); err != nil {
+			return nil, xerrors.Errorf("setting default wallet: %w", err)
+		}
+
+		defWallet, err = wallet.GetDefault()
+		if err != nil {
+			return nil, xerrors.Errorf("getting default wallet: %w", err)
+		}
 	}
+
+	fmt.Println("RIBS Wallet: ", defWallet)
 
 	h, err := opt.hostGetter()
 	if err != nil {

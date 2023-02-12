@@ -115,11 +115,7 @@ create table if not exists providers (
     
     indexed_success integer not null default 0,
     indexed_fail integer not null default 0,
-    
-    deal_attempts integer not null default 0,
-    deal_success integer not null default 0,
-    deal_fail integer not null default 0,
-    
+
     retrprobe_success integer not null default 0,
     retrprobe_fail integer not null default 0,
     retrprobe_blocks integer not null default 0,
@@ -354,8 +350,10 @@ type dbDealInfo struct {
 }
 
 func (r *ribsDB) StoreDeal(d dbDealInfo) error {
+	// also increment deal_attempts for the provider
+
 	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch) values
-                               (?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch)
+                                   (?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch)
 	if err != nil {
 		return xerrors.Errorf("inserting deal: %w", err)
 	}
