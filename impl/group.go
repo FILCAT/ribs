@@ -3,15 +3,31 @@ package impl
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/filecoin-project/boost/storagemarket/types"
+	types2 "github.com/filecoin-project/boost/transport/types"
+	"github.com/filecoin-project/go-address"
+	cborutil "github.com/filecoin-project/go-cbor-util"
+	commcid "github.com/filecoin-project/go-fil-commcid"
 	commp "github.com/filecoin-project/go-fil-commp-hashhash"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/builtin"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
+	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/api/client"
+	chain_types "github.com/filecoin-project/lotus/chain/types"
+	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipld/go-car"
 	carutil "github.com/ipld/go-car/util"
+	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/jbob"
+	"github.com/lotus-web3/ribs/ributil"
 	mh "github.com/multiformats/go-multihash"
 	"io"
 	"path/filepath"
@@ -21,6 +37,8 @@ import (
 	"golang.org/x/xerrors"
 	"os"
 )
+
+const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 
 var (
 	// 100MB for now
@@ -404,6 +422,188 @@ func (m *Group) GenCommP() error {
 	return nil
 }
 
+var verified = false
+
+func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
+	provs, err := m.db.SelectDealProviders(m.id)
+	if err != nil {
+		return xerrors.Errorf("select deal providers: %w", err)
+	}
+
+	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	if err != nil {
+		panic(err)
+	}
+	defer closer()
+
+	walletAddr, err := w.GetDefault()
+	if err != nil {
+		return xerrors.Errorf("get wallet address: %w", err)
+	}
+
+	dealInfo, err := m.db.GetDealParams(ctx, m.id)
+	if err != nil {
+		return xerrors.Errorf("get deal params: %w", err)
+	}
+
+	transferParams := &types2.HttpRequest{URL: "libp2p://" + "/p2p/" + h.ID().String()} // todo get from autonat / config
+	transferParams.Headers = map[string]string{
+		"Authentication": string(reqToken),
+	}
+
+	paramsBytes, err := json.Marshal(transferParams)
+	if err != nil {
+		return fmt.Errorf("marshalling request parameters: %w", err)
+	}
+
+	transfer := types.Transfer{
+		Type:   "libp2p",
+		Params: paramsBytes,
+		Size:   uint64(dealInfo.CarSize),
+	}
+
+	pieceCid, err := commcid.PieceCommitmentV1ToCID(dealInfo.CommP)
+	if err != nil {
+		return fmt.Errorf("failed to convert commP to cid: %w", err)
+	}
+
+	// make deals with candidates
+	for _, prov := range provs {
+		maddr, err := address.NewIDAddress(uint64(prov))
+		if err != nil {
+			return xerrors.Errorf("new id address: %w", err)
+		}
+
+		addrInfo, err := GetAddrInfo(ctx, gw, maddr)
+		if err != nil {
+			return xerrors.Errorf("get addr info: %w", err)
+		}
+
+		if err := h.Connect(ctx, *addrInfo); err != nil {
+			return xerrors.Errorf("connect to miner: %w", err)
+		}
+
+		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
+		if err != nil {
+			return fmt.Errorf("getting protocols for peer %s: %w", addrInfo.ID, err)
+		}
+
+		if len(x) == 0 {
+			return fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
+		}
+
+		var providerCollateral abi.TokenAmount
+
+		bounds, err := gw.StateDealProviderCollateralBounds(ctx, abi.PaddedPieceSize(dealInfo.PieceSize), verified, chain_types.EmptyTSK)
+		if err != nil {
+			return fmt.Errorf("node error getting collateral bounds: %w", err)
+		}
+		providerCollateral = big.Div(big.Mul(bounds.Min, big.NewInt(6)), big.NewInt(5)) // add 20%
+
+		head, err := gw.ChainHead(ctx)
+		if err != nil {
+			return fmt.Errorf("getting chain head: %w", err)
+		}
+
+		startEpoch := head.Height() + abi.ChainEpoch(5760) // head + 2 days
+
+		dealUuid := uuid.New()
+
+		duration := 400 * builtin.EpochsInDay
+
+		price := big.Zero()
+
+		dealProposal, err := dealProposal(ctx, w, walletAddr, dealInfo.Root, abi.PaddedPieceSize(dealInfo.PieceSize), pieceCid, maddr, startEpoch, duration, verified, providerCollateral, price)
+		if err != nil {
+			return fmt.Errorf("failed to create a deal proposal: %w", err)
+		}
+
+		dealParams := types.DealParams{
+			DealUUID:           dealUuid,
+			ClientDealProposal: *dealProposal,
+			DealDataRoot:       dealInfo.Root,
+			IsOffline:          false,
+			Transfer:           transfer,
+		}
+
+		// MAKE THE DEAL
+
+		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
+		if err != nil {
+			return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
+		}
+		defer s.Close()
+
+		var resp types.DealResponse
+		if err := doRpc(ctx, s, &dealParams, &resp); err != nil {
+			return fmt.Errorf("send proposal rpc: %w", err)
+		}
+
+		if !resp.Accepted {
+			return fmt.Errorf("deal proposal rejected: %s", resp.Message)
+		}
+
+		// SAVE DETAILS
+
+		err = m.db.StoreDeal(dbDealInfo{
+			DealUUID:      dealUuid.String(),
+			GroupID:       m.id,
+			ClientAddr:    walletAddr.String(),
+			ProviderAddr:  prov,
+			PricePerEpoch: price.Int64(),
+			Verified:      verified,
+			KeepUnsealed:  true,
+			StartEpoch:    startEpoch,
+			EndEpoch:      startEpoch + abi.ChainEpoch(duration),
+		})
+		if err != nil {
+			return fmt.Errorf("saving deal info: %w", err)
+		}
+
+		log.Warnf("Deal %s with %s accepted for group %d!!!", dealUuid, maddr, m.id)
+	}
+
+	return nil
+}
+
+func dealProposal(ctx context.Context, w *ributil.LocalWallet, clientAddr address.Address, rootCid cid.Cid, pieceSize abi.PaddedPieceSize, pieceCid cid.Cid, minerAddr address.Address, startEpoch abi.ChainEpoch, duration int, verified bool, providerCollateral abi.TokenAmount, storagePrice abi.TokenAmount) (*market.ClientDealProposal, error) {
+	endEpoch := startEpoch + abi.ChainEpoch(duration)
+	// deal proposal expects total storage price for deal per epoch, therefore we
+	// multiply pieceSize * storagePrice (which is set per epoch per GiB) and divide by 2^30
+	storagePricePerEpochForDeal := big.Div(big.Mul(big.NewInt(int64(pieceSize)), storagePrice), big.NewInt(int64(1<<30)))
+	l, err := market.NewLabelFromString(rootCid.String())
+	if err != nil {
+		return nil, err
+	}
+	proposal := market.DealProposal{
+		PieceCID:             pieceCid,
+		PieceSize:            pieceSize,
+		VerifiedDeal:         verified,
+		Client:               clientAddr,
+		Provider:             minerAddr,
+		Label:                l,
+		StartEpoch:           startEpoch,
+		EndEpoch:             endEpoch,
+		StoragePricePerEpoch: storagePricePerEpochForDeal,
+		ProviderCollateral:   providerCollateral,
+	}
+
+	buf, err := cborutil.Dump(&proposal)
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := w.WalletSign(ctx, clientAddr, buf, api.MsgMeta{Type: api.MTDealProposal})
+	if err != nil {
+		return nil, fmt.Errorf("wallet sign failed: %w", err)
+	}
+
+	return &market.ClientDealProposal{
+		Proposal:        proposal,
+		ClientSignature: *sig,
+	}, nil
+}
+
 func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	m.dblk.Lock()
 	defer m.dblk.Unlock()
@@ -497,6 +697,8 @@ func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
 	if err != nil {
 		return 0, cid.Undef, xerrors.Errorf("reading root block: %w", err)
 	}
+
+	// todo consider buffering the writes
 
 	sw := &sizerWriter{w: w}
 	w = sw

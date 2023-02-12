@@ -7,12 +7,14 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
+	"github.com/lotus-web3/ribs/ributil"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var log = logging.Logger("ribs")
@@ -56,10 +58,30 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		o(opt)
 	}
 
+	walletPath := "~/.ribswallet"
+
+	wallet, err := ributil.OpenWallet(walletPath)
+	if err != nil {
+		return nil, xerrors.Errorf("open wallet: %w", err)
+	}
+
+	_, err = wallet.GetDefault()
+	if err != nil {
+		return nil, xerrors.Errorf("get default wallet: %w", err)
+	}
+
+	h, err := opt.hostGetter()
+	if err != nil {
+		return nil, xerrors.Errorf("creating host: %w", err)
+	}
+
 	r := &ribs{
 		root:  root,
 		db:    db,
 		index: NewIndex(db.db),
+
+		host:   h,
+		wallet: wallet,
 
 		writableGroups: make(map[iface.GroupKey]*Group),
 
@@ -75,17 +97,12 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		spCrawlClosed: make(chan struct{}),
 	}
 
-	host, err := opt.hostGetter()
-	if err != nil {
-		return nil, xerrors.Errorf("creating host: %w", err)
-	}
-
 	// todo resume tasks
 
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
 
-	if err := r.setupCarServer(context.TODO(), host); err != nil {
+	if err := r.setupCarServer(context.TODO(), h); err != nil {
 		return nil, xerrors.Errorf("setup car server: %w", err)
 	}
 
@@ -146,6 +163,24 @@ func (r *ribs) workerExecTask(task task) {
 		if err != nil {
 			log.Errorf("generating commP: %s", err)
 		}
+		fallthrough
+	case taskTypeMakeMoreDeals:
+		g, ok := r.openGroups[task.group]
+		if !ok {
+			log.Errorw("group not open", "group", task.group, "task", task)
+			return
+		}
+
+		reqToken, err := r.makeCarRequestToken(context.TODO(), task.group, time.Hour*36)
+		if err != nil {
+			log.Errorf("making car request token: %s", err)
+			return
+		}
+
+		err = g.MakeMoreDeals(context.TODO(), r.host, r.wallet, reqToken)
+		if err != nil {
+			log.Errorf("starting new deals: %s", err)
+		}
 	}
 }
 
@@ -155,6 +190,7 @@ const (
 	taskTypeFinalize taskType = iota
 	taskTypeMakeVCAR
 	taskTypeGenCommP
+	taskTypeMakeMoreDeals
 )
 
 type task struct {
@@ -170,6 +206,9 @@ type ribs struct {
 	index iface.Index
 
 	lk sync.Mutex
+
+	host   host.Host
+	wallet *ributil.LocalWallet
 
 	/* storage */
 

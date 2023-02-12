@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
@@ -80,23 +81,24 @@ create table if not exists deals (
     uuid text not null constraint deals_pk primary key,
 
     client_addr text not null,
-    provider_addr text not null,
+    provider_addr integer not null,
 
     group_id integer not null,
     price_afil_gib_epoch integer not null,
     verified integer not null,
     keep_unsealed integer not null,
 
+    start_epoch integer not null,
     end_epoch integer not null,
 
-    sent integer not null,
+    data_sent integer not null default 0,
     deal_id integer,
-    active integer not null,
+    active integer not null default 0,
 
     /* retrieval checks */
-    retrieval_probes_started integer not null,
-    retrieval_probes_success integer not null,
-    retrieval_probes_fail integer not null
+    retrieval_probes_started integer not null default 0,
+    retrieval_probes_success integer not null default 0,
+    retrieval_probes_fail integer not null default 0
 );
 
 /* SP tracker */
@@ -226,8 +228,8 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	return out
 }
 
-func (r *ribsDB) SelectDealProviders() ([]int64, error) {
-	// only reachable, with boost_deals
+func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
+	// only reachable, with boost_deals, only ones that don't have deals for this group
 	// 6 at random
 	// 2 of them with booster_http
 	// 2 of them with booster_bitswap
@@ -236,9 +238,9 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 	var withBitswap []int64
 	var random []int64
 
-	res, err := r.db.Query("select id from good_providers_view where boost_deals = 1 order by random() limit 6")
+	res, err := r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) order by random() limit 6`, group)
 	if err != nil {
-		return nil, xerrors.Errorf("finding providers: %w", err)
+		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
@@ -259,9 +261,9 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query("select id from good_providers_view where boost_deals = 1 and booster_http = 1 order by random() limit 2")
+	res, err = r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 order by random() limit 2`, group)
 	if err != nil {
-		return nil, xerrors.Errorf("finding providers: %w", err)
+		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
@@ -282,9 +284,9 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query("select id from good_providers_view where boost_deals = 1 and booster_bitswap = 1 order by random() limit 2")
+	res, err = r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 order by random() limit 2`, group)
 	if err != nil {
-		return nil, xerrors.Errorf("finding providers: %w", err)
+		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
@@ -305,34 +307,60 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	// now, we have 6 random providers, 2 with http, 2 with bitswap
-	// dedupe, get up to 6, prefer http, prefer bitswap
+	out := make([]int64, 0, 6)
+	out = append(out, withHttp...)
+	out = append(out, withBitswap...)
+	out = append(out, random...)
 
-	have := make(map[int64]struct{})
-
-	for _, id := range withHttp {
-		have[id] = struct{}{}
-	}
-
-	for _, id := range withBitswap {
-		have[id] = struct{}{}
-	}
-
-	for _, id := range random {
-		if len(have) >= 6 {
-			break
+	// dedup
+	seen := make(map[int64]struct{})
+	for _, id := range out {
+		if _, ok := seen[id]; ok {
+			continue
 		}
-
-		have[id] = struct{}{}
+		seen[id] = struct{}{}
 	}
 
-	out := make([]int64, 0, len(have))
-
-	for id := range have {
+	out = make([]int64, 0, len(seen))
+	for id := range seen {
 		out = append(out, id)
 	}
 
+	// trim to 5
+	if len(out) > 5 {
+		out = out[:5]
+	}
+
+	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
+
+	out = []int64{2620} // testing hardcode known todo
+
 	return out, nil
+}
+
+type dbDealInfo struct {
+	DealUUID string
+	GroupID  iface.GroupKey
+
+	ClientAddr   string
+	ProviderAddr int64
+
+	PricePerEpoch int64
+	Verified      bool
+	KeepUnsealed  bool
+
+	StartEpoch abi.ChainEpoch
+	EndEpoch   abi.ChainEpoch
+}
+
+func (r *ribsDB) StoreDeal(d dbDealInfo) error {
+	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch) values
+                               (?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch)
+	if err != nil {
+		return xerrors.Errorf("inserting deal: %w", err)
+	}
+
+	return nil
 }
 
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
@@ -431,6 +459,52 @@ func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.Gr
 	}
 
 	return nil
+}
+
+type dealParams struct {
+	CommP     []byte
+	Root      cid.Cid
+	PieceSize int64
+	CarSize   int64
+}
+
+func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out dealParams, err error) {
+	res, err := r.db.QueryContext(ctx, "select commp, root, piece_size, car_size from groups where id = ?", id)
+	if err != nil {
+		return dealParams{}, xerrors.Errorf("finding writable groups: %w", err)
+	}
+
+	var found bool
+
+	for res.Next() {
+		var commp, root []byte
+		var pieceSize, carSize int64
+		err := res.Scan(&commp, &root, &pieceSize, &carSize)
+		if err != nil {
+			return dealParams{}, xerrors.Errorf("scanning group: %w", err)
+		}
+
+		out.CommP = commp
+		_, out.Root, err = cid.CidFromBytes(root)
+		out.PieceSize = pieceSize
+		out.CarSize = carSize
+
+		found = true
+
+		break
+	}
+
+	if err := res.Err(); err != nil {
+		return dealParams{}, xerrors.Errorf("iterating groups: %w", err)
+	}
+	if err := res.Close(); err != nil {
+		return dealParams{}, xerrors.Errorf("closing group iterator: %w", err)
+	}
+	if !found {
+		return dealParams{}, xerrors.Errorf("group %d not found", id)
+	}
+
+	return out, nil
 }
 
 /* DIAGNOSTICS */
