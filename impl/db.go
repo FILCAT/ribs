@@ -3,11 +3,36 @@ package impl
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
 )
+
+const mFil = 1_000_000_000_000_000
+
+var (
+	maxVerifPrice float64 = 0
+
+	// 2 mFil/gib/mo is roughly cloud cost currently
+	maxPrice float64 = (0 * mFil) / 2 / 60 / 24 / 30.436875
+
+	// piece size range ribs is aiming for
+	minPieceSize = 4 << 30
+	maxPieceSize = 8 << 30
+)
+
+var pragmas = []string{
+	"PRAGMA synchronous = normal",
+	"PRAGMA temp_store = memory",
+	"PRAGMA mmap_size = 30000000000",
+	"PRAGMA page_size = 32768",
+	/*	"PRAGMA auto_vacuum = NONE",
+		"PRAGMA automatic_index = OFF",*/
+	"PRAGMA journal_mode = WAL",
+	"PRAGMA read_uncommitted = ON",
+}
 
 const dbSchema = `
 
@@ -78,6 +103,14 @@ create table if not exists providers (
     ask_max_piece_size integer not null default 0
 );
 
+create view if not exists good_providers_view as 
+	select id, ping_ok, boost_deals, booster_http, booster_bitswap,
+       indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail,
+       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
+       ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
+    from providers where in_market = 1 and ping_ok = 1 and ask_ok = 1 and ask_verif_price <= %f and ask_price <= %f and ask_min_piece_size <= %d and ask_max_piece_size >= %d
+    order by (booster_bitswap+booster_http) asc, boost_deals asc, id desc;
+
 /* top level index */
 
 create table if not exists top_index
@@ -109,7 +142,14 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
-	_, err = db.Exec(dbSchema)
+	for _, pragma := range pragmas {
+		_, err = db.Exec(pragma)
+		if err != nil {
+			return nil, xerrors.Errorf("exec pragma: %w", err)
+		}
+	}
+
+	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice, maxPrice, minPieceSize, maxPieceSize))
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
@@ -124,7 +164,8 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
        indexed_success, indexed_fail, deal_attempts, deal_success, deal_fail,
        retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
        ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
-    from providers where in_market = 1 and ping_ok = 1 and ask_ok = 1 order by (booster_bitswap+booster_http) asc, boost_deals asc, id desc`)
+    from good_providers_view`)
+
 	if err != nil {
 		log.Errorw("querying providers", "error", err)
 		return nil
@@ -168,7 +209,7 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 	var withBitswap []int64
 	var random []int64
 
-	res, err := r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 order by random() limit 6")
+	res, err := r.db.Query("select id from good_providers_view where boost_deals = 1 order by random() limit 6")
 	if err != nil {
 		return nil, xerrors.Errorf("finding providers: %w", err)
 	}
@@ -191,7 +232,7 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 and booster_http = 1 order by random() limit 2")
+	res, err = r.db.Query("select id from good_providers_view where boost_deals = 1 and booster_http = 1 order by random() limit 2")
 	if err != nil {
 		return nil, xerrors.Errorf("finding providers: %w", err)
 	}
@@ -214,7 +255,7 @@ func (r *ribsDB) SelectDealProviders() ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query("select id from providers where in_market = 1 and ping_ok = 1 and boost_deals = 1 and booster_bitswap = 1 order by random() limit 2")
+	res, err = r.db.Query("select id from good_providers_view where boost_deals = 1 and booster_bitswap = 1 order by random() limit 2")
 	if err != nil {
 		return nil, xerrors.Errorf("finding providers: %w", err)
 	}

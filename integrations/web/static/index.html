@@ -48,14 +48,17 @@
 
             const units = ['aFIL', 'fFIL', 'pFIL', 'nFIL', 'uFIL', 'mFIL', 'FIL'];
             let l = 0;
-            while (l+1 < units.length && n >= 1000 && ++l) {
+            while (l+1 < units.length && n >= 1000) {
+                l++;
                 n = n / 1000;
             }
 
             return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
         }
 
-        const avgMonthDays = 30.436875; //
+        console.log(formatFil(120_000))
+
+        const avgMonthDays = 30.436875;
         const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;
 
         let groupElems = {};
