@@ -427,6 +427,35 @@ func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes int64, state iface
 	return blocks, bytes, state, nil
 }
 
+func (r *ribsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error) {
+	res, err := r.db.Query("select id, g_state from groups")
+	if err != nil {
+		return nil, xerrors.Errorf("finding writable groups: %w", err)
+	}
+
+	gs = make(map[iface.GroupKey]iface.GroupState)
+
+	for res.Next() {
+		var id iface.GroupKey
+		var state iface.GroupState
+		err := res.Scan(&id, &state)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning group: %w", err)
+		}
+
+		gs[id] = state
+	}
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating groups: %w", err)
+	}
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing group iterator: %w", err)
+	}
+
+	return gs, nil
+}
+
 func (r *ribsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state iface.GroupState, commBlk, commSz, at int64) error {
 	_, err := r.db.ExecContext(ctx, `begin transaction;
 		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;

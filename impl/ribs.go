@@ -123,6 +123,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
+	go r.resumeGroups()
 
 	if err := r.setupCarServer(context.TODO(), h); err != nil {
 		return nil, xerrors.Errorf("setup car server: %w", err)
@@ -365,8 +366,39 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 	}
 	r.openGroups[group] = g
 
+	r.resumeGroup(group)
+
 	r.lk.Unlock()
 	return cb(g)
+}
+
+func (r *ribs) resumeGroup(group iface.GroupKey) {
+	sendTask := func(tt taskType) {
+		go func() {
+			r.tasks <- task{
+				tt:    tt,
+				group: group,
+			}
+		}()
+	}
+
+	switch r.openGroups[group].state {
+	case iface.GroupStateWritable: // nothing to do
+	case iface.GroupStateFull:
+		sendTask(taskTypeFinalize)
+	case iface.GroupStateBSSTExists:
+		sendTask(taskTypeMakeVCAR)
+	case iface.GroupStateLevelIndexDropped:
+		sendTask(taskTypeMakeVCAR)
+	case iface.GroupStateVRCARDone:
+		sendTask(taskTypeGenCommP)
+	case iface.GroupStateHasCommp:
+		sendTask(taskTypeMakeMoreDeals)
+	case iface.GroupStateDealsInProgress:
+		// todo
+	case iface.GroupStateDealsDone:
+	case iface.GroupStateOffloaded:
+	}
 }
 
 type ribSession struct {
@@ -480,6 +512,25 @@ func (r *ribBatch) Unlink(ctx context.Context, c []mh.Multihash) error {
 func (r *ribBatch) Flush(ctx context.Context) error {
 	// noop for now, group puts are sync currently
 	return nil
+}
+
+func (r *ribs) resumeGroups() {
+	gs, err := r.db.GroupStates()
+	if err != nil {
+		panic(err)
+	}
+
+	for g, st := range gs {
+		switch st {
+		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp:
+			if err := r.withReadableGroup(g, func(g *Group) error {
+				return nil
+			}); err != nil {
+				log.Errorw("failed to resume group", "group", g, "err", err)
+				return
+			}
+		}
+	}
 }
 
 var _ iface.RIBS = &ribs{}
