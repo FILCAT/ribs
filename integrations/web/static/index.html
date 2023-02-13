@@ -143,7 +143,6 @@
 
                     let groupTxDealInfo = document.createElement('div');
                     groupTxDealInfo.classList.add('group-tx-deal-info');
-                    groupTxDealInfo.innerText = 'Uploads 0 (0 B/s)';
 
                     groupHeadElem.appendChild(groupNameElem);
 
@@ -182,7 +181,13 @@
                 groupElems[group].groupBarBlocksElem.style.width = `${formatPercent(meta.Blocks / meta.MaxBlocks)}`;
 
                 if(state.CarUploads[group] !== undefined) {
-                    groupElems[group].groupTxDealInfo.innerText = `Uploads ${state.CarUploads[group].ActiveRequests} (${formatBytesBinary(state.CarUploads[group].Last250MsUploadBytes*4)}/s)`;
+                    groupElems[group].groupTxDealInfo.innerText = `[${state.CarUploads[group].ActiveRequests} Upload(s) (${formatBytesBinary(state.CarUploads[group].Last250MsUploadBytes*4)}/s)]`;
+                } else {
+                    groupElems[group].groupTxDealInfo.innerText = ``;
+                }
+
+                if(meta.Deals) {
+                    groupElems[group].groupTxDealInfo.innerText += `[Deals: ${meta.Deals.map(d => `f0${d.Provider}`)}]`;
                 }
             }
 

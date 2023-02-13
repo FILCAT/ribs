@@ -569,6 +569,33 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		return iface.GroupMeta{}, xerrors.Errorf("group %d not found", gk)
 	}
 
+	var dealMeta []iface.DealMeta
+
+	res, err = r.db.Query("select provider_addr from deals where group_id = ?", gk)
+	if err != nil {
+		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
+	}
+
+	for res.Next() {
+		var provider int64
+		err := res.Scan(&provider)
+		if err != nil {
+			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
+		}
+
+		dealMeta = append(dealMeta, iface.DealMeta{
+			Provider: provider,
+		})
+	}
+
+	if err := res.Err(); err != nil {
+		return iface.GroupMeta{}, xerrors.Errorf("iterating deals: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return iface.GroupMeta{}, xerrors.Errorf("closing deals iterator: %w", err)
+	}
+
 	return iface.GroupMeta{
 		State: state,
 
@@ -577,6 +604,8 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 		Blocks: blocks,
 		Bytes:  bytes,
+
+		Deals: dealMeta,
 	}, nil
 }
 

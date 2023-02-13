@@ -110,6 +110,12 @@ type GroupMeta struct {
 
 	Blocks int64
 	Bytes  int64
+
+	Deals []DealMeta
+}
+
+type DealMeta struct {
+	Provider int64
 }
 
 type Diag interface {
