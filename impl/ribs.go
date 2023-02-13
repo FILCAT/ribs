@@ -142,25 +142,27 @@ func (r *ribs) groupWorker(gate <-chan struct{}) {
 }
 
 func (r *ribs) workerExecTask(task task) {
-	r.lk.Lock()
-	defer r.lk.Unlock()
-
 	switch task.tt {
 	case taskTypeFinalize:
 
+		r.lk.Lock()
 		g, ok := r.openGroups[task.group]
 		if !ok {
+			r.lk.Unlock()
 			log.Errorw("group not open", "group", task.group, "task", task)
 			return
 		}
 
 		err := g.Finalize(context.TODO())
+		r.lk.Unlock()
 		if err != nil {
 			log.Errorf("finalizing group: %s", err)
 		}
 		fallthrough
 	case taskTypeMakeVCAR:
+		r.lk.Lock()
 		g, ok := r.openGroups[task.group]
+		r.lk.Unlock()
 		if !ok {
 			log.Errorw("group not open", "group", task.group, "task", task)
 			return
@@ -172,7 +174,9 @@ func (r *ribs) workerExecTask(task task) {
 		}
 		fallthrough
 	case taskTypeGenCommP:
+		r.lk.Lock()
 		g, ok := r.openGroups[task.group]
+		r.lk.Unlock()
 		if !ok {
 			log.Errorw("group not open", "group", task.group, "task", task)
 			return
@@ -184,7 +188,9 @@ func (r *ribs) workerExecTask(task task) {
 		}
 		fallthrough
 	case taskTypeMakeMoreDeals:
+		r.lk.Lock()
 		g, ok := r.openGroups[task.group]
+		r.lk.Unlock()
 		if !ok {
 			log.Errorw("group not open", "group", task.group, "task", task)
 			return
