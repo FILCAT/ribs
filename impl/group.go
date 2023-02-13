@@ -467,8 +467,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return fmt.Errorf("failed to convert commP to cid: %w", err)
 	}
 
-	// make deals with candidates
-	for _, prov := range provs {
+	makeDealWith := func(prov int64) error {
 		maddr, err := address.NewIDAddress(uint64(prov))
 		if err != nil {
 			return xerrors.Errorf("new id address: %w", err)
@@ -561,6 +560,16 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}
 
 		log.Warnf("Deal %s with %s accepted for group %d!!!", dealUuid, maddr, m.id)
+
+		return nil
+	}
+
+	// make deals with candidates
+	for _, prov := range provs {
+		if err := makeDealWith(prov); err != nil {
+			log.Errorw("failed to make deal with provider", "provider", prov, "error", err)
+			// todo record
+		}
 	}
 
 	return nil
