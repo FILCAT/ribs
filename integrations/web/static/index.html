@@ -130,16 +130,20 @@
                     let groupRightElem = document.createElement('div');
 
                     groupRightElem.classList.add('group-right');
-                    let groupBarSizeElem = document.createElement('div');
 
+                    let groupBarSizeElem = document.createElement('div');
                     groupBarSizeElem.classList.add('group-bar');
                     groupBarSizeElem.classList.add('group-bar-size');
                     groupBarSizeElem.innerText = '.';
-                    let groupBarBlocksElem = document.createElement('div');
 
+                    let groupBarBlocksElem = document.createElement('div');
                     groupBarBlocksElem.classList.add('group-bar');
                     groupBarBlocksElem.classList.add('group-bar-blocks');
                     groupBarBlocksElem.innerText = '.';
+
+                    let groupTxDealInfo = document.createElement('div');
+                    groupTxDealInfo.classList.add('group-tx-deal-info');
+                    groupTxDealInfo.innerText = 'Uploads 0 (0 B/s)';
 
                     groupHeadElem.appendChild(groupNameElem);
 
@@ -148,9 +152,11 @@
 
                     groupLeftElem.appendChild(groupRowSizeElem);
                     groupLeftElem.appendChild(groupRowBlocksElem);
-                    groupRightElem.appendChild(groupBarSizeElem);
 
+                    groupRightElem.appendChild(groupBarSizeElem);
                     groupRightElem.appendChild(groupBarBlocksElem);
+                    groupRightElem.appendChild(groupTxDealInfo);
+
                     groupElem.appendChild(groupLeftElem);
 
                     groupElem.appendChild(groupRightElem);
@@ -160,7 +166,7 @@
                     totalBlocks += meta.Blocks;
                     totalBytes += meta.Bytes;
 
-                    groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupBarSizeElem, groupBarBlocksElem, meta}
+                    groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupTxDealInfo, groupBarSizeElem, groupBarBlocksElem, meta}
                 }
 
                 totalBlocks -= groupElems[group].meta.Blocks;
@@ -174,6 +180,10 @@
                 groupElems[group].groupRowBlocksElem.innerText = `${formatNum(meta.Blocks)} / ${formatNum(meta.MaxBlocks)} (${formatPercent(meta.Blocks / meta.MaxBlocks)}) blocks`;
                 groupElems[group].groupBarSizeElem.style.width = `${formatPercent(meta.Bytes / meta.MaxBytes)}`;
                 groupElems[group].groupBarBlocksElem.style.width = `${formatPercent(meta.Blocks / meta.MaxBlocks)}`;
+
+                if(state.CarUploads[group] !== undefined) {
+                    groupElems[group].groupTxDealInfo.innerText = `Uploads ${state.CarUploads[group].ActiveRequests} (${formatBytesBinary(state.CarUploads[group].Last250MsUploadBytes*4)}/s)`;
+                }
             }
 
             document.getElementById("total-bytes").innerText = formatBytesBinary(totalBytes);

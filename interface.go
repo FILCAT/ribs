@@ -116,8 +116,15 @@ type Diag interface {
 	Groups() ([]GroupKey, error)
 	GroupMeta(gk GroupKey) (GroupMeta, error)
 
+	CarUploadStats() map[GroupKey]*UploadStats
+
 	CrawlState() string
 	ReachableProviders() []ProviderMeta
+}
+
+type UploadStats struct {
+	ActiveRequests       int
+	Last250MsUploadBytes int64
 }
 
 type ProviderMeta struct {

@@ -107,6 +107,9 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		// all open groups (including all writable)
 		openGroups: make(map[iface.GroupKey]*Group),
 
+		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
+		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
+
 		tasks: make(chan task, 16),
 
 		workerClose:  make(chan struct{}),
@@ -250,6 +253,11 @@ type ribs struct {
 
 	/* sp tracker */
 	crawlState atomic.Pointer[string]
+
+	/* car uploads */
+	uploadStats     map[iface.GroupKey]*iface.UploadStats
+	uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
+	uploadStatsLk   sync.Mutex
 }
 
 func (r *ribs) Close() error {

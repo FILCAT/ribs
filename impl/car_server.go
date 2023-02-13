@@ -7,9 +7,12 @@ import (
 	"github.com/gbrlsnchs/jwt/v3"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/libp2p/go-libp2p/core/host"
+	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
+	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,9 +39,59 @@ func (r *ribs) setupCarServer(ctx context.Context, host host.Host) error {
 		}
 	}()
 
+	go r.carStatsWorker(ctx)
+
 	// todo also serve tcp
 
 	return nil
+}
+
+func (r *ribs) carStatsWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Millisecond * 250):
+			r.updateCarStats()
+		}
+	}
+}
+
+func (r *ribs) updateCarStats() {
+	r.uploadStatsLk.Lock()
+	defer r.uploadStatsLk.Unlock()
+
+	r.uploadStatsSnap = make(map[iface.GroupKey]*iface.UploadStats)
+	for k, v := range r.uploadStats {
+		r.uploadStatsSnap[k] = &iface.UploadStats{
+			ActiveRequests:       v.ActiveRequests,
+			Last250MsUploadBytes: atomic.SwapInt64(&v.Last250MsUploadBytes, 0),
+		}
+	}
+
+	for k, v := range r.uploadStats {
+		if v.ActiveRequests == 0 {
+			delete(r.uploadStats, k)
+		}
+	}
+}
+
+func (r *ribs) CarUploadStats() map[iface.GroupKey]*iface.UploadStats {
+	r.uploadStatsLk.Lock()
+	defer r.uploadStatsLk.Unlock()
+
+	return r.uploadStatsSnap
+}
+
+type carStatWriter struct {
+	ctr *int64
+	w   io.Writer
+}
+
+func (c *carStatWriter) Write(p []byte) (n int, err error) {
+	n, err = c.w.Write(p)
+	atomic.AddInt64(c.ctr, int64(n))
+	return
 }
 
 var jwtKey = func() *jwt.HMACSHA { // todo generate / store
@@ -86,11 +139,32 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	r.uploadStatsLk.Lock()
+	if r.uploadStats[reqToken.Group] == nil {
+		r.uploadStats[reqToken.Group] = &iface.UploadStats{}
+	}
+
+	r.uploadStats[reqToken.Group].ActiveRequests++
+
+	sw := &carStatWriter{
+		ctr: &r.uploadStats[reqToken.Group].Last250MsUploadBytes,
+		w:   w,
+	}
+
+	r.uploadStatsLk.Unlock()
+
+	defer func() {
+		r.uploadStatsLk.Lock()
+		r.uploadStats[reqToken.Group].ActiveRequests--
+		r.uploadStatsLk.Unlock()
+	}()
+
 	err = r.withReadableGroup(reqToken.Group, func(group *Group) error {
-		_, _, err := group.writeCar(w)
+		_, _, err := group.writeCar(sw)
 		return err
 	})
 	if err != nil {
+		log.Errorw("car request: write car", "error", err, "url", req.URL)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

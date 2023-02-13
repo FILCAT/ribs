@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/lotus-web3/ribs"
 	"net/http"
+	_ "net/http/pprof"
 	"sort"
 	"strconv"
 	txtempl "text/template"
@@ -38,6 +39,8 @@ type state struct {
 
 	CrawlState string
 	Providers  []ribs.ProviderMeta
+
+	CarUploads map[ribs.GroupKey]*ribs.UploadStats
 }
 
 func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +63,7 @@ func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 		Groups:     gs,
 		CrawlState: ri.ribs.Diagnostics().CrawlState(),
 		Providers:  ri.ribs.Diagnostics().ReachableProviders(),
+		CarUploads: ri.ribs.Diagnostics().CarUploadStats(),
 	}); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -105,6 +109,8 @@ func Serve(listen string, ribs ribs.RIBS) error {
 
 	mux.HandleFunc("/api/v0/state", handlers.ApiState)
 	mux.HandleFunc("/api/v0/group", handlers.ApiGroup)
+
+	mux.Handle("/debug/", http.DefaultServeMux)
 
 	return http.ListenAndServe(listen, mux)
 }
