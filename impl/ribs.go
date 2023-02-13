@@ -339,10 +339,10 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) error) (err error) {
 	r.lk.Lock()
-	defer r.lk.Unlock()
 
 	// todo prefer
 	if r.openGroups[group] != nil {
+		r.lk.Unlock()
 		return cb(r.openGroups[group])
 	}
 
@@ -350,11 +350,13 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	blocks, bytes, state, err := r.db.OpenGroup(group)
 	if err != nil {
+		r.lk.Unlock()
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
 	g, err := OpenGroup(r.db, r.index, group, blocks, bytes, r.root, state, false)
 	if err != nil {
+		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)
 	}
 
@@ -362,6 +364,8 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 		r.writableGroups[group] = g
 	}
 	r.openGroups[group] = g
+
+	r.lk.Unlock()
 	return cb(g)
 }
 
