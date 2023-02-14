@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	blocks "github.com/ipfs/go-block-format"
+	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/bsst"
 	"math/bits"
 	"os"
@@ -375,8 +376,8 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		return xerrors.Errorf("getting value locations: %w", err)
 	}
 
-	// todo pool
-	entBuf := make([]byte, 1<<20)
+	entBuf := pool.Get(1 << 20)
+	defer pool.Put(entBuf)
 
 	for i := range c {
 		if locs[i] == -1 {
@@ -400,7 +401,8 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		entLen := binary.LittleEndian.Uint32(entHead[:4]) - 1 - 2 - mhLen
 		if entLen > uint32(len(entBuf)) {
 			// expand buffer to next power of two if needed
-			entBuf = make([]byte, 1<<bits.Len32(entLen))
+			pool.Put(entBuf)
+			entBuf = pool.Get(1 << bits.Len32(entLen))
 		}
 
 		if _, err := j.data.ReadAt(entBuf[:entLen], locs[i]+int64(len(entHead))); err != nil {
