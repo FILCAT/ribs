@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
-	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/builtin"
@@ -400,22 +399,24 @@ func (m *Group) GenCommP() error {
 		return xerrors.Errorf("group not in state for generating top CAR: %d", m.state)
 	}
 
-	cc := new(commp.Calc)
+	cc := new(ributil.DataCidWriter)
 
 	carSize, root, err := m.writeCar(cc)
 	if err != nil {
 		return xerrors.Errorf("write car: %w", err)
 	}
 
-	commP, pps, err := cc.Digest()
+	sum, err := cc.Sum()
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("commP", commP)
-	fmt.Println("pps", pps)
+	fmt.Println("commP", sum.PieceCID)
+	fmt.Println("pps", sum.PieceSize)
 
-	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, commP, int64(pps), root, carSize); err != nil {
+	p, _ := commcid.CIDToDataCommitmentV1(sum.PieceCID)
+
+	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, p, int64(sum.PieceSize), root, carSize); err != nil {
 		return xerrors.Errorf("set commP: %w", err)
 	}
 
