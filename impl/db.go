@@ -341,7 +341,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
 
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
 
-	out = []int64{2620}
+	//out = []int64{2620}
 
 	return out, nil
 }

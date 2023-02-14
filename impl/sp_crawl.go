@@ -21,6 +21,7 @@ import (
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"golang.org/x/xerrors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -75,26 +76,26 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 	head, err := gw.ChainHead(ctx)
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("getting chain head: %w", err)
 	}
 
 	// todo at finality
 
 	mktAct, err := gw.StateGetActor(ctx, market.Address, head.Key())
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("getting market actor: %w", err)
 	}
 
 	stor := adt.WrapStore(ctx, cbor.NewCborStore(blockstore.NewAPIBlockstore(gw)))
 
 	mact, err := market.Load(stor, mktAct)
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("loading market actor: %w", err)
 	}
 
 	bt, err := mact.LockedTable()
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("getting locked table: %w", err)
 	}
 
 	actors := make([]int64, 0)
@@ -129,13 +130,13 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 			return nil
 		default:
 		}
-		panic(err)
+		return nil
 	}
 
 	r.crawlState.Store(&crawlStoreMarket)
 
 	if err := r.db.UpsertMarketActors(actors); err != nil {
-		panic(err)
+		return xerrors.Errorf("upserting market actors: %w", err)
 	}
 
 	r.crawlState.Store(&crawlQueryProviders)

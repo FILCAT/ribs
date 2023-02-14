@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/lotus-web3/ribs"
 	"net/http"
 	_ "net/http/pprof"
@@ -11,6 +12,8 @@ import (
 	"strconv"
 	txtempl "text/template"
 )
+
+var log = logging.Logger("ribsweb")
 
 //go:embed static
 var dres embed.FS
@@ -89,11 +92,13 @@ func (ri *RIBSWeb) ApiGroup(w http.ResponseWriter, r *http.Request) {
 
 	gm, err := ri.ribs.Diagnostics().GroupMeta(ribs.GroupKey(gint))
 	if err != nil {
+		log.Errorw("failed to get group meta", "group", gint, "error", err)
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(gm); err != nil {
+		log.Errorw("failed to encode group meta", "group", gint, "error", err)
 		http.Error(w, err.Error(), 500)
 		return
 	}
