@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"github.com/filecoin-project/boost/transport/types"
 	"github.com/gbrlsnchs/jwt/v3"
+	"github.com/google/uuid"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"io"
@@ -140,6 +142,19 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, xerrors.Errorf("car request auth: %w", err).Error(), http.StatusUnauthorized)
 		return
 	}
+
+	pid, err := peer.Decode(req.RemoteAddr)
+	if err != nil {
+		log.Infow("data transfer request failed: parsing remote address as peer ID",
+			"remote-addr", req.RemoteAddr, "err", err)
+		http.Error(w, "Failed to parse remote address '"+req.RemoteAddr+"' as peer ID", http.StatusBadRequest)
+		return
+	}
+
+	// Protect the libp2p connection for the lifetime of the transfer
+	tag := uuid.New().String()
+	r.host.ConnManager().Protect(pid, tag)
+	defer r.host.ConnManager().Unprotect(pid, tag)
 
 	r.uploadStatsLk.Lock()
 	if r.uploadStats[reqToken.Group] == nil {
