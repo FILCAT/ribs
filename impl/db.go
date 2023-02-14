@@ -672,12 +672,12 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	for res.Next() {
 		var dealUuid string
 		var provider int64
-		var status string
-		var sealStatus string
-		var spError string
-		var dealID int64
-		var bytesRecv int64
-		var txSize int64
+		var status *string
+		var sealStatus *string
+		var spError *string
+		var dealID *int64
+		var bytesRecv *int64
+		var txSize *int64
 		var pubCid *string
 
 		err := res.Scan(&dealUuid, &provider, &status, &sealStatus, &spError, &dealID, &bytesRecv, &txSize, &pubCid)
@@ -685,20 +685,16 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
 		}
 
-		if pubCid == nil {
-			pubCid = new(string)
-		}
-
 		dealMeta = append(dealMeta, iface.DealMeta{
 			UUID:       dealUuid,
 			Provider:   provider,
-			Status:     status,
-			SealStatus: sealStatus,
-			Error:      spError,
-			DealID:     dealID,
-			BytesRecv:  bytesRecv,
-			TxSize:     txSize,
-			PubCid:     *pubCid,
+			Status:     derefOr(status, ""),
+			SealStatus: derefOr(sealStatus, ""),
+			Error:      derefOr(spError, ""),
+			DealID:     derefOr(dealID, 0),
+			BytesRecv:  derefOr(bytesRecv, 0),
+			TxSize:     derefOr(txSize, 0),
+			PubCid:     derefOr(pubCid, ""),
 		})
 	}
 
@@ -790,4 +786,11 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 	}
 
 	return nil
+}
+
+func derefOr[T any](v *T, def T) T {
+	if v == nil {
+		return def
+	}
+	return *v
 }

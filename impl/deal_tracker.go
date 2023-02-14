@@ -39,7 +39,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 
 		err := r.runDealCheckLoop(ctx, gw)
 		if err != nil {
-			panic(err)
+			log.Errorw("deal check loop failed", "error", err)
 		}
 
 		checkDuration := time.Since(checkStart)
@@ -65,30 +65,43 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 	}
 
 	for _, deal := range toCheck {
-		maddr, err := address.NewIDAddress(uint64(deal.ProviderAddr))
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := r.runDealCheck(ctx, gw, walletAddr, deal)
+		cancel()
 		if err != nil {
-			return xerrors.Errorf("new id address: %w", err)
+			log.Errorw("deal check failed", "error", err)
 		}
+	}
 
-		dealUUID, err := uuid.Parse(deal.DealUUID)
-		if err != nil {
-			return xerrors.Errorf("parse deal uuid: %w", err)
-		}
+	return nil
+}
 
-		addrInfo, err := GetAddrInfo(ctx, gw, maddr)
-		if err != nil {
-			return xerrors.Errorf("get addr info: %w", err)
-		}
+func (r *ribs) runDealCheck(ctx context.Context, gw api.Gateway, walletAddr address.Address, deal inactiveDealMeta) error {
+	maddr, err := address.NewIDAddress(uint64(deal.ProviderAddr))
+	if err != nil {
+		return xerrors.Errorf("new id address: %w", err)
+	}
 
-		if err := r.host.Connect(ctx, *addrInfo); err != nil {
-			return xerrors.Errorf("connect to miner: %w", err)
-		}
+	dealUUID, err := uuid.Parse(deal.DealUUID)
+	if err != nil {
+		return xerrors.Errorf("parse deal uuid: %w", err)
+	}
 
-		resp, err := r.SendDealStatusRequest(ctx, addrInfo.ID, dealUUID, walletAddr)
-		if err != nil {
-			return fmt.Errorf("send deal status request failed: %w", err)
-		}
+	addrInfo, err := GetAddrInfo(ctx, gw, maddr)
+	if err != nil {
+		return xerrors.Errorf("get addr info: %w", err)
+	}
 
+	if err := r.host.Connect(ctx, *addrInfo); err != nil {
+		return xerrors.Errorf("connect to miner: %w", err)
+	}
+
+	resp, err := r.SendDealStatusRequest(ctx, addrInfo.ID, dealUUID, walletAddr)
+	if err != nil {
+		return fmt.Errorf("send deal status request failed: %w", err)
+	}
+
+	if resp.DealStatus != nil {
 		if err := r.db.UpdateSPDealState(dealUUID, *resp); err != nil {
 			return xerrors.Errorf("storing deal state response: %w", err)
 		}
