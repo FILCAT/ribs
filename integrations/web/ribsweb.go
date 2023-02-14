@@ -82,16 +82,16 @@ func (ri *RIBSWeb) ApiGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Content-Type", "application/json")
+
 	gm, err := ri.ribs.Diagnostics().GroupMeta(ribs.GroupKey(gint))
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(gm); err != nil {
 		http.Error(w, err.Error(), 500)

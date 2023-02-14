@@ -17,6 +17,8 @@ import (
 )
 
 func (r *ribs) setupCarServer(ctx context.Context, host host.Host) error {
+	// todo protect incoming streams
+
 	listener, err := gostream.Listen(host, types.DataTransferProtocol)
 	if err != nil {
 		return fmt.Errorf("starting gostream listener: %w", err)
@@ -160,6 +162,9 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	err = r.withReadableGroup(reqToken.Group, func(group *Group) error {
+		// todo range request handling
+		//http.ServeContent(w, req, "deal.car", time.Now(), &carWriter{})
+
 		_, _, err := group.writeCar(sw)
 		return err
 	})

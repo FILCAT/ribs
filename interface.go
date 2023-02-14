@@ -115,7 +115,17 @@ type GroupMeta struct {
 }
 
 type DealMeta struct {
+	UUID     string
 	Provider int64
+
+	Status     string
+	SealStatus string
+	Error      string
+	DealID     int64
+
+	BytesRecv int64
+	TxSize    int64
+	PubCid    string
 }
 
 type Diag interface {

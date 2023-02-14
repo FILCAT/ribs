@@ -664,20 +664,41 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	var dealMeta []iface.DealMeta
 
-	res, err = r.db.Query("select provider_addr from deals where group_id = ?", gk)
+	res, err = r.db.Query("select uuid, provider_addr, sp_status, sp_sealing_status, sp_error, sp_dealid, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
 
 	for res.Next() {
+		var dealUuid string
 		var provider int64
-		err := res.Scan(&provider)
+		var status string
+		var sealStatus string
+		var spError string
+		var dealID int64
+		var bytesRecv int64
+		var txSize int64
+		var pubCid *string
+
+		err := res.Scan(&dealUuid, &provider, &status, &sealStatus, &spError, &dealID, &bytesRecv, &txSize, &pubCid)
 		if err != nil {
-			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
+			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		if pubCid == nil {
+			pubCid = new(string)
 		}
 
 		dealMeta = append(dealMeta, iface.DealMeta{
-			Provider: provider,
+			UUID:       dealUuid,
+			Provider:   provider,
+			Status:     status,
+			SealStatus: sealStatus,
+			Error:      spError,
+			DealID:     dealID,
+			BytesRecv:  bytesRecv,
+			TxSize:     txSize,
+			PubCid:     *pubCid,
 		})
 	}
 

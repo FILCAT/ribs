@@ -19,6 +19,12 @@
             "Offloaded",
         ]
 
+        const dealSealingStates = {
+            'PublishConfirmed': true,
+            'AddedPiece': true,
+            'IndexedAndAnnounced': true,
+        }
+
         function formatBytesBinary(bytes) {
             const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
             let l = 0, n = parseInt(bytes, 10) || 0;
@@ -141,8 +147,11 @@
                     groupBarBlocksElem.classList.add('group-bar-blocks');
                     groupBarBlocksElem.innerText = '.';
 
+                    let groupTxInfo = document.createElement('div');
+
                     let groupTxDealInfo = document.createElement('div');
                     groupTxDealInfo.classList.add('group-tx-deal-info');
+                    groupTxDealInfo.appendChild(groupTxInfo);
 
                     groupHeadElem.appendChild(groupNameElem);
 
@@ -165,7 +174,8 @@
                     totalBlocks += meta.Blocks;
                     totalBytes += meta.Bytes;
 
-                    groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupTxDealInfo, groupBarSizeElem, groupBarBlocksElem, meta}
+                    groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupTxDealInfo, groupTxInfo, groupBarSizeElem, groupBarBlocksElem, meta}
+                    groupElems[group].dealElems = {}
                 }
 
                 totalBlocks -= groupElems[group].meta.Blocks;
@@ -181,13 +191,29 @@
                 groupElems[group].groupBarBlocksElem.style.width = `${formatPercent(meta.Blocks / meta.MaxBlocks)}`;
 
                 if(state.CarUploads[group] !== undefined) {
-                    groupElems[group].groupTxDealInfo.innerText = `[${state.CarUploads[group].ActiveRequests} Upload(s) (${formatBytesBinary(state.CarUploads[group].Last250MsUploadBytes*4)}/s)]`;
+                    groupElems[group].groupTxInfo.innerText = `[${state.CarUploads[group].ActiveRequests} Upload(s) (${formatBytesBinary(state.CarUploads[group].Last250MsUploadBytes*4)}/s)]`;
                 } else {
-                    groupElems[group].groupTxDealInfo.innerText = ``;
+                    groupElems[group].groupTxInfo.innerText = ``;
                 }
 
                 if(meta.Deals) {
-                    groupElems[group].groupTxDealInfo.innerText += `[Deals: ${meta.Deals.map(d => `f0${d.Provider}`)}]`;
+                    for (let j = 0; j < meta.Deals.length; j++) {
+                        let deal = meta.Deals[j];
+
+                        if(groupElems[group].dealElems[deal.UUID] === undefined) {
+                            groupElems[group].dealElems[deal.UUID] = document.createElement('div');
+                            groupElems[group].groupTxDealInfo.appendChild(groupElems[group].dealElems[deal.UUID]);
+                        }
+
+                        groupElems[group].dealElems[deal.UUID].innerHTML = `
+                            <div class="group-deal">
+                                <abbr title="${deal.UUID}">${deal.UUID.substring(0, 8)}...</abbr>
+                                <span>f0${deal.Provider}</span>
+                                ${deal.BytesRecv > 0 ? `<span>${formatBytesBinary(deal.BytesRecv)}/${formatBytesBinary(deal.TxSize)}</span>` : ''}
+                                ${deal.PubCid != "" ? `<span>pubMsg:<a href="https://filfox.info/en/message/${deal.PubCid}">ba..${deal.PubCid.substr(-8)}</a></span>` : ''}
+                                ${deal.Error == "" ? `<span>${deal.Status}${dealSealingStates[deal.Status] ? ` (${deal.SealStatus})` : ''}</span>` : `<span>Error (${deal.Status})</span><div class="deal-err">${deal.Error}</div>`}
+                            </div>`;
+                    }
                 }
             }
 
@@ -269,6 +295,7 @@
 
             padding: 1em;
             border-right: 1px solid #000000;
+            min-width: 210px;
         }
 
         .group-head {
@@ -299,13 +326,15 @@
         .group-bar-blocks {
             background-color: #0000ff;
         }
+
+        .deal-err {
+            font-family: monospace;
+            padding-left: 1em;
+        }
     </style>
 </head>
 <body>
-<h2>SP Tracker</h2>
-<div id="sp-tracker-state"></div>
-<hr>
-<h2>Groups</h2>
+<h3>Groups</h3>
 <div class="group">
     <div class="group-left">
         <div class="group-head">
@@ -315,6 +344,10 @@
     </div>
 </div>
 <div class="groups"></div>
+<h3>SP Tracker</h3>
+<div id="sp-tracker-state"></div>
+<hr>
+<h3>Providers</h3>
 <table class="providers">
     <td>Address</td><td>Piece Sizes</td><td><abbr title="FIL/GiB/mo">Price (Fil+)</abbr></td><td>Features</td>
 </table>
