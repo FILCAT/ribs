@@ -425,6 +425,14 @@ func (m *Group) GenCommP() error {
 
 var verified = false
 
+type ErrRejected struct {
+	Reason string
+}
+
+func (e ErrRejected) Error() string {
+	return fmt.Sprintf("deal proposal rejected: %s", e.Reason)
+}
+
 func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
 	provs, err := m.db.SelectDealProviders(m.id)
 	if err != nil {
@@ -468,8 +476,8 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return fmt.Errorf("failed to convert commP to cid: %w", err)
 	}
 
-	makeDealWith := func(prov int64) error {
-		maddr, err := address.NewIDAddress(uint64(prov))
+	makeDealWith := func(prov dealProvider) error {
+		maddr, err := address.NewIDAddress(uint64(prov.id))
 		if err != nil {
 			return xerrors.Errorf("new id address: %w", err)
 		}
@@ -511,7 +519,15 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 
 		duration := 400 * builtin.EpochsInDay
 
-		price := big.Zero()
+		price := big.NewInt(prov.ask_price)
+		if verified {
+			price = big.NewInt(prov.ask_verif_price)
+		}
+
+		if price.GreaterThan(big.NewInt(int64(maxPrice))) {
+			// this check is probably redundant, buuut..
+			return fmt.Errorf("price %d is greater than max price %f", price, maxPrice)
+		}
 
 		dealProposal, err := dealProposal(ctx, w, walletAddr, dealInfo.Root, abi.PaddedPieceSize(dealInfo.PieceSize), pieceCid, maddr, startEpoch, duration, verified, providerCollateral, price)
 		if err != nil {
@@ -539,23 +555,30 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			return fmt.Errorf("send proposal rpc: %w", err)
 		}
 
-		if !resp.Accepted {
-			return fmt.Errorf("deal proposal rejected: %s", resp.Message)
-		}
-
-		// SAVE DETAILS
-
-		err = m.db.StoreDeal(dbDealInfo{
+		di := dbDealInfo{
 			DealUUID:      dealUuid.String(),
 			GroupID:       m.id,
 			ClientAddr:    walletAddr.String(),
-			ProviderAddr:  prov,
+			ProviderAddr:  prov.id,
 			PricePerEpoch: price.Int64(),
 			Verified:      verified,
 			KeepUnsealed:  true,
 			StartEpoch:    startEpoch,
 			EndEpoch:      startEpoch + abi.ChainEpoch(duration),
-		})
+		}
+
+		if !resp.Accepted {
+			err = m.db.StoreDealError(di, resp.Message, true)
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
+			return ErrRejected{Reason: resp.Message}
+		}
+
+		// SAVE DETAILS
+
+		err = m.db.StoreDeal(di)
 		if err != nil {
 			return fmt.Errorf("saving deal info: %w", err)
 		}
@@ -565,12 +588,28 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return nil
 	}
 
+	notFailed := 0
+
 	// make deals with candidates
 	for _, prov := range provs {
-		if err := makeDealWith(prov); err != nil {
-			log.Errorw("failed to make deal with provider", "provider", prov, "error", err)
-			// todo record
+		err := makeDealWith(prov)
+		if err == nil {
+			notFailed++
+
+			if notFailed >= 5 {
+				// enough
+				break
+			}
+
+			// deal made
+			continue
 		}
+		/*if re, ok := err.(ErrRejected); ok {
+			// deal rejected
+			continue
+		}*/
+
+		log.Errorw("failed to make deal with provider", "provider", prov, "error", err)
 	}
 
 	// move to deals made state

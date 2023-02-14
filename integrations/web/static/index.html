@@ -199,7 +199,7 @@
                         }
 
                         groupElems[group].dealElems[deal.UUID].innerHTML = `
-                            <div class="group-deal">
+                            <div class="group-deal${deal.Status=='Rejected'? ` deal-failed` :''}">
                                 <abbr title="${deal.UUID}">${deal.UUID.substring(0, 8)}...</abbr>
                                 <span>f0${deal.Provider}</span>
                                 ${deal.BytesRecv > 0 ? `<span>${formatBytesBinary(deal.BytesRecv)}/${formatBytesBinary(deal.TxSize)}</span>` : ''}
@@ -323,6 +323,10 @@
         .deal-err {
             font-family: monospace;
             padding-left: 1em;
+        }
+
+        .deal-failed {
+            color: #554444;
         }
     </style>
 </head>

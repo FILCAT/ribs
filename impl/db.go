@@ -20,7 +20,7 @@ var (
 	maxVerifPrice float64 = 0
 
 	// 2 mFil/gib/mo is roughly cloud cost currently
-	maxPrice float64 = (0 * mFil) / 2 / 60 / 24 / 30.436875
+	maxPrice float64 = (2 * mFil) / 2 / 60 / 24 / 30.436875
 
 	// piece size range ribs is aiming for
 	minPieceSize = 4 << 30
@@ -96,7 +96,7 @@ create table if not exists deals (
     deal_id integer,
     active integer not null default 0,
 
-	/* sp deal state */
+    /* sp deal state */
     sp_status text, /* boost checkpoint name */
     sp_error text,
     sp_sealing_status text,
@@ -236,24 +236,30 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	return out
 }
 
-func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
+type dealProvider struct {
+	id              int64
+	ask_price       int64
+	ask_verif_price int64
+}
+
+func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, error) {
 	// only reachable, with boost_deals, only ones that don't have deals for this group
 	// 6 at random
 	// 2 of them with booster_http
 	// 2 of them with booster_bitswap
 
-	var withHttp []int64
-	var withBitswap []int64
-	var random []int64
+	var withHttp []dealProvider
+	var withBitswap []dealProvider
+	var random []dealProvider
 
-	res, err := r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) order by random() limit 6`, group)
+	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) order by random() limit 12`, group)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
-		var id int64
-		err := res.Scan(&id)
+		var id dealProvider
+		err := res.Scan(&id.id, &id.ask_price, &id.ask_verif_price)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning provider: %w", err)
 		}
@@ -269,14 +275,14 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 order by random() limit 2`, group)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 order by random() limit 5`, group)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
-		var id int64
-		err := res.Scan(&id)
+		var id dealProvider
+		err := res.Scan(&id.id, &id.ask_price, &id.ask_verif_price)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning provider: %w", err)
 		}
@@ -292,14 +298,14 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 order by random() limit 2`, group)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 order by random() limit 5`, group)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
 
 	for res.Next() {
-		var id int64
-		err := res.Scan(&id)
+		var id dealProvider
+		err := res.Scan(&id.id, &id.ask_price, &id.ask_verif_price)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning provider: %w", err)
 		}
@@ -315,33 +321,30 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	out := make([]int64, 0, 6)
+	out := make([]dealProvider, 0, 14)
 	out = append(out, withHttp...)
 	out = append(out, withBitswap...)
 	out = append(out, random...)
 
 	// dedup
-	seen := make(map[int64]struct{})
-	for _, id := range out {
-		if _, ok := seen[id]; ok {
+	seen := make(map[int64]dealProvider)
+	for _, p := range out {
+		if _, ok := seen[p.id]; ok {
 			continue
 		}
-		seen[id] = struct{}{}
+		seen[p.id] = p
 	}
 
-	out = make([]int64, 0, len(seen))
-	for id := range seen {
-		out = append(out, id)
-	}
-
-	// trim to 5
-	if len(out) > 5 {
-		out = out[:5]
+	out = make([]dealProvider, 0, 9)
+	for _, p := range seen {
+		out = append(out, p)
+		// trim to 9
+		if len(out) == 9 {
+			break
+		}
 	}
 
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
-
-	out = []int64{2620}
 
 	return out, nil
 }
@@ -362,10 +365,23 @@ type dbDealInfo struct {
 }
 
 func (r *ribsDB) StoreDeal(d dbDealInfo) error {
-	// also increment deal_attempts for the provider
-
 	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch) values
                                    (?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch)
+	if err != nil {
+		return xerrors.Errorf("inserting deal: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) StoreDealError(d dbDealInfo, emsg string, rejected bool) error {
+	state := "Failed"
+	if rejected {
+		state = "Rejected"
+	}
+
+	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, sp_status, sp_error) values
+                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, state, emsg)
 	if err != nil {
 		return xerrors.Errorf("inserting deal: %w", err)
 	}
