@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
@@ -91,9 +93,19 @@ create table if not exists deals (
     start_epoch integer not null,
     end_epoch integer not null,
 
-    data_sent integer not null default 0,
     deal_id integer,
     active integer not null default 0,
+
+	/* sp deal state */
+    sp_status text, /* boost checkpoint name */
+    sp_error text,
+    sp_sealing_status text,
+    sp_sig_proposal text,
+    sp_pub_msg_cid text,
+    sp_dealid integer,
+
+    sp_recv_bytes integer,
+    sp_txsize integer,
 
     /* retrieval checks */
     retrieval_probes_started integer not null default 0,
@@ -329,6 +341,8 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]int64, error) {
 
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
 
+	out = []int64{2620}
+
 	return out, nil
 }
 
@@ -357,6 +371,58 @@ func (r *ribsDB) StoreDeal(d dbDealInfo) error {
 	}
 
 	return nil
+}
+
+func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp types.DealStatusResponse) error {
+	var pubCid *string
+	if stresp.DealStatus.PublishCid != nil {
+		s := stresp.DealStatus.PublishCid.String()
+		pubCid = &s
+	}
+
+	_, err := r.db.Exec(`update deals set
+	sp_status = ?,
+	sp_error = ?,
+	sp_sealing_status = ?,
+	sp_sig_proposal = ?,
+	sp_pub_msg_cid = ?,
+	sp_dealid = ?,
+	sp_recv_bytes = ?,
+	sp_txsize = ?
+	where uuid = ?`, stresp.DealStatus.Status, stresp.DealStatus.Error, stresp.DealStatus.SealingStatus,
+		stresp.DealStatus.SignedProposalCid.String(), pubCid, stresp.DealStatus.ChainDealID,
+		stresp.NBytesReceived, stresp.TransferSize, id)
+	if err != nil {
+		return xerrors.Errorf("update sp tracker: %w", err)
+	}
+
+	return nil
+}
+
+type inactiveDealMeta struct {
+	DealUUID     string
+	ProviderAddr int64
+}
+
+func (r *ribsDB) InactiveDeals() ([]inactiveDealMeta, error) {
+	res, err := r.db.Query(`select uuid, provider_addr from deals where active = 0`)
+	if err != nil {
+		return nil, xerrors.Errorf("querying deals: %w", err)
+	}
+
+	out := make([]inactiveDealMeta, 0)
+
+	for res.Next() {
+		var dm inactiveDealMeta
+		err := res.Scan(&dm.DealUUID, &dm.ProviderAddr)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		out = append(out, dm)
+	}
+
+	return out, nil
 }
 
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {

@@ -112,10 +112,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		tasks: make(chan task, 16),
 
-		workerClose:  make(chan struct{}),
-		workerClosed: make(chan struct{}),
-
-		spCrawlClose:  make(chan struct{}),
+		close:         make(chan struct{}),
+		workerClosed:  make(chan struct{}),
 		spCrawlClosed: make(chan struct{}),
 	}
 
@@ -124,6 +122,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
 	go r.resumeGroups()
+	go r.dealTracker(context.TODO())
 
 	if err := r.setupCarServer(context.TODO(), h); err != nil {
 		return nil, xerrors.Errorf("setup car server: %w", err)
@@ -138,7 +137,7 @@ func (r *ribs) groupWorker(gate <-chan struct{}) {
 		select {
 		case task := <-r.tasks:
 			r.workerExecTask(task)
-		case <-r.workerClose:
+		case <-r.close:
 			close(r.workerClosed)
 			return
 		}
@@ -241,10 +240,8 @@ type ribs struct {
 
 	/* storage */
 
-	workerClose  chan struct{}
-	workerClosed chan struct{}
-
-	spCrawlClose  chan struct{}
+	close         chan struct{}
+	workerClosed  chan struct{}
 	spCrawlClosed chan struct{}
 
 	tasks chan task
@@ -262,8 +259,7 @@ type ribs struct {
 }
 
 func (r *ribs) Close() error {
-	close(r.workerClose)
-	close(r.spCrawlClose)
+	close(r.close)
 	<-r.workerClosed
 	<-r.spCrawlClosed
 

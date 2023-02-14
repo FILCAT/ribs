@@ -572,6 +572,11 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}
 	}
 
+	// move to deals made state
+	if err := m.advanceState(ctx, iface.GroupStateDealsInProgress); err != nil {
+		return xerrors.Errorf("mark level index dropped: %w", err)
+	}
+
 	return nil
 }
 
