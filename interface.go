@@ -128,6 +128,14 @@ type DealMeta struct {
 	PubCid    string
 }
 
+type WalletInfo struct {
+	Addr string
+
+	Balance       string
+	MarketBalance string
+	MarketLocked  string
+}
+
 type Diag interface {
 	Groups() ([]GroupKey, error)
 	GroupMeta(gk GroupKey) (GroupMeta, error)
@@ -136,6 +144,8 @@ type Diag interface {
 
 	CrawlState() string
 	ReachableProviders() []ProviderMeta
+
+	WalletInfo() (WalletInfo, error)
 }
 
 type UploadStats struct {

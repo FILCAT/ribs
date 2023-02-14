@@ -84,6 +84,11 @@
 
             document.querySelector('#sp-tracker-state').innerHTML = state.CrawlState;
 
+            document.getElementById('wallet-address').innerText = state.Wallet.Addr;
+            document.getElementById('wallet-balance').innerText = state.Wallet.Balance
+            document.getElementById('wallet-available').innerText = state.Wallet.MarketBalance;
+            document.getElementById('wallet-locked').innerText = state.Wallet.MarketLocked;
+
             let groups = state.Groups;
             let groupsDiv = document.querySelector('.groups');
 
@@ -98,18 +103,6 @@
 
                 let metaResp = await fetch(`http://127.0.0.1:9010/api/v0/group?group=${group}`);
                 let meta = await metaResp.json();
-
-                /*
-                * type GroupMeta struct {
-                    State GroupState
-
-                    MaxBlocks int64
-                    MaxBytes  int64
-
-                    Blocks int64
-                    Bytes  int64
-                }
-                * */
 
                 if(groupElems[group] === undefined) {
                     let groupElem = document.createElement('div');
@@ -334,6 +327,16 @@
     </style>
 </head>
 <body>
+<h3>Wallet</h3>
+<div id="wallet">
+    <table>
+        <tr><td>Address</td><td><span id="wallet-address">..</span></td></tr>
+        <tr><td>Balance</td><td><span id="wallet-balance">..</span></td></tr>
+        <tr><td>Market</td><td><span id="wallet-available">..</span></td></tr>
+        <tr><td>^ Locked</td><td><span id="wallet-locked">..</span></td></tr>
+    </table>
+</div>
+<hr>
 <h3>Groups</h3>
 <div class="group">
     <div class="group-left">

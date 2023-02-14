@@ -44,6 +44,8 @@ type state struct {
 	Providers  []ribs.ProviderMeta
 
 	CarUploads map[ribs.GroupKey]*ribs.UploadStats
+
+	Wallet ribs.WalletInfo
 }
 
 func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +64,18 @@ func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	w.Header().Set("Content-Type", "application/json")
 
+	wi, err := ri.ribs.Diagnostics().WalletInfo()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	if err := json.NewEncoder(w).Encode(&state{
 		Groups:     gs,
 		CrawlState: ri.ribs.Diagnostics().CrawlState(),
 		Providers:  ri.ribs.Diagnostics().ReachableProviders(),
 		CarUploads: ri.ribs.Diagnostics().CarUploadStats(),
+		Wallet:     wi,
 	}); err != nil {
 		http.Error(w, err.Error(), 500)
 		return

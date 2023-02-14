@@ -141,7 +141,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 	r.crawlState.Store(&crawlQueryProviders)
 
-	const parallel = 64
+	const parallel = 128
 	throttle := make(chan struct{}, parallel)
 	const timeout = time.Second * 8
 
