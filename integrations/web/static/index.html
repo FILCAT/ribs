@@ -73,8 +73,16 @@
         let loopId = 0;
         const nonWritableRefreshEvery = 15;
 
-        let totalBlocks = 0;
-        let totalBytes = 0;
+        let totalPutBlocks = 0;
+        let totalPutBytes = 0;
+        let totalGetBlocks = 0;
+        let totalGetBytes = 0;
+
+        let prevTotalPutBlocks;
+        let prevTotalPutBytes;
+        let prevTotalGetBlocks;
+        let prevTotalGetBytes;
+        let prevTime;
 
         async function refresh() {
             loopId++;
@@ -164,17 +172,24 @@
 
                     groupsDiv.insertBefore(groupElem, groupsDiv.firstChild);
 
-                    totalBlocks += meta.Blocks;
-                    totalBytes += meta.Bytes;
+                    totalPutBlocks += meta.Blocks;
+                    totalPutBytes += meta.Bytes;
+                    totalGetBlocks += meta.ReadBlocks;
+                    totalGetBytes += meta.ReadBytes;
 
                     groupElems[group] = {groupElem, groupStatusElem, groupRowSizeElem, groupRowBlocksElem, groupTxDealInfo, groupTxInfo, groupBarSizeElem, groupBarBlocksElem, meta}
                     groupElems[group].dealElems = {}
                 }
 
-                totalBlocks -= groupElems[group].meta.Blocks;
-                totalBytes -= groupElems[group].meta.Bytes;
-                totalBlocks += meta.Blocks;
-                totalBytes += meta.Bytes;
+                totalPutBlocks -= groupElems[group].meta.Blocks;
+                totalPutBytes -= groupElems[group].meta.Bytes;
+                totalGetBlocks -= groupElems[group].meta.ReadBlocks;
+                totalGetBytes -= groupElems[group].meta.ReadBytes;
+
+                totalPutBlocks += meta.Blocks;
+                totalPutBytes += meta.Bytes;
+                totalGetBlocks += meta.ReadBlocks;
+                totalGetBytes += meta.ReadBytes;
 
                 groupElems[group].meta = meta;
                 groupElems[group].groupStatusElem.innerText = states[meta.State];
@@ -210,8 +225,24 @@
                 }
             }
 
-            document.getElementById("total-bytes").innerText = formatBytesBinary(totalBytes);
-            document.getElementById("total-blocks").innerText = formatNum(totalBlocks) + " blocks";
+            document.getElementById("total-bytes").innerText = formatBytesBinary(totalPutBytes);
+            document.getElementById("total-blocks").innerText = formatNum(totalPutBlocks) + " blocks";
+
+            if(prevTotalPutBlocks !== undefined) {
+                let curTime = Date.now();
+                let refreshRate = 1000 / (curTime - prevTime);
+
+                document.getElementById('bw-put-blk').innerText = formatNum(refreshRate * (totalPutBlocks - prevTotalPutBlocks))
+                document.getElementById('bw-put-bytes').innerText = formatBytesBinary(refreshRate * (totalPutBytes - prevTotalPutBytes))
+                document.getElementById('bw-get-blk').innerText = formatNum(refreshRate * (totalGetBlocks - prevTotalGetBlocks))
+                document.getElementById('bw-get-bytes').innerText = formatBytesBinary(refreshRate * (totalGetBytes - prevTotalGetBytes))
+            }
+
+            prevTotalPutBlocks = totalPutBlocks;
+            prevTotalPutBytes = totalPutBytes;
+            prevTotalGetBlocks = totalGetBlocks;
+            prevTotalGetBytes = totalGetBytes;
+            prevTime = Date.now();
 
             for (let i = state.Providers.length - 1; i >= 0; i--) {
                 let provider = state.Providers[i];
@@ -233,20 +264,36 @@
                     let providerFeaturesElem = document.createElement('td');
                     providerFeaturesElem.classList.add('provider-features');
 
+                    let providerStoredElem = document.createElement('td');
+                    providerStoredElem.classList.add('provider-stored');
+
+                    let providerFailedElem = document.createElement('td');
+                    providerFailedElem.classList.add('provider-failed');
+
+                    let providerRejectedElem = document.createElement('td');
+                    providerRejectedElem.classList.add('provider-rejected');
+
                     providerElem.appendChild(providerAddrElem);
                     providerElem.appendChild(providerPieceSizesElem);
                     providerElem.appendChild(providerPriceElem);
                     providerElem.appendChild(providerFeaturesElem);
+                    providerElem.appendChild(providerStoredElem);
+                    providerElem.appendChild(providerFailedElem);
+                    providerElem.appendChild(providerRejectedElem);
 
                     document.querySelector('.providers').appendChild(providerElem);
 
-                    providerElems[provider.ID] = {providerElem, providerPieceSizesElem, providerPriceElem, providerFeaturesElem}
+                    providerElems[provider.ID] = {providerElem, providerPieceSizesElem, providerPriceElem, providerFeaturesElem, providerStoredElem, providerFailedElem, providerRejectedElem}
                 }
 
                 providerElems[provider.ID].providerPieceSizesElem.innerText = `${formatBytesBinary(provider.AskMinPieceSize)} to ${formatBytesBinary(provider.AskMaxPieceSize)}`;
                 providerElems[provider.ID].providerPriceElem.innerText = `${formatFil(provider.AskPrice*epochToMonth)} (${formatFil(provider.AskVerifiedPrice*epochToMonth)})`;
 
                 providerElems[provider.ID].providerFeaturesElem.innerText = `${provider.PingOk ? 'online' : 'offline'} ${provider.BoostDeals ? 'boost ' : ''}${provider.BoosterHttp ? 'http ' : ''}${provider.BoosterBitswap ? 'bitswap ' : ''}`;
+
+                providerElems[provider.ID].providerStoredElem.innerHTML = `${provider.DealStarted==0?`<span class="stat-gray">`:`<span>`}${provider.DealSuccess} / ${provider.DealStarted}</span>`;
+                providerElems[provider.ID].providerFailedElem.innerHTML = `${provider.DealFail==0?`<span class="stat-gray">`:`<span>`}${provider.DealFail}</span>`;
+                providerElems[provider.ID].providerRejectedElem.innerHTML = `${provider.DealRejected==0?`<span class="stat-gray">`:`<span>`}${provider.DealRejected}</span>`;
             }
 
             // todo this is flimsy
@@ -305,7 +352,6 @@
             height: 100%;
 
             flex-grow: 1;
-            border: 1px solid #000000;
         }
 
         .group-bar {
@@ -328,6 +374,10 @@
         .deal-failed {
             color: #554444;
         }
+
+        .stat-gray {
+            color: #888888;
+        }
     </style>
 </head>
 <body>
@@ -349,6 +399,10 @@
         </div><div class="group-row" id="total-bytes">0</div>
         <div class="group-row" id="total-blocks"></div>
     </div>
+    <div class="group-right">
+        <div>Put: <span id="bw-put-blk">0</span> Blk/s <span id="bw-put-bytes">0 B</span>/s</div>
+        <div>Get: <span id="bw-get-blk">0</span> Blk/s <span id="bw-get-bytes">0 B</span>/s</div>
+    </div>
 </div>
 <div class="groups"></div>
 <h3>SP Tracker</h3>
@@ -356,7 +410,7 @@
 <hr>
 <h3>Providers</h3>
 <table class="providers">
-    <td>Address</td><td>Piece Sizes</td><td><abbr title="FIL/GiB/mo">Price (Fil+)</abbr></td><td>Features</td>
+    <td>Address</td><td>Piece Sizes</td><td><abbr title="FIL/GiB/mo">Price (Fil+)</abbr></td><td>Features</td><td>Stored</td><td>Failed</td><td>Rejected</td>
 </table>
 </body>
 </html>

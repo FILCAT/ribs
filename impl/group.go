@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/xerrors"
 	"os"
@@ -70,6 +71,9 @@ type Group struct {
 
 	committedBlocks int64
 	committedSize   int64
+
+	readBlocks int64
+	readSize   int64
 
 	jb *jbob.JBOB
 }
@@ -221,6 +225,9 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 		if !found {
 			return xerrors.Errorf("group: block not found")
 		}
+
+		atomic.AddInt64(&m.readBlocks, 1)
+		atomic.AddInt64(&m.readSize, int64(len(data)))
 
 		cb(cidx, data)
 		return nil

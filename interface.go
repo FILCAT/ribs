@@ -111,6 +111,8 @@ type GroupMeta struct {
 	Blocks int64
 	Bytes  int64
 
+	ReadBlocks, ReadBytes int64
+
 	Deals []DealMeta
 }
 
@@ -164,9 +166,10 @@ type ProviderMeta struct {
 	IndexedSuccess int64
 	IndexedFail    int64
 
-	DealAttempts int64
+	DealStarted  int64
 	DealSuccess  int64
 	DealFail     int64
+	DealRejected int64
 
 	RetrProbeSuccess int64
 	RetrProbeFail    int64

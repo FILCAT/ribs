@@ -233,6 +233,34 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 		return nil
 	}
 
+	res, err = r.db.Query(`select provider_addr, count(*),
+       sum(case when sp_status = 'Active' then 1 else 0 end),
+       sum(case when sp_status != 'Rejected' and sp_error != '' then 1 else 0 end),
+       sum(case when sp_status = 'Rejected' then 1 else 0 end) from deals group by provider_addr`)
+	if err != nil {
+		log.Errorw("querying deals", "error", err)
+		return nil
+	}
+
+	for res.Next() {
+		var id int64
+		var dealStarted, dealSuccess, dealFail, dealRejected int64
+		err := res.Scan(&id, &dealStarted, &dealSuccess, &dealFail, &dealRejected)
+		if err != nil {
+			log.Errorw("scanning deal", "error", err)
+			return nil
+		}
+
+		for i := range out {
+			if out[i].ID == id {
+				out[i].DealStarted = dealStarted
+				out[i].DealSuccess = dealSuccess
+				out[i].DealFail = dealFail
+				out[i].DealRejected = dealRejected
+			}
+		}
+	}
+
 	return out
 }
 

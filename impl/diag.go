@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
+	"sync/atomic"
 )
 
 func (r *ribs) Diagnostics() iface.Diag {
@@ -17,7 +18,21 @@ func (r *ribs) Groups() ([]iface.GroupKey, error) {
 }
 
 func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
-	return r.db.GroupMeta(gk)
+	m, err := r.db.GroupMeta(gk)
+	if err != nil {
+		return iface.GroupMeta{}, xerrors.Errorf("get group meta: %w", err)
+	}
+
+	r.lk.Lock()
+	g, ok := r.openGroups[gk]
+	r.lk.Unlock()
+
+	if ok {
+		m.ReadBlocks = atomic.LoadInt64(&g.readBlocks)
+		m.ReadBytes = atomic.LoadInt64(&g.readSize)
+	}
+
+	return m, nil
 }
 
 func (r *ribs) CrawlState() string {
