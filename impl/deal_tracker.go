@@ -54,7 +54,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	toCheck, err := r.db.InactiveDeals()
+	toCheck, err := r.db.DealsToCheck()
 	if err != nil {
 		return xerrors.Errorf("get inactive deals: %w", err)
 	}

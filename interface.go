@@ -120,6 +120,8 @@ type DealMeta struct {
 	UUID     string
 	Provider int64
 
+	Sealed, Failed, Rejected bool
+
 	Status     string
 	SealStatus string
 	Error      string

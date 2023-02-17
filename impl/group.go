@@ -585,7 +585,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 
 		// SAVE DETAILS
 
-		err = m.db.StoreDeal(di)
+		err = m.db.StoreNewDeal(di)
 		if err != nil {
 			return fmt.Errorf("saving deal info: %w", err)
 		}
