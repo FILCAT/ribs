@@ -144,15 +144,15 @@ func (r *ribs) groupWorker(gate <-chan struct{}) {
 	}
 }
 
-func (r *ribs) workerExecTask(task task) {
-	switch task.tt {
+func (r *ribs) workerExecTask(toExec task) {
+	switch toExec.tt {
 	case taskTypeFinalize:
 
 		r.lk.Lock()
-		g, ok := r.openGroups[task.group]
+		g, ok := r.openGroups[toExec.group]
 		if !ok {
 			r.lk.Unlock()
-			log.Errorw("group not open", "group", task.group, "task", task)
+			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
 			return
 		}
 
@@ -164,10 +164,10 @@ func (r *ribs) workerExecTask(task task) {
 		fallthrough
 	case taskTypeMakeVCAR:
 		r.lk.Lock()
-		g, ok := r.openGroups[task.group]
+		g, ok := r.openGroups[toExec.group]
 		r.lk.Unlock()
 		if !ok {
-			log.Errorw("group not open", "group", task.group, "task", task)
+			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
 			return
 		}
 
@@ -178,10 +178,10 @@ func (r *ribs) workerExecTask(task task) {
 		fallthrough
 	case taskTypeGenCommP:
 		r.lk.Lock()
-		g, ok := r.openGroups[task.group]
+		g, ok := r.openGroups[toExec.group]
 		r.lk.Unlock()
 		if !ok {
-			log.Errorw("group not open", "group", task.group, "task", task)
+			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
 			return
 		}
 
@@ -192,14 +192,14 @@ func (r *ribs) workerExecTask(task task) {
 		fallthrough
 	case taskTypeMakeMoreDeals:
 		r.lk.Lock()
-		g, ok := r.openGroups[task.group]
+		g, ok := r.openGroups[toExec.group]
 		r.lk.Unlock()
 		if !ok {
-			log.Errorw("group not open", "group", task.group, "task", task)
+			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
 			return
 		}
 
-		reqToken, err := r.makeCarRequestToken(context.TODO(), task.group, time.Hour*36)
+		reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36)
 		if err != nil {
 			log.Errorf("making car request token: %s", err)
 			return
@@ -209,6 +209,22 @@ func (r *ribs) workerExecTask(task task) {
 		if err != nil {
 			log.Errorf("starting new deals: %s", err)
 		}
+		fallthrough
+	case taskMonitorDeals:
+
+		c, err := r.db.GetNonFailedDealCount(toExec.group)
+		if err != nil {
+			log.Errorf("getting non-failed deal count: %s", err)
+			return
+		}
+
+		if c < targetReplicaCount {
+			go func() {
+				r.tasks <- toExec
+			}()
+		}
+
+		// todo add a check-in task to some timed queue
 	}
 }
 
@@ -219,6 +235,7 @@ const (
 	taskTypeMakeVCAR
 	taskTypeGenCommP
 	taskTypeMakeMoreDeals
+	taskMonitorDeals
 )
 
 type task struct {
@@ -391,7 +408,7 @@ func (r *ribs) resumeGroup(group iface.GroupKey) {
 	case iface.GroupStateHasCommp:
 		sendTask(taskTypeMakeMoreDeals)
 	case iface.GroupStateDealsInProgress:
-		// todo
+		sendTask(taskMonitorDeals)
 	case iface.GroupStateDealsDone:
 	case iface.GroupStateOffloaded:
 	}

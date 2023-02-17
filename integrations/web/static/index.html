@@ -214,7 +214,7 @@
                         }
 
                         groupElems[group].dealElems[deal.UUID].innerHTML = `
-                            <div class="group-deal${deal.Failed? ` deal-failed` :''}">
+                            <div class="group-deal${deal.Failed ? ` deal-failed` :''}">
                                 <abbr title="${deal.UUID}">${deal.UUID.substring(0, 8)}...</abbr>
                                 <span>f0${deal.Provider}</span>
                                 ${deal.BytesRecv > 0 ? `<span>${formatBytesBinary(deal.BytesRecv)}/${formatBytesBinary(deal.TxSize)}</span>` : ''}

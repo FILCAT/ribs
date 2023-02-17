@@ -81,7 +81,7 @@ create index if not exists groups_g_state_index
 /* deals */
 create table if not exists deals (
     uuid text not null constraint deals_pk primary key,
-    start_time integer default (strftime('%s','now')) not null,
+    start_time integer default (strftime('%%s','now')) not null,
 
     client_addr text not null,
     provider_addr integer not null,
@@ -382,6 +382,16 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 	return out, nil
 }
 
+func (r *ribsDB) GetNonFailedDealCount(group iface.GroupKey) (int, error) {
+	var count int
+	err := r.db.QueryRow(`select count(*) from deals where group_id = ? and failed = 0`, group).Scan(&count)
+	if err != nil {
+		return 0, xerrors.Errorf("querying deal count: %w", err)
+	}
+
+	return count, nil
+}
+
 type dbDealInfo struct {
 	DealUUID string
 	GroupID  iface.GroupKey
@@ -416,7 +426,7 @@ func (r *ribsDB) StoreDealError(d dbDealInfo, emsg string, rejected bool) error 
 	}
 
 	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, failed, rejected, sp_status, error_msg) values
-                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, failed, rejected, state, emsg)
+                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, failed, rejected, state, emsg)
 	if err != nil {
 		return xerrors.Errorf("inserting deal: %w", err)
 	}
@@ -718,7 +728,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	var dealMeta []iface.DealMeta
 
-	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected,, sp_status, sp_sealing_status, error_msg, sp_dealid, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
+	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, sp_status, sp_sealing_status, error_msg, sp_dealid, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -743,6 +753,9 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		dealMeta = append(dealMeta, iface.DealMeta{
 			UUID:       dealUuid,
 			Provider:   provider,
+			Sealed:     sealed,
+			Failed:     failed,
+			Rejected:   rejected,
 			Status:     derefOr(status, ""),
 			SealStatus: derefOr(sealStatus, ""),
 			Error:      derefOr(errMsg, ""),

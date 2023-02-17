@@ -47,6 +47,8 @@ var (
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
+
+	targetReplicaCount = 5
 )
 
 type Group struct {
@@ -446,9 +448,15 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return xerrors.Errorf("select deal providers: %w", err)
 	}
 
+	notFailed, err := m.db.GetNonFailedDealCount(m.id)
+	if err != nil {
+		log.Errorf("getting non-failed deal count: %s", err)
+		return xerrors.Errorf("getting non-failed deal count: %w", err)
+	}
+
 	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("creating gateway rpc client: %w", err)
 	}
 	defer closer()
 
@@ -595,15 +603,13 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return nil
 	}
 
-	notFailed := 0
-
 	// make deals with candidates
 	for _, prov := range provs {
 		err := makeDealWith(prov)
 		if err == nil {
 			notFailed++
 
-			if notFailed >= 5 {
+			if notFailed >= targetReplicaCount {
 				// enough
 				break
 			}
