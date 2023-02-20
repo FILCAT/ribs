@@ -1,12 +1,14 @@
 package jbob
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	blocks "github.com/ipfs/go-block-format"
 	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/bsst"
+	"io"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -24,6 +26,8 @@ const (
 	BsstIndex  = "index.bsst"
 )
 
+const jbobBufSize = 32 << 20
+
 // JBOB stands for "Just A Bunch Of Blocks"
 // * NOT THREAD SAFE FOR WRITING!!
 // * One tx at a time
@@ -39,6 +43,8 @@ type JBOB struct {
 	// data contains a log of all written data
 	// [[len: u4][logEntryType: u8][data]]..
 	data *os.File
+
+	dataBuffered *bufio.Writer
 
 	// current data file length
 	dataLen int64
@@ -89,7 +95,7 @@ func Create(indexPath, dataPath string) (*JBOB, error) {
 		return nil, xerrors.Errorf("opening head: %w", err)
 	}
 
-	dataFile, err := os.OpenFile(filepath.Join(dataPath), os.O_RDWR|os.O_SYNC|os.O_CREATE|os.O_EXCL, 0666)
+	dataFile, err := os.OpenFile(filepath.Join(dataPath), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening head: %w", err)
 	}
@@ -124,11 +130,12 @@ func Create(indexPath, dataPath string) (*JBOB, error) {
 	}
 
 	return &JBOB{
-		IndexPath: indexPath,
-		DataPath:  dataPath,
-		head:      headFile,
-		data:      dataFile,
-		dataLen:   0,
+		IndexPath:    indexPath,
+		DataPath:     dataPath,
+		head:         headFile,
+		data:         dataFile,
+		dataBuffered: bufio.NewWriterSize(dataFile, jbobBufSize),
+		dataLen:      0,
 
 		wIdx: idx,
 		rIdx: idx,
@@ -168,18 +175,30 @@ func Open(indexPath, dataPath string) (*JBOB, error) {
 		return nil, xerrors.Errorf("stat data len: %w", err)
 	}
 
-	if dataInfo.Size() > h.RetiredAt {
+	if dataInfo.Size() > h.RetiredAt { // data ahead means there was an unclean shutdown during a write
 		// todo truncate data / replay
 
-		return nil, xerrors.Errorf("data file is longer than head says it should be (%d > %d)", dataInfo.Size(), h.RetiredAt)
+		return nil, xerrors.Errorf("data file is longer than head says it should be (%d > %d, by %d B)", dataInfo.Size(), h.RetiredAt, dataInfo.Size()-h.RetiredAt)
+	}
+
+	if dataInfo.Size() < h.RetiredAt {
+		// something is not yes
+
+		return nil, xerrors.Errorf("data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
+	}
+
+	// seek to data end as writes are appended
+	if _, err := dataFile.Seek(dataInfo.Size(), io.SeekStart); err != nil {
+		return nil, xerrors.Errorf("seeking to data end: %w", err)
 	}
 
 	jb := &JBOB{
-		IndexPath: indexPath,
-		DataPath:  dataPath,
-		head:      headFile,
-		data:      dataFile,
-		dataLen:   dataInfo.Size(),
+		IndexPath:    indexPath,
+		DataPath:     dataPath,
+		head:         headFile,
+		data:         dataFile,
+		dataBuffered: bufio.NewWriterSize(dataFile, jbobBufSize),
+		dataLen:      dataInfo.Size(),
 	}
 
 	// open index
@@ -316,16 +335,16 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 
 		binary.LittleEndian.PutUint32(entHead, 1+2+uint32(len(data))+uint32(len(c[i])))
 		binary.LittleEndian.PutUint16(entHead[6:], uint16(len(c[i])))
-		if _, err := j.data.WriteAt(entHead, j.dataLen); err != nil {
+		if _, err := j.dataBuffered.Write(entHead); err != nil {
 			return xerrors.Errorf("writing entry header: %w", err)
 		}
 
-		if _, err := j.data.WriteAt(data, j.dataLen+int64(len(entHead))); err != nil {
+		if _, err := j.dataBuffered.Write(data); err != nil {
 			return xerrors.Errorf("writing entry header: %w", err)
 		}
 
 		// todo separate 'unhashed' block type for small blocks
-		if _, err := j.data.WriteAt(c[i], j.dataLen+int64(len(entHead))+int64(len(data))); err != nil {
+		if _, err := j.dataBuffered.Write(c[i]); err != nil {
 			return xerrors.Errorf("writing entry header: %w", err)
 		}
 
@@ -346,6 +365,14 @@ var errNothingToCommit = errors.New("nothing to commit")
 
 func (j *JBOB) Commit() (int64, error) {
 	// todo log commit?
+
+	if err := j.dataBuffered.Flush(); err != nil {
+		return 0, xerrors.Errorf("flush buffered data: %w", err)
+	}
+
+	if err := j.data.Sync(); err != nil {
+		return 0, xerrors.Errorf("sync data: %w", err)
+	}
 
 	// todo index is sync for now, and we're single threaded, so if there were any
 	// puts, just update head
