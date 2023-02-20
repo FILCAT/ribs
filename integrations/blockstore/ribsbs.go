@@ -2,26 +2,96 @@ package ribsbstore
 
 import (
 	"context"
-	ipld "github.com/ipfs/go-ipld-format"
-
+	"fmt"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )
 
+type Request[P, R any] struct {
+	Param P
+	Resp  chan R
+}
+
+func MakeRequest[P, R any](param P) Request[P, R] {
+	return Request[P, R]{
+		Param: param,
+		Resp:  make(chan R, 1),
+	}
+}
+
 type Blockstore struct {
 	r ribs.RIBS
 
 	sess ribs.Session
+
+	puts chan Request[[]blocks.Block, error]
 }
 
 func New(ctx context.Context, r ribs.RIBS) *Blockstore {
-	return &Blockstore{
+	b := &Blockstore{
 		r:    r,
 		sess: r.Session(ctx),
+		puts: make(chan Request[[]blocks.Block, error], 64), // todo make this configurable
+	}
+
+	go b.start(ctx)
+	return b
+}
+
+func (b *Blockstore) start(ctx context.Context) {
+	for {
+		select {
+		case req := <-b.puts:
+			var toPut []blocks.Block
+			var toRespond []chan<- error
+
+			toPut = append(toPut, req.Param...)
+			toRespond = append(toRespond, req.Resp)
+
+		loop:
+			for {
+				select {
+				case req := <-b.puts:
+					toPut = append(toPut, req.Param...)
+					toRespond = append(toRespond, req.Resp)
+				default:
+					break loop
+				}
+
+				if len(toPut) > 64 { // todo make this configurable
+					break
+				}
+			}
+
+			respondAll := func(err error) {
+				for _, resp := range toRespond {
+					resp <- err
+				}
+			}
+
+			bt := b.sess.Batch(ctx)
+			fmt.Println("putting", len(toPut), "blocks")
+			err := bt.Put(ctx, toPut)
+			if err != nil {
+				respondAll(err)
+				continue
+			}
+
+			err = bt.Flush(ctx)
+			if err != nil {
+				respondAll(err)
+				continue
+			}
+
+			respondAll(nil)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -107,19 +177,35 @@ func (b *Blockstore) GetSize(ctx context.Context, c cid.Cid) (int, error) {
 }
 
 func (b *Blockstore) Put(ctx context.Context, block blocks.Block) error {
-	bt := b.sess.Batch(ctx)
-	if err := bt.Put(ctx, []blocks.Block{block}); err != nil {
-		return err
+	req := MakeRequest[[]blocks.Block, error]([]blocks.Block{block})
+	select {
+	case b.puts <- req:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	return bt.Flush(ctx)
+
+	select {
+	case err := <-req.Resp:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (b *Blockstore) PutMany(ctx context.Context, blocks []blocks.Block) error {
-	bt := b.sess.Batch(ctx)
-	if err := bt.Put(ctx, blocks); err != nil {
-		return err
+func (b *Blockstore) PutMany(ctx context.Context, blk []blocks.Block) error {
+	req := MakeRequest[[]blocks.Block, error](blk)
+	select {
+	case b.puts <- req:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	return bt.Flush(ctx)
+
+	select {
+	case err := <-req.Resp:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (b *Blockstore) AllKeysChan(ctx context.Context) (<-chan cid.Cid, error) {
