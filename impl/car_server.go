@@ -14,6 +14,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -88,13 +90,25 @@ func (r *ribs) CarUploadStats() map[iface.GroupKey]*iface.UploadStats {
 }
 
 type carStatWriter struct {
-	ctr *int64
-	w   io.Writer
+	ctr       *int64
+	w         io.Writer
+	toDiscard int64
 }
 
 func (c *carStatWriter) Write(p []byte) (n int, err error) {
+	var discarded int64
+	if c.toDiscard > 0 {
+		if int64(len(p)) <= c.toDiscard {
+			c.toDiscard -= int64(len(p))
+			return len(p), nil
+		}
+		p = p[c.toDiscard:]
+		discarded = c.toDiscard
+		c.toDiscard = 0
+	}
 	n, err = c.w.Write(p)
 	atomic.AddInt64(c.ctr, int64(n))
+	n += int(discarded)
 	return
 }
 
@@ -105,6 +119,9 @@ var jwtKey = func() *jwt.HMACSHA { // todo generate / store
 type carRequestToken struct {
 	Group   int64
 	Timeout int64
+	CarSize int64
+
+	// todo SP
 }
 
 func (r *ribs) verify(ctx context.Context, token string) (carRequestToken, error) {
@@ -120,10 +137,11 @@ func (r *ribs) verify(ctx context.Context, token string) (carRequestToken, error
 	return payload, nil
 }
 
-func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout time.Duration) ([]byte, error) {
+func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout time.Duration, carSize int64) ([]byte, error) {
 	p := carRequestToken{
 		Group:   group,
 		Timeout: time.Now().Add(timeout).Unix(),
+		CarSize: carSize,
 	}
 
 	return jwt.Sign(&p, jwtKey)
@@ -156,6 +174,43 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.host.ConnManager().Protect(pid, tag)
 	defer r.host.ConnManager().Unprotect(pid, tag)
 
+	log.Errorw("headers", "headers", req.Header)
+
+	var toDiscard int64
+	if req.Header.Get("Range") != "" {
+		s1 := strings.Split(req.Header.Get("Range"), "=")
+		if len(s1) != 2 {
+			log.Errorw("invalid content range (1)", "range", req.Header.Get("Content-Range"), "s1", s1)
+			http.Error(w, "invalid content range", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(s1[0], "bytes") {
+			log.Errorw("invalid content range (2)", "range", req.Header.Get("Content-Range"), "s1", s1)
+			http.Error(w, "invalid content range", http.StatusBadRequest)
+			return
+		}
+
+		s2 := strings.Split(s1[1], "-")
+		if len(s2) != 2 {
+			log.Errorw("invalid content range (3)", "range", req.Header.Get("Content-Range"), "s2", s2)
+			http.Error(w, "invalid content range", http.StatusBadRequest)
+			return
+		}
+
+		toDiscard, err = strconv.ParseInt(s2[0], 10, 64)
+		if err != nil {
+			log.Errorw("invalid content range (4)", "range", req.Header.Get("Content-Range"), "s2", s2)
+			http.Error(w, "invalid content range", http.StatusBadRequest)
+			return
+		}
+
+		if s2[1] != "" {
+			log.Errorw("invalid content range (5)", "range", req.Header.Get("Content-Range"), "s2", s2)
+			http.Error(w, "invalid content range", http.StatusBadRequest)
+			return
+		}
+	}
+
 	r.uploadStatsLk.Lock()
 	if r.uploadStats[reqToken.Group] == nil {
 		r.uploadStats[reqToken.Group] = &iface.UploadStats{}
@@ -164,8 +219,9 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.uploadStats[reqToken.Group].ActiveRequests++
 
 	sw := &carStatWriter{
-		ctr: &r.uploadStats[reqToken.Group].Last250MsUploadBytes,
-		w:   w,
+		ctr:       &r.uploadStats[reqToken.Group].Last250MsUploadBytes,
+		w:         w,
+		toDiscard: toDiscard,
 	}
 
 	r.uploadStatsLk.Unlock()

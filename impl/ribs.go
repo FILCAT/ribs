@@ -199,7 +199,13 @@ func (r *ribs) workerExecTask(toExec task) {
 			return
 		}
 
-		reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36)
+		dealInfo, err := r.db.GetDealParams(context.TODO(), toExec.group)
+		if err != nil {
+			log.Errorf("getting deal params: %s", err)
+			return
+		}
+
+		reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36, dealInfo.CarSize)
 		if err != nil {
 			log.Errorf("making car request token: %s", err)
 			return
@@ -220,7 +226,10 @@ func (r *ribs) workerExecTask(toExec task) {
 
 		if c < targetReplicaCount {
 			go func() {
-				r.tasks <- toExec
+				r.tasks <- task{
+					tt:    taskTypeMakeMoreDeals,
+					group: toExec.group,
+				}
 			}()
 		}
 

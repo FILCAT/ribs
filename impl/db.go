@@ -377,6 +377,12 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 		}
 	}
 
+	/*	out = []dealProvider{{
+		id:              2620,
+		ask_price:       0,
+		ask_verif_price: 0,
+	}}*/
+
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
 
 	return out, nil
