@@ -431,6 +431,7 @@ type ribBatch struct {
 	r *ribs
 
 	currentWriteTarget iface.GroupKey
+	toFlush            map[iface.GroupKey]struct{}
 
 	// todo: use lru
 	currentReadTarget iface.GroupKey
@@ -491,6 +492,7 @@ func (r *ribSession) Batch(ctx context.Context) iface.Batch {
 	return &ribBatch{
 		r:                  r.r,
 		currentWriteTarget: iface.UndefGroupKey,
+		toFlush:            map[iface.GroupKey]struct{}{},
 	}
 }
 
@@ -510,6 +512,7 @@ func (r *ribBatch) Put(ctx context.Context, b []blocks.Block) error {
 			return xerrors.Errorf("write to group: %w", err)
 		}
 
+		r.toFlush[gk] = struct{}{}
 		r.currentWriteTarget = gk
 	}
 
@@ -532,7 +535,24 @@ func (r *ribBatch) Unlink(ctx context.Context, c []mh.Multihash) error {
 }
 
 func (r *ribBatch) Flush(ctx context.Context) error {
-	// noop for now, group puts are sync currently
+	r.r.lk.Lock()
+	defer r.r.lk.Unlock()
+
+	for key := range r.toFlush { // todo run in parallel
+		g, found := r.r.writableGroups[key]
+		if !found {
+			continue // already flushed
+		}
+		r.r.lk.Unlock()
+		err := g.Sync(ctx)
+		r.r.lk.Lock()
+		if err != nil {
+			return xerrors.Errorf("sync group %d: %w", key, err)
+		}
+	}
+
+	r.toFlush = map[iface.GroupKey]struct{}{}
+
 	return nil
 }
 

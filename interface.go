@@ -17,6 +17,7 @@ type Index interface {
 	// GetGroups gets group ids for the multihashes
 	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
 	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
+	Sync(ctx context.Context) error
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 }
 
@@ -37,6 +38,7 @@ const (
 // Group stores a bunch of blocks, abstracting away the storage backend.
 // All underlying storage backends contain all blocks referenced by the group in
 // the top level index.
+// Group IS thread safe
 type Group interface {
 	// Put returns the number of blocks written
 	Put(ctx context.Context, c []blocks.Block) (int, error)

@@ -68,9 +68,11 @@ type Group struct {
 
 	jblk sync.RWMutex
 
+	// inflight counters track current jbob writes which are not yet committed
 	inflightBlocks int64
 	inflightSize   int64
 
+	// committed counters match the db
 	committedBlocks int64
 	committedSize   int64
 
@@ -94,6 +96,8 @@ func OpenGroup(db *ribsDB, index iface.Index, id, committedBlocks, committedSize
 		jbOpenFunc = jbob.Create
 	}
 
+	// todo read group head, replay log if needed
+
 	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"))
 	if err != nil {
 		return nil, xerrors.Errorf("open jbob: %w", err)
@@ -115,19 +119,22 @@ func OpenGroup(db *ribsDB, index iface.Index, id, committedBlocks, committedSize
 }
 
 func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
+	// NOTE: Put is the only method which writes data to jbob
+
 	if len(b) == 0 {
 		return 0, nil
 	}
 
+	// jbob writes are not thread safe, take the lock to get serial access
 	m.jblk.Lock()
 	defer m.jblk.Unlock()
 
-	// reserve space
 	if m.state != iface.GroupStateWritable {
 		return 0, nil
 	}
 
-	availSpace := maxGroupSize - m.committedSize // todo async - inflight
+	// reserve space
+	availSpace := maxGroupSize - m.committedSize - m.inflightSize // todo async - inflight
 
 	var writeSize int64
 	var writeBlocks int
@@ -160,20 +167,14 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	err := m.jb.Put(c[:writeBlocks], b[:writeBlocks])
 	if err != nil {
 		// todo handle properly (abort, close, check disk space / resources, repopen)
+		// todo docrement inflight?
 		return 0, xerrors.Errorf("writing to jbob: %w", err)
 	}
 
-	// <todo async commit>
-
-	// 2. commit jbob (so puts above are now on disk)
-
-	at, err := m.jb.Commit()
-	if err != nil {
-		// todo handle properly (abort, close, check disk space / resources, repopen)
-		return 0, xerrors.Errorf("committing jbob: %w", err)
-	}
-
-	// 3. write top-level index (before we update group head so replay is possible)
+	// 3. write top-level index (before we update group head so replay is possible, before jbob commit so that it's faster)
+	//    missed, uncommitted jbob writes should be ignored.
+	// ^ TODO: Test this commit edge case
+	// TODO: Async index queue
 	err = m.index.AddGroup(ctx, c[:writeBlocks], m.id)
 	if err != nil {
 		// todo handle properly (abort, close, check disk space / resources, repopen)
@@ -183,30 +184,55 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	// 3.5 mark as read-only if full
 	// todo is this the right place to do this?
 	if m.state == iface.GroupStateFull {
+		if err := m.sync(ctx); err != nil {
+			// todo handle properly (abort, close, check disk space / resources, repopen)
+			return 0, xerrors.Errorf("sync full group: %w", err)
+		}
+
 		if err := m.jb.MarkReadOnly(); err != nil {
 			// todo handle properly (abort, close, check disk space / resources, repopen)
-			// todo combine with commit
+			// todo combine with commit?
 			return 0, xerrors.Errorf("mark jbob read-only: %w", err)
 		}
 	}
 
-	// 4. update head
-	m.inflightBlocks -= int64(writeBlocks)
-	m.inflightSize -= writeSize
-	m.committedBlocks += int64(writeBlocks)
-	m.committedSize += writeSize
+	return writeBlocks, nil
+}
+
+func (m *Group) Sync(ctx context.Context) error {
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
+
+	return m.sync(ctx)
+}
+
+func (m *Group) sync(ctx context.Context) error {
+	fmt.Println("syncing group", m.id)
+	// 1. commit jbob (so puts above are now on disk)
+
+	at, err := m.jb.Commit()
+	if err != nil {
+		// todo handle properly (abort, close, check disk space / resources, repopen)
+		return xerrors.Errorf("committing jbob: %w", err)
+	}
+
+	// todo with async index queue, also wait for index queue to be flushed
+
+	// 2. update head
+	m.committedBlocks += m.inflightBlocks
+	m.committedSize += m.inflightSize
+	m.inflightBlocks = 0
+	m.inflightSize = 0
 
 	m.dblk.Lock()
 	err = m.db.SetGroupHead(ctx, m.id, m.state, m.committedBlocks, m.committedSize, at)
 	m.dblk.Unlock()
 	if err != nil {
 		// todo handle properly (retry, abort, close, check disk space / resources, repopen)
-		return 0, xerrors.Errorf("update group head: %w", err)
+		return xerrors.Errorf("update group head: %w", err)
 	}
 
-	// </todo async commit>
-
-	return writeBlocks, nil
+	return nil
 }
 
 func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
@@ -692,11 +718,8 @@ func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []by
 }
 
 func (m *Group) Close() error {
-	//TODO implement me
-	panic("implement me")
-}
+	// todo sync
 
-func (m *Group) Sync(ctx context.Context) error {
 	//TODO implement me
 	panic("implement me")
 }
