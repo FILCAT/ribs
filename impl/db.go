@@ -12,6 +12,7 @@ import (
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
+	"sort"
 )
 
 const mFil = 1_000_000_000_000_000
@@ -447,7 +448,7 @@ func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp types.DealStatusResponse
 		pubCid = &s
 	}
 
-	failed := stresp.Error != ""
+	failed := stresp.DealStatus.Error != ""
 
 	_, err := r.db.Exec(`update deals set
 	failed = ?,
@@ -771,6 +772,10 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 			PubCid:     derefOr(pubCid, ""),
 		})
 	}
+
+	sort.SliceStable(dealMeta, func(i, j int) bool {
+		return !dealMeta[i].Failed && dealMeta[j].Failed
+	})
 
 	if err := res.Err(); err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("iterating deals: %w", err)

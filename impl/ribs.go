@@ -564,7 +564,7 @@ func (r *ribs) resumeGroups() {
 
 	for g, st := range gs {
 		switch st {
-		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp:
+		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp, iface.GroupStateDealsInProgress:
 			if err := r.withReadableGroup(g, func(g *Group) error {
 				return nil
 			}); err != nil {

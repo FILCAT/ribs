@@ -174,8 +174,6 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.host.ConnManager().Protect(pid, tag)
 	defer r.host.ConnManager().Unprotect(pid, tag)
 
-	log.Errorw("headers", "headers", req.Header)
-
 	var toDiscard int64
 	if req.Header.Get("Range") != "" {
 		s1 := strings.Split(req.Header.Get("Range"), "=")
