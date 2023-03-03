@@ -77,6 +77,7 @@ func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 		CarUploads: ri.ribs.Diagnostics().CarUploadStats(),
 		Wallet:     wi,
 	}); err != nil {
+		log.Errorw("failed to encode state", "error", err)
 		http.Error(w, err.Error(), 500)
 		return
 	}

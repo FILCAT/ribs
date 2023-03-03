@@ -2,6 +2,7 @@ package impl
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 var (
 	// 100MB for now
 	// TODO: make this configurable
-	maxGroupSize int64 = 6000 << 20
+	maxGroupSize int64 = 1200 << 20
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
@@ -575,6 +576,11 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			return fmt.Errorf("failed to create a deal proposal: %w", err)
 		}
 
+		var proposalBuf bytes.Buffer
+		if err := dealProposal.MarshalCBOR(&proposalBuf); err != nil {
+			return fmt.Errorf("failed to marshal deal proposal: %w", err)
+		}
+
 		dealParams := types.DealParams{
 			DealUUID:           dealUuid,
 			ClientDealProposal: *dealProposal,
@@ -597,19 +603,20 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}
 
 		di := dbDealInfo{
-			DealUUID:      dealUuid.String(),
-			GroupID:       m.id,
-			ClientAddr:    walletAddr.String(),
-			ProviderAddr:  prov.id,
-			PricePerEpoch: price.Int64(),
-			Verified:      verified,
-			KeepUnsealed:  true,
-			StartEpoch:    startEpoch,
-			EndEpoch:      startEpoch + abi.ChainEpoch(duration),
+			DealUUID:            dealUuid.String(),
+			GroupID:             m.id,
+			ClientAddr:          walletAddr.String(),
+			ProviderAddr:        prov.id,
+			PricePerEpoch:       price.Int64(),
+			Verified:            verified,
+			KeepUnsealed:        true,
+			StartEpoch:          startEpoch,
+			EndEpoch:            startEpoch + abi.ChainEpoch(duration),
+			SignedProposalBytes: proposalBuf.Bytes(),
 		}
 
 		if !resp.Accepted {
-			err = m.db.StoreDealError(di, resp.Message, true)
+			err = m.db.StoreRejectedDeal(di, resp.Message)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -619,7 +626,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 
 		// SAVE DETAILS
 
-		err = m.db.StoreNewDeal(di)
+		err = m.db.StoreProposedDeal(di)
 		if err != nil {
 			return fmt.Errorf("saving deal info: %w", err)
 		}

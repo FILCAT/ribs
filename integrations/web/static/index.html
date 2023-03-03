@@ -291,7 +291,7 @@
 
                 providerElems[provider.ID].providerFeaturesElem.innerText = `${provider.PingOk ? 'online' : 'offline'} ${provider.BoostDeals ? 'boost ' : ''}${provider.BoosterHttp ? 'http ' : ''}${provider.BoosterBitswap ? 'bitswap ' : ''}`;
 
-                providerElems[provider.ID].providerStoredElem.innerHTML = `${provider.DealStarted==0?`<span class="stat-gray">`:`<span>`}${provider.DealSuccess} / ${provider.DealStarted}</span>`;
+                providerElems[provider.ID].providerStoredElem.innerHTML = `${provider.DealStarted==0?`<span class="stat-gray">`:`<span>`}${provider.DealSuccess} / ${provider.DealStarted-provider.DealFail-provider.DealRejected}</span>`;
                 providerElems[provider.ID].providerFailedElem.innerHTML = `${provider.DealFail==0?`<span class="stat-gray">`:`<span>`}${provider.DealFail}</span>`;
                 providerElems[provider.ID].providerRejectedElem.innerHTML = `${provider.DealRejected==0?`<span class="stat-gray">`:`<span>`}${provider.DealRejected}</span>`;
             }

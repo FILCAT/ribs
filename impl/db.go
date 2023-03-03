@@ -95,12 +95,19 @@ create table if not exists deals (
     start_epoch integer not null,
     end_epoch integer not null,
 
+    signed_proposal_bytes blob not null,
+
     deal_id integer,
+    sector_start_epoch integer,
 
     /* deal state */
-    sealed integer not null default 0,
-    failed integer not null default 0,
+    published integer not null default 0, /* publish cid is set, and we have validated the message is landed on chain with some finality */
+    sealed integer not null default 0, /* deal state SectorStartEpoch set */
+
+    failed integer not null default 0, /* 1 when the deal is unsuccessful for ANY reason */
     rejected integer not null default 0,
+
+    failed_expired integer not null default 0, /* 1 when the deal is failed AND the proposal start has passed TODO */
 
     /* sp deal state */
     sp_status text, /* boost checkpoint name */
@@ -108,12 +115,15 @@ create table if not exists deals (
     sp_sealing_status text,
     sp_sig_proposal text,
     sp_pub_msg_cid text,
-    sp_dealid integer,
 
     sp_recv_bytes integer,
     sp_txsize integer,
 
+    /* market deal state checks */
+    last_deal_state_check integer not null default 0,
+
     /* retrieval checks */
+    last_retrieval_check integer not null default 0,
     retrieval_probes_started integer not null default 0,
     retrieval_probes_success integer not null default 0,
     retrieval_probes_fail integer not null default 0
@@ -412,11 +422,13 @@ type dbDealInfo struct {
 
 	StartEpoch abi.ChainEpoch
 	EndEpoch   abi.ChainEpoch
+
+	SignedProposalBytes []byte
 }
 
-func (r *ribsDB) StoreNewDeal(d dbDealInfo) error {
-	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch) values
-                                   (?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch)
+func (r *ribsDB) StoreProposedDeal(d dbDealInfo) error {
+	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, signed_proposal_bytes) values
+                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, d.SignedProposalBytes)
 	if err != nil {
 		return xerrors.Errorf("inserting deal: %w", err)
 	}
@@ -424,16 +436,12 @@ func (r *ribsDB) StoreNewDeal(d dbDealInfo) error {
 	return nil
 }
 
-func (r *ribsDB) StoreDealError(d dbDealInfo, emsg string, rejected bool) error {
-	failed := 1
+func (r *ribsDB) StoreRejectedDeal(d dbDealInfo, emsg string) error {
+	failed, rejected := 1, 1
+	state := "Rejected"
 
-	state := "Failed"
-	if rejected {
-		state = "Rejected"
-	}
-
-	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, failed, rejected, sp_status, error_msg) values
-                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, failed, rejected, state, emsg)
+	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, signed_proposal_bytes, failed, rejected, sp_status, error_msg) values
+                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, d.SignedProposalBytes, failed, rejected, state, emsg)
 	if err != nil {
 		return xerrors.Errorf("inserting deal: %w", err)
 	}
@@ -457,11 +465,10 @@ func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp types.DealStatusResponse
 	sp_sealing_status = ?,
 	sp_sig_proposal = ?,
 	sp_pub_msg_cid = ?,
-	sp_dealid = ?,
 	sp_recv_bytes = ?,
 	sp_txsize = ?
 	where uuid = ?`, failed, stresp.DealStatus.Status, stresp.DealStatus.Error, stresp.DealStatus.SealingStatus,
-		stresp.DealStatus.SignedProposalCid.String(), pubCid, stresp.DealStatus.ChainDealID,
+		stresp.DealStatus.SignedProposalCid.String(), pubCid,
 		stresp.NBytesReceived, stresp.TransferSize, id)
 	if err != nil {
 		return xerrors.Errorf("update sp tracker: %w", err)
@@ -475,7 +482,7 @@ type inactiveDealMeta struct {
 	ProviderAddr int64
 }
 
-func (r *ribsDB) DealsToCheck() ([]inactiveDealMeta, error) {
+func (r *ribsDB) InactiveDealsToCheck() ([]inactiveDealMeta, error) {
 	res, err := r.db.Query(`select uuid, provider_addr from deals where sealed = 0 and failed = 0`) // todo any reason to re-check failed/rejected deals?
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
@@ -494,6 +501,44 @@ func (r *ribsDB) DealsToCheck() ([]inactiveDealMeta, error) {
 	}
 
 	return out, nil
+}
+
+type publishedDealMeta struct {
+	DealUUID     string
+	ProviderAddr int64
+
+	Proposal   []byte
+	PublishCid string
+}
+
+func (r *ribsDB) PublishedInactiveDeals() ([]publishedDealMeta, error) {
+	res, err := r.db.Query(`select uuid, provider_addr, signed_proposal_bytes, sp_pub_msg_cid from deals where sealed = 0 and failed = 0 and sp_pub_msg_cid is not null`) // todo any reason to re-check failed/rejected deals?
+	if err != nil {
+		return nil, xerrors.Errorf("querying deals: %w", err)
+	}
+
+	out := make([]publishedDealMeta, 0)
+
+	for res.Next() {
+		var dm publishedDealMeta
+		err := res.Scan(&dm.DealUUID, &dm.ProviderAddr, &dm.Proposal, &dm.PublishCid)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		out = append(out, dm)
+	}
+
+	return out, nil
+}
+
+func (r *ribsDB) UpdateActivatedDeal(id string, dealID abi.DealID, sectorStart abi.ChainEpoch) error {
+	_, err := r.db.Exec(`update deals set deal_id = ?, sector_start_epoch = ?, sealed = 1 where uuid = ?`, dealID, sectorStart, id)
+	if err != nil {
+		return xerrors.Errorf("update activated deal: %w", err)
+	}
+
+	return nil
 }
 
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
@@ -735,7 +780,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	var dealMeta []iface.DealMeta
 
-	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, sp_status, sp_sealing_status, error_msg, sp_dealid, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
+	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -747,12 +792,11 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		var status *string
 		var sealStatus *string
 		var errMsg *string
-		var dealID *int64
 		var bytesRecv *int64
 		var txSize *int64
 		var pubCid *string
 
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &status, &sealStatus, &errMsg, &dealID, &bytesRecv, &txSize, &pubCid)
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid)
 		if err != nil {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
 		}
@@ -766,10 +810,10 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 			Status:     derefOr(status, ""),
 			SealStatus: derefOr(sealStatus, ""),
 			Error:      derefOr(errMsg, ""),
-			DealID:     derefOr(dealID, 0),
-			BytesRecv:  derefOr(bytesRecv, 0),
-			TxSize:     derefOr(txSize, 0),
-			PubCid:     derefOr(pubCid, ""),
+			//DealID:     derefOr(dealID, 0),
+			BytesRecv: derefOr(bytesRecv, 0),
+			TxSize:    derefOr(txSize, 0),
+			PubCid:    derefOr(pubCid, ""),
 		})
 	}
 

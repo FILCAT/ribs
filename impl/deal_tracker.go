@@ -1,17 +1,21 @@
 package impl
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-fil-markets/shared"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/google/uuid"
+	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"time"
 )
@@ -54,29 +58,91 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	toCheck, err := r.db.DealsToCheck()
-	if err != nil {
-		return xerrors.Errorf("get inactive deals: %w", err)
-	}
+	/* PROPOSED DEAL CHECKS */
 
 	walletAddr, err := r.wallet.GetDefault()
 	if err != nil {
 		return xerrors.Errorf("get wallet address: %w", err)
 	}
 
-	for _, deal := range toCheck {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := r.runDealCheck(ctx, gw, walletAddr, deal)
-		cancel()
+	{
+		toCheck, err := r.db.InactiveDealsToCheck()
 		if err != nil {
-			log.Errorw("deal check failed", "error", err)
+			return xerrors.Errorf("get inactive deals: %w", err)
+		}
+
+		// todo also check "failed" not expired deals at some lower interval
+
+		for _, deal := range toCheck {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := r.runDealCheckQuery(ctx, gw, walletAddr, deal)
+			cancel()
+			if err != nil {
+				log.Errorw("deal check failed", "error", err)
+			}
 		}
 	}
+
+	/* Inactive deal checks */
+
+	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	if err != nil {
+		return xerrors.Errorf("creating gateway rpc client: %w", err)
+	}
+	defer closer()
+
+	{
+		cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
+
+		toCheck, err := r.db.PublishedInactiveDeals()
+		if err != nil {
+			return xerrors.Errorf("get inactive published deals: %w", err)
+		}
+
+		head, err := gw.ChainHead(ctx) // todo lookback
+		if err != nil {
+			return xerrors.Errorf("get chain head: %w", err)
+		}
+
+		for _, deal := range toCheck {
+			var dprop market.ClientDealProposal
+			if err := dprop.UnmarshalCBOR(bytes.NewReader(deal.Proposal)); err != nil {
+				return xerrors.Errorf("unmarshaling proposal: %w", err)
+			}
+
+			pcid, err := cid.Decode(deal.PublishCid)
+			if err != nil {
+				return xerrors.Errorf("decode publish cid: %w", err)
+			}
+
+			// todo somewhere here we'll need to handle published, failed deals
+
+			cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
+			if err != nil {
+				log.Errorw("get current deal info", "error", err)
+				continue
+			}
+
+			if cdi.MarketDeal.State.SectorStartEpoch > 0 {
+				log.Warnw("deal is active!!!", "deal", deal.DealUUID)
+
+				if err := r.db.UpdateActivatedDeal(deal.DealUUID, cdi.DealID, cdi.MarketDeal.State.SectorStartEpoch); err != nil {
+					return xerrors.Errorf("updating activated deal: %w", err)
+				}
+			}
+		}
+	}
+
+	/* Active deal checks */
+
+	// get deals with deal id, active, not checked in last 24 hours
+
+	// check market deal state
 
 	return nil
 }
 
-func (r *ribs) runDealCheck(ctx context.Context, gw api.Gateway, walletAddr address.Address, deal inactiveDealMeta) error {
+func (r *ribs) runDealCheckQuery(ctx context.Context, gw api.Gateway, walletAddr address.Address, deal inactiveDealMeta) error {
 	maddr, err := address.NewIDAddress(uint64(deal.ProviderAddr))
 	if err != nil {
 		return xerrors.Errorf("new id address: %w", err)
@@ -96,7 +162,7 @@ func (r *ribs) runDealCheck(ctx context.Context, gw api.Gateway, walletAddr addr
 		return xerrors.Errorf("connect to miner: %w", err)
 	}
 
-	resp, err := r.SendDealStatusRequest(ctx, addrInfo.ID, dealUUID, walletAddr)
+	resp, err := r.sendDealStatusRequest(ctx, addrInfo.ID, dealUUID, walletAddr)
 	if err != nil {
 		return fmt.Errorf("send deal status request failed: %w", err)
 	}
@@ -110,7 +176,7 @@ func (r *ribs) runDealCheck(ctx context.Context, gw api.Gateway, walletAddr addr
 	return nil
 }
 
-func (r *ribs) SendDealStatusRequest(ctx context.Context, id peer.ID, dealUUID uuid.UUID, caddr address.Address) (*types.DealStatusResponse, error) {
+func (r *ribs) sendDealStatusRequest(ctx context.Context, id peer.ID, dealUUID uuid.UUID, caddr address.Address) (*types.DealStatusResponse, error) {
 	log.Debugw("send deal status req", "deal-uuid", dealUUID, "id", id)
 
 	uuidBytes, err := dealUUID.MarshalBinary()
