@@ -7,6 +7,7 @@ import (
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"sync/atomic"
+	"time"
 )
 
 func (r *ribs) Diagnostics() iface.Diag {
@@ -44,6 +45,13 @@ func (r *ribs) ReachableProviders() []iface.ProviderMeta {
 }
 
 func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
+	r.diagLk.Lock()
+	defer r.diagLk.Unlock()
+
+	if r.cachedWalletInfo != nil && time.Since(r.lastWalletInfoUpdate) < time.Minute {
+		return *r.cachedWalletInfo, nil
+	}
+
 	addr, err := r.wallet.GetDefault()
 	if err != nil {
 		return iface.WalletInfo{}, xerrors.Errorf("get default wallet: %w", err)
@@ -67,10 +75,15 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 		return iface.WalletInfo{}, xerrors.Errorf("get market balance: %w", err)
 	}
 
-	return iface.WalletInfo{
+	wi := iface.WalletInfo{
 		Addr:          addr.String(),
 		Balance:       types.FIL(b).Short(),
 		MarketBalance: types.FIL(mb.Escrow).Short(),
 		MarketLocked:  types.FIL(mb.Locked).Short(),
-	}, nil
+	}
+
+	r.cachedWalletInfo = &wi
+	r.lastWalletInfoUpdate = time.Now()
+
+	return wi, nil
 }

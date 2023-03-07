@@ -110,7 +110,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
 		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
 
-		tasks: make(chan task, 16),
+		tasks: make(chan task, 1024),
 
 		close:         make(chan struct{}),
 		workerClosed:  make(chan struct{}),
@@ -282,6 +282,12 @@ type ribs struct {
 	uploadStats     map[iface.GroupKey]*iface.UploadStats
 	uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
 	uploadStatsLk   sync.Mutex
+
+	// diag cache
+	diagLk sync.Mutex
+
+	cachedWalletInfo     *iface.WalletInfo
+	lastWalletInfoUpdate time.Time
 }
 
 func (r *ribs) Close() error {
