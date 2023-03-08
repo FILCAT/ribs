@@ -58,6 +58,58 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
+	/* Inactive deal checks */
+
+	{
+		gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+		if err != nil {
+			return xerrors.Errorf("creating gateway rpc client: %w", err)
+		}
+		defer closer()
+
+		{
+			cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
+
+			toCheck, err := r.db.PublishedInactiveDeals()
+			if err != nil {
+				return xerrors.Errorf("get inactive published deals: %w", err)
+			}
+
+			head, err := gw.ChainHead(ctx) // todo lookback
+			if err != nil {
+				return xerrors.Errorf("get chain head: %w", err)
+			}
+
+			for _, deal := range toCheck {
+				var dprop market.ClientDealProposal
+				if err := dprop.UnmarshalCBOR(bytes.NewReader(deal.Proposal)); err != nil {
+					return xerrors.Errorf("unmarshaling proposal: %w", err)
+				}
+
+				pcid, err := cid.Decode(deal.PublishCid)
+				if err != nil {
+					return xerrors.Errorf("decode publish cid: %w", err)
+				}
+
+				// todo somewhere here we'll need to handle published, failed deals
+
+				cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
+				if err != nil {
+					log.Errorw("get current deal info", "error", err)
+					continue
+				}
+
+				if cdi.MarketDeal.State.SectorStartEpoch > 0 {
+					log.Warnw("deal is active!!!", "deal", deal.DealUUID)
+
+					if err := r.db.UpdateActivatedDeal(deal.DealUUID, cdi.DealID, cdi.MarketDeal.State.SectorStartEpoch); err != nil {
+						return xerrors.Errorf("updating activated deal: %w", err)
+					}
+				}
+			}
+		}
+	}
+
 	/* PROPOSED DEAL CHECKS */
 
 	walletAddr, err := r.wallet.GetDefault()
@@ -79,56 +131,6 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 			cancel()
 			if err != nil {
 				log.Errorw("deal check failed", "error", err)
-			}
-		}
-	}
-
-	/* Inactive deal checks */
-
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
-	if err != nil {
-		return xerrors.Errorf("creating gateway rpc client: %w", err)
-	}
-	defer closer()
-
-	{
-		cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
-
-		toCheck, err := r.db.PublishedInactiveDeals()
-		if err != nil {
-			return xerrors.Errorf("get inactive published deals: %w", err)
-		}
-
-		head, err := gw.ChainHead(ctx) // todo lookback
-		if err != nil {
-			return xerrors.Errorf("get chain head: %w", err)
-		}
-
-		for _, deal := range toCheck {
-			var dprop market.ClientDealProposal
-			if err := dprop.UnmarshalCBOR(bytes.NewReader(deal.Proposal)); err != nil {
-				return xerrors.Errorf("unmarshaling proposal: %w", err)
-			}
-
-			pcid, err := cid.Decode(deal.PublishCid)
-			if err != nil {
-				return xerrors.Errorf("decode publish cid: %w", err)
-			}
-
-			// todo somewhere here we'll need to handle published, failed deals
-
-			cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
-			if err != nil {
-				log.Errorw("get current deal info", "error", err)
-				continue
-			}
-
-			if cdi.MarketDeal.State.SectorStartEpoch > 0 {
-				log.Warnw("deal is active!!!", "deal", deal.DealUUID)
-
-				if err := r.db.UpdateActivatedDeal(deal.DealUUID, cdi.DealID, cdi.MarketDeal.State.SectorStartEpoch); err != nil {
-					return xerrors.Errorf("updating activated deal: %w", err)
-				}
 			}
 		}
 	}
