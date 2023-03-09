@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	logging "github.com/ipfs/go-log/v2"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -19,6 +20,8 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
+var log = logging.Logger("ributil")
+
 // borrowed from lotus
 
 type CurrentDealInfoAPI interface {
@@ -27,6 +30,10 @@ type CurrentDealInfoAPI interface {
 	StateMarketStorageDeal(context.Context, abi.DealID, types.TipSetKey) (*api.MarketDeal, error)
 	StateSearchMsg(ctx context.Context, from types.TipSetKey, msg cid.Cid, limit abi.ChainEpoch, allowReplaced bool) (*api.MsgLookup, error)
 	StateNetworkVersion(ctx context.Context, tsk types.TipSetKey) (network.Version, error)
+
+	ChainGetTipSet(ctx context.Context, tsk types.TipSetKey) (*types.TipSet, error)
+	ChainGetTipSetByHeight(ctx context.Context, h abi.ChainEpoch, tsk types.TipSetKey) (*types.TipSet, error)
+	StateGetActor(ctx context.Context, actor address.Address, ts types.TipSetKey) (*types.Actor, error)
 }
 
 type CurrentDealInfo struct {
@@ -65,13 +72,71 @@ func (mgr *CurrentDealInfoManager) GetCurrentDealInfo(ctx context.Context, tsk t
 	return CurrentDealInfo{DealID: dealID, MarketDeal: marketDeal, PublishMsgTipSet: pubMsgTok}, err
 }
 
+func (mgr *CurrentDealInfoManager) FindCloseMsgTipset(ctx context.Context, tsk types.TipSetKey, publishCid cid.Cid, step abi.ChainEpoch) (types.TipSetKey, error) {
+	pubmsg, err := mgr.CDAPI.ChainGetMessage(ctx, publishCid)
+	if err != nil {
+		return types.EmptyTSK, xerrors.Errorf("getting publish deal message %s: %w", publishCid, err)
+	}
+
+	curTs, err := mgr.CDAPI.ChainGetTipSet(ctx, tsk)
+	if err != nil {
+		return types.EmptyTSK, xerrors.Errorf("getting head tipset %s: %w", tsk, err)
+	}
+
+	headHeight := curTs.Height()
+
+	headTs := curTs
+	for {
+		// check if sender nonce is lower or equal to the publish deal message nonce
+
+		// get actor
+		act, err := mgr.CDAPI.StateGetActor(ctx, pubmsg.From, curTs.Key())
+		if err != nil {
+			return types.EmptyTSK, xerrors.Errorf("getting actor %s: %w", pubmsg.From, err)
+		}
+
+		if act.Nonce <= pubmsg.Nonce {
+			// return headTs because we will lookback from it
+			log.Infow("possibly found tipset close publish deal message", "height", headTs.Height(), "tsk", headTs.Key(), "age", headHeight-headTs.Height(), "publishCid", publishCid)
+			return headTs.Key(), nil
+		}
+
+		// load 15 tipsets back to curTs
+		headTs = curTs
+		curTs, err = mgr.CDAPI.ChainGetTipSetByHeight(ctx, curTs.Height()-step, curTs.Key())
+		if err != nil {
+			return types.EmptyTSK, xerrors.Errorf("getting tipset %d: %w", curTs.Height()-step, err)
+		}
+	}
+}
+
 // dealIDFromPublishDealsMsg looks up the publish deals message by cid, and finds the deal ID
 // by looking at the message return value
 func (mgr *CurrentDealInfoManager) dealIDFromPublishDealsMsg(ctx context.Context, tsk types.TipSetKey, proposal *market.DealProposal, publishCid cid.Cid) (abi.DealID, types.TipSetKey, error) {
 	dealID := abi.DealID(0)
 
+	closeTsk, err := mgr.FindCloseMsgTipset(ctx, tsk, publishCid, 500)
+	if err != nil {
+		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (15) close te publish message %s: %w", publishCid, err)
+	}
+
+	closeTsk, err = mgr.FindCloseMsgTipset(ctx, closeTsk, publishCid, 100)
+	if err != nil {
+		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (100) close te publish message %s: %w", publishCid, err)
+	}
+
+	closeTsk, err = mgr.FindCloseMsgTipset(ctx, closeTsk, publishCid, 30)
+	if err != nil {
+		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (30) close te publish message %s: %w", publishCid, err)
+	}
+
+	closeTsk, err = mgr.FindCloseMsgTipset(ctx, closeTsk, publishCid, 15)
+	if err != nil {
+		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (15) close te publish message %s: %w", publishCid, err)
+	}
+
 	// Get the return value of the publish deals message
-	lookup, err := mgr.CDAPI.StateSearchMsg(ctx, tsk, publishCid, api.LookbackNoLimit, true)
+	lookup, err := mgr.CDAPI.StateSearchMsg(ctx, closeTsk, publishCid, api.LookbackNoLimit, true)
 	if err != nil {
 		return dealID, types.EmptyTSK, xerrors.Errorf("looking for publish deal message %s: search msg failed: %w", publishCid, err)
 	}
