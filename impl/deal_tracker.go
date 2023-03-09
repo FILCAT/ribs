@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
+	types2 "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -58,59 +59,80 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	/* INACTIVE DEAL CHECKS */
+	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	if err != nil {
+		return xerrors.Errorf("creating gateway rpc client: %w", err)
+	}
+	defer closer()
+
+	/* PUBLISHED DEAL CHECKS */
+	/* Wait for published deals to become active (or expire) */
+
+	{
+		toCheck, err := r.db.PublishedDeals()
+		if err != nil {
+			return xerrors.Errorf("get inactive published deals: %w", err)
+		}
+
+		for _, deal := range toCheck {
+			dealInfo, err := gw.StateMarketStorageDeal(ctx, deal.DealID, types2.EmptyTSK)
+			if err != nil {
+				return xerrors.Errorf("get deal info: %w", err)
+			}
+
+			if dealInfo.State.SectorStartEpoch > 0 {
+				if err := r.db.UpdateActivatedDeal(deal.DealUUID, dealInfo.State.SectorStartEpoch); err != nil {
+					return xerrors.Errorf("marking deal as active: %w", err)
+				}
+				log.Infow("deal active", "deal", deal.DealUUID, "dealid", deal.DealUUID, "startepoch", dealInfo.State.SectorStartEpoch)
+			}
+		}
+	}
+
+	/* PUBLISHING DEAL CHECKS */
 	/* Wait for publish at "good-enough" finality */
 
 	{
-		gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+		cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
+
+		toCheck, err := r.db.PublishingDeals()
 		if err != nil {
-			return xerrors.Errorf("creating gateway rpc client: %w", err)
+			return xerrors.Errorf("get inactive publishing deals: %w", err)
 		}
-		defer closer()
 
-		{
-			cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
+		head, err := gw.ChainHead(ctx) // todo lookback
+		if err != nil {
+			return xerrors.Errorf("get chain head: %w", err)
+		}
 
-			toCheck, err := r.db.PublishingDeals()
-			if err != nil {
-				return xerrors.Errorf("get inactive published deals: %w", err)
+		for _, deal := range toCheck {
+			var dprop market.ClientDealProposal
+			if err := dprop.UnmarshalCBOR(bytes.NewReader(deal.Proposal)); err != nil {
+				return xerrors.Errorf("unmarshaling proposal: %w", err)
 			}
 
-			head, err := gw.ChainHead(ctx) // todo lookback
+			pcid, err := cid.Decode(deal.PublishCid)
 			if err != nil {
-				return xerrors.Errorf("get chain head: %w", err)
+				return xerrors.Errorf("decode publish cid: %w", err)
 			}
 
-			for _, deal := range toCheck {
-				var dprop market.ClientDealProposal
-				if err := dprop.UnmarshalCBOR(bytes.NewReader(deal.Proposal)); err != nil {
-					return xerrors.Errorf("unmarshaling proposal: %w", err)
+			// todo somewhere here we'll need to handle published, failed deals
+
+			cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
+			if err != nil {
+				log.Errorw("get current deal info", "error", err)
+				continue
+			}
+
+			pubH, err := gw.ChainGetTipSet(ctx, cdi.PublishMsgTipSet)
+			if err != nil {
+				return xerrors.Errorf("get publish tipset: %w", err)
+			}
+
+			if head.Height()-pubH.Height() > dealPublishFinality {
+				if err := r.db.UpdatePublishedDeal(deal.DealUUID, cdi.DealID, cdi.PublishMsgTipSet); err != nil {
+					return xerrors.Errorf("marking deal as published: %w", err)
 				}
-
-				pcid, err := cid.Decode(deal.PublishCid)
-				if err != nil {
-					return xerrors.Errorf("decode publish cid: %w", err)
-				}
-
-				// todo somewhere here we'll need to handle published, failed deals
-
-				cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
-				if err != nil {
-					log.Errorw("get current deal info", "error", err)
-					continue
-				}
-
-				pubH, err := gw.ChainGetTipSet(ctx, cdi.PublishMsgTipSet)
-				if err != nil {
-					return xerrors.Errorf("get publish tipset: %w", err)
-				}
-
-				if head.Height()-pubH.Height() > dealPublishFinality {
-					if err := r.db.UpdatePublishedDeal(deal.DealUUID, cdi.DealID, cdi.PublishMsgTipSet); err != nil {
-						return xerrors.Errorf("marking deal as published: %w", err)
-					}
-				}
-
 				log.Infow("deal published", "deal", deal.DealUUID, "dealid", cdi.DealID, "publishcid", pcid, "publishheight", pubH.Height(), "headheight", head.Height(), "finality", head.Height()-pubH.Height())
 			}
 		}

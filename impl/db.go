@@ -507,7 +507,7 @@ func (r *ribsDB) InactiveDealsToCheck() ([]inactiveDealMeta, error) {
 	return out, nil
 }
 
-type publishedDealMeta struct {
+type publishingDealMeta struct {
 	DealUUID     string
 	ProviderAddr int64
 
@@ -515,16 +515,16 @@ type publishedDealMeta struct {
 	PublishCid string
 }
 
-func (r *ribsDB) PublishingDeals() ([]publishedDealMeta, error) {
+func (r *ribsDB) PublishingDeals() ([]publishingDealMeta, error) {
 	res, err := r.db.Query(`select uuid, provider_addr, signed_proposal_bytes, sp_pub_msg_cid from deals where published = 0 and failed = 0 and sp_pub_msg_cid is not null`) // todo any reason to re-check failed/rejected deals?
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
 	}
 
-	out := make([]publishedDealMeta, 0)
+	out := make([]publishingDealMeta, 0)
 
 	for res.Next() {
-		var dm publishedDealMeta
+		var dm publishingDealMeta
 		err := res.Scan(&dm.DealUUID, &dm.ProviderAddr, &dm.Proposal, &dm.PublishCid)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning deal: %w", err)
@@ -543,6 +543,36 @@ func (r *ribsDB) UpdatePublishedDeal(id string, dealID abi.DealID, pubTs types2.
 	}
 
 	return nil
+}
+
+type publishedDealMeta struct {
+	DealUUID     string
+	ProviderAddr int64
+
+	Proposal   []byte
+	PublishCid string
+	DealID     abi.DealID
+}
+
+func (r *ribsDB) PublishedDeals() ([]publishedDealMeta, error) {
+	res, err := r.db.Query(`select uuid, provider_addr, signed_proposal_bytes, sp_pub_msg_cid, deal_id from deals where published = 1 and sealed = 0 and failed = 0 and sp_pub_msg_cid is not null`) // todo any reason to re-check failed/rejected deals?
+	if err != nil {
+		return nil, xerrors.Errorf("querying deals: %w", err)
+	}
+
+	out := make([]publishedDealMeta, 0)
+
+	for res.Next() {
+		var dm publishedDealMeta
+		err := res.Scan(&dm.DealUUID, &dm.ProviderAddr, &dm.Proposal, &dm.PublishCid, &dm.DealID)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		out = append(out, dm)
+	}
+
+	return out, nil
 }
 
 func (r *ribsDB) UpdateActivatedDeal(id string, sectorStart abi.ChainEpoch) error {
