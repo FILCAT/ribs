@@ -58,7 +58,8 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	/* Inactive deal checks */
+	/* INACTIVE DEAL CHECKS */
+	/* Wait for publish at "good-enough" finality */
 
 	{
 		gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
@@ -70,7 +71,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 		{
 			cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
 
-			toCheck, err := r.db.PublishedInactiveDeals()
+			toCheck, err := r.db.PublishingDeals()
 			if err != nil {
 				return xerrors.Errorf("get inactive published deals: %w", err)
 			}
@@ -99,18 +100,24 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 					continue
 				}
 
-				if cdi.MarketDeal.State.SectorStartEpoch > 0 {
-					log.Warnw("deal is active!!!", "deal", deal.DealUUID)
+				pubH, err := gw.ChainGetTipSet(ctx, cdi.PublishMsgTipSet)
+				if err != nil {
+					return xerrors.Errorf("get publish tipset: %w", err)
+				}
 
-					if err := r.db.UpdateActivatedDeal(deal.DealUUID, cdi.DealID, cdi.MarketDeal.State.SectorStartEpoch); err != nil {
-						return xerrors.Errorf("updating activated deal: %w", err)
+				if head.Height()-pubH.Height() > dealPublishFinality {
+					if err := r.db.UpdatePublishedDeal(deal.DealUUID, cdi.DealID, cdi.PublishMsgTipSet); err != nil {
+						return xerrors.Errorf("marking deal as published: %w", err)
 					}
 				}
+
+				log.Infow("deal published", "deal", deal.DealUUID, "dealid", cdi.DealID, "publishcid", pcid, "publishheight", pubH.Height(), "headheight", head.Height(), "finality", head.Height()-pubH.Height())
 			}
 		}
 	}
 
 	/* PROPOSED DEAL CHECKS */
+	/* Mainly waiting to get publish deal cid */
 
 	walletAddr, err := r.wallet.GetDefault()
 	if err != nil {

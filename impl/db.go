@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
+	types2 "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
@@ -26,6 +27,8 @@ var (
 	// piece size range ribs is aiming for
 	minPieceSize = 4 << 30
 	maxPieceSize = 8 << 30
+
+	dealPublishFinality abi.ChainEpoch = 60
 )
 
 var pragmas = []string{
@@ -98,6 +101,7 @@ create table if not exists deals (
     signed_proposal_bytes blob not null,
 
     deal_id integer,
+    deal_pub_ts text,
     sector_start_epoch integer,
 
     /* deal state */
@@ -511,8 +515,8 @@ type publishedDealMeta struct {
 	PublishCid string
 }
 
-func (r *ribsDB) PublishedInactiveDeals() ([]publishedDealMeta, error) {
-	res, err := r.db.Query(`select uuid, provider_addr, signed_proposal_bytes, sp_pub_msg_cid from deals where sealed = 0 and failed = 0 and sp_pub_msg_cid is not null`) // todo any reason to re-check failed/rejected deals?
+func (r *ribsDB) PublishingDeals() ([]publishedDealMeta, error) {
+	res, err := r.db.Query(`select uuid, provider_addr, signed_proposal_bytes, sp_pub_msg_cid from deals where published = 0 and failed = 0 and sp_pub_msg_cid is not null`) // todo any reason to re-check failed/rejected deals?
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
 	}
@@ -532,8 +536,17 @@ func (r *ribsDB) PublishedInactiveDeals() ([]publishedDealMeta, error) {
 	return out, nil
 }
 
-func (r *ribsDB) UpdateActivatedDeal(id string, dealID abi.DealID, sectorStart abi.ChainEpoch) error {
-	_, err := r.db.Exec(`update deals set deal_id = ?, sector_start_epoch = ?, sealed = 1 where uuid = ?`, dealID, sectorStart, id)
+func (r *ribsDB) UpdatePublishedDeal(id string, dealID abi.DealID, pubTs types2.TipSetKey) error {
+	_, err := r.db.Exec(`update deals set deal_id = ?, deal_pub_ts = ?, published = 1 where uuid = ?`, dealID, pubTs.String(), id)
+	if err != nil {
+		return xerrors.Errorf("update activated deal: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) UpdateActivatedDeal(id string, sectorStart abi.ChainEpoch) error {
+	_, err := r.db.Exec(`update deals set sector_start_epoch = ?, sealed = 1 where uuid = ?`, sectorStart, id)
 	if err != nil {
 		return xerrors.Errorf("update activated deal: %w", err)
 	}
