@@ -26,7 +26,7 @@ const (
 	BsstIndex  = "index.bsst"
 )
 
-const jbobBufSize = 32 << 20
+const jbobBufSize = 16 << 20
 
 // JBOB stands for "Just A Bunch Of Blocks"
 // * NOT THREAD SAFE FOR WRITING!!
@@ -366,8 +366,16 @@ var errNothingToCommit = errors.New("nothing to commit")
 func (j *JBOB) Commit() (int64, error) {
 	// todo log commit?
 
-	if err := j.dataBuffered.Flush(); err != nil {
-		return 0, xerrors.Errorf("flush buffered data: %w", err)
+	var err error
+	for {
+		err = j.dataBuffered.Flush()
+		if err != io.ErrShortWrite {
+			break
+		}
+	}
+
+	if err != nil {
+		return 0, xerrors.Errorf("flushing buffered data: %w", err)
 	}
 
 	if err := j.data.Sync(); err != nil {
@@ -377,7 +385,7 @@ func (j *JBOB) Commit() (int64, error) {
 	// todo index is sync for now, and we're single threaded, so if there were any
 	// puts, just update head
 
-	err := j.mutHead(func(h *Head) error {
+	err = j.mutHead(func(h *Head) error {
 		if h.RetiredAt == j.dataLen {
 			return errNothingToCommit
 		}
@@ -401,6 +409,19 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 	locs, err := j.rIdx.Get(c)
 	if err != nil {
 		return xerrors.Errorf("getting value locations: %w", err)
+	}
+
+	if j.dataBuffered.Buffered() > 0 {
+		for {
+			err = j.dataBuffered.Flush()
+			if err != io.ErrShortWrite {
+				break
+			}
+		}
+
+		if err != nil {
+			return xerrors.Errorf("flushing buffered data: %w", err)
+		}
 	}
 
 	entBuf := pool.Get(1 << 20)

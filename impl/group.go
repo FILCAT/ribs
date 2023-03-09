@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/xerrors"
 	"os"
@@ -44,7 +45,7 @@ const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 var (
 	// 100MB for now
 	// TODO: make this configurable
-	maxGroupSize int64 = 1200 << 20
+	maxGroupSize int64 = 8000 << 20
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
@@ -437,6 +438,8 @@ func (m *Group) GenCommP() error {
 
 	cc := new(ributil.DataCidWriter)
 
+	start := time.Now()
+
 	carSize, root, err := m.writeCar(cc)
 	if err != nil {
 		return xerrors.Errorf("write car: %w", err)
@@ -447,8 +450,7 @@ func (m *Group) GenCommP() error {
 		panic(err)
 	}
 
-	fmt.Println("commP", sum.PieceCID)
-	fmt.Println("pps", sum.PieceSize)
+	log.Infow("generated commP", "duration", time.Since(start), "commP", sum.PieceCID, "pps", sum.PieceSize, "mbps", float64(carSize)/time.Since(start).Seconds()/1024/1024)
 
 	p, _ := commcid.CIDToDataCommitmentV1(sum.PieceCID)
 

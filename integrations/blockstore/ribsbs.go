@@ -30,6 +30,8 @@ type Blockstore struct {
 	sess ribs.Session
 
 	puts chan Request[[]blocks.Block, error]
+
+	stop, stopped chan struct{}
 }
 
 func New(ctx context.Context, r ribs.RIBS) *Blockstore {
@@ -37,13 +39,35 @@ func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 		r:    r,
 		sess: r.Session(ctx),
 		puts: make(chan Request[[]blocks.Block, error], 64), // todo make this configurable
+
+		stop:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
 
 	go b.start(ctx)
 	return b
 }
 
+var (
+	BlockstoreMaxQueuedBlocks    = 64
+	BlockstoreMaxUnflushedBlocks = 4092
+)
+
 func (b *Blockstore) start(ctx context.Context) {
+	var bt ribs.Batch
+	var unflushed int
+
+	defer func() {
+		if bt != nil {
+			err := bt.Flush(ctx)
+			if err != nil {
+				fmt.Println("failed to flush batch", "error", err) // todo log
+			}
+		}
+
+		close(b.stopped)
+	}()
+
 	for {
 		select {
 		case req := <-b.puts:
@@ -63,7 +87,7 @@ func (b *Blockstore) start(ctx context.Context) {
 					break loop
 				}
 
-				if len(toPut) > 64 { // todo make this configurable
+				if len(toPut) > BlockstoreMaxQueuedBlocks { // todo make this configurable
 					break
 				}
 			}
@@ -74,7 +98,10 @@ func (b *Blockstore) start(ctx context.Context) {
 				}
 			}
 
-			bt := b.sess.Batch(ctx)
+			if bt == nil {
+				bt = b.sess.Batch(ctx)
+			}
+
 			fmt.Println("putting", len(toPut), "blocks")
 			err := bt.Put(ctx, toPut)
 			if err != nil {
@@ -82,14 +109,19 @@ func (b *Blockstore) start(ctx context.Context) {
 				continue
 			}
 
-			err = bt.Flush(ctx)
-			if err != nil {
-				respondAll(err)
-				continue
+			unflushed += len(toPut)
+			if unflushed > BlockstoreMaxUnflushedBlocks { // todo make this configurable
+				err = bt.Flush(ctx)
+				if err != nil {
+					respondAll(err) // todo: not perfect but better than blocking all writes (?)
+					continue
+				}
+				unflushed = 0
+				bt = nil
 			}
 
 			respondAll(nil)
-		case <-ctx.Done():
+		case <-b.stop:
 			return
 		}
 	}
@@ -214,6 +246,12 @@ func (b *Blockstore) AllKeysChan(ctx context.Context) (<-chan cid.Cid, error) {
 
 func (b *Blockstore) HashOnRead(enabled bool) {
 	return
+}
+
+func (b *Blockstore) Close() error {
+	close(b.stop)
+	<-b.stopped
+	return nil
 }
 
 var _ blockstore.Blockstore = &Blockstore{}
