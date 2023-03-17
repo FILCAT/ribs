@@ -4,7 +4,3 @@ use (
 	integrations/kuboribs/kubo
 	.
 )
-
-replace (
-	github.com/ipfs/go-ipld-format => /home/magik6k/gohack/github.com/ipfs/go-ipld-format
-)
