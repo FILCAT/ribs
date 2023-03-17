@@ -861,7 +861,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	}
 
 	sort.SliceStable(dealMeta, func(i, j int) bool {
-		return !dealMeta[i].Failed && dealMeta[j].Failed
+		return (dealMeta[i].Sealed && !dealMeta[j].Sealed) || (!dealMeta[i].Failed && dealMeta[j].Failed)
 	})
 
 	if err := res.Err(); err != nil {

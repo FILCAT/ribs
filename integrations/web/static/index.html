@@ -62,8 +62,6 @@
             return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
         }
 
-        console.log(formatFil(120_000))
-
         const avgMonthDays = 30.436875;
         const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;
 
@@ -214,12 +212,14 @@
                         }
 
                         groupElems[group].dealElems[deal.UUID].innerHTML = `
-                            <div class="group-deal${deal.Failed ? ` deal-failed` :''}">
+                            <div class="group-deal${deal.Failed ? ` deal-failed` :''}${deal.Sealed ? ` deal-sealed` :''}">
                                 <abbr title="${deal.UUID}">${deal.UUID.substring(0, 8)}...</abbr>
                                 <span>f0${deal.Provider}</span>
-                                ${deal.BytesRecv > 0 ? `<span>${formatBytesBinary(deal.BytesRecv)}/${formatBytesBinary(deal.TxSize)}</span>` : ''}
                                 ${deal.PubCid != "" ? `<span>pubMsg:<a href="https://filfox.info/en/message/${deal.PubCid}">ba..${deal.PubCid.substr(-8)}</a></span>` : ''}
-                                ${deal.Error == "" ? `<span>${deal.Status}${dealSealingStates[deal.Status] ? ` (${deal.SealStatus})` : ''}</span>` : `<span>Error (${deal.Status})</span><div class="deal-err">${deal.Error}</div>`}
+                                ${deal.Sealed ? `<span>SEALED</span>` : `
+                                    ${deal.BytesRecv > 0 ? `<span>${formatBytesBinary(deal.BytesRecv)}/${formatBytesBinary(deal.TxSize)}</span>` : ''}
+                                    ${deal.Error == "" ? `<span>${deal.Status}${dealSealingStates[deal.Status] ? ` (${deal.SealStatus})` : ''}</span>` : `<span>Error (${deal.Status})</span><div class="deal-err">${deal.Error}</div>`}
+                                `}
                             </div>`;
                     }
                 }
@@ -373,6 +373,12 @@
 
         .deal-failed {
             color: #554444;
+            font-size: smaller;
+        }
+
+        .deal-sealed {
+            color: #37cc24;
+            font-weight: bold;
         }
 
         .stat-gray {

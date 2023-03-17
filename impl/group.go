@@ -45,7 +45,7 @@ const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 var (
 	// 100MB for now
 	// TODO: make this configurable
-	maxGroupSize int64 = 8000 << 20
+	maxGroupSize int64 = 1100 << 20
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
