@@ -119,11 +119,15 @@ func Serve(listen string, ribs ribs.RIBS) error {
 		ribs: ribs,
 	}
 
+	rpc := MakeRPCServer(ribs)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Index)
 
 	mux.HandleFunc("/api/v0/state", handlers.ApiState)
 	mux.HandleFunc("/api/v0/group", handlers.ApiGroup)
+
+	mux.Handle("/rpc/v0", rpc)
 
 	mux.Handle("/debug/", http.DefaultServeMux)
 
