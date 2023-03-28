@@ -112,9 +112,7 @@ function Group({ group }) {
                 {dealCounts.started > 0 && <span><span className="deal-counts-start">{dealCounts.started} Started</span> | </span>}
                 {dealCounts.errors > 0 && <span><span className="deal-counts-err">{dealCounts.errors} Errored</span></span>}
             </div>
-            <button onClick={toggleShowFailedDeals}>
-                {showFailedDeals ? "Hide" : "Show"} Failed Deals
-            </button>
+            {group.Deals.length > 0 && (<button onClick={toggleShowFailedDeals}>{showFailedDeals ? "Hide" : "Show"} Failed Deals</button>)}
             {dealsToDisplay.length > 0 && (
                 <>
                     <h4>Deals:</h4>

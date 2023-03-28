@@ -10,7 +10,6 @@ function WalletInfoTile({ walletInfo }) {
         return `${head}...${tail}`;
     };
 
-
     return (
         <div>
             <h2>Wallet Info</h2>
@@ -67,12 +66,36 @@ function GroupsTile({ groups }) {
                     <td>XX TiB</td>
                 </tr>
                 <tr>
-                    <td>Target size:</td>
-                    <td>1200 MiB</td>
+                    <td>Open (RO):</td>
+                    <td>3</td>
                 </tr>
                 <tr>
-                    <td>Average size:</td>
-                    <td>1198 MiB</td>
+                    <td>Open (RW):</td>
+                    <td>1</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function TopIndexTile({ groups }) {
+    return (
+        <div>
+            <h2>Top Index</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Entries:</td>
+                    <td className="important-metric">123 423K</td>
+                </tr>
+                <tr>
+                    <td>Read rate:</td>
+                    <td>1 234/s</td>
+                </tr>
+                <tr>
+                    <td>Write rate:</td>
+                    <td>12/s</td>
                 </tr>
                 </tbody>
             </table>
@@ -141,6 +164,38 @@ function ProvidersTile({ reachableProviders }) {
                 <tr>
                     <td>With all rejected deals:</td>
                     <td>{reachableProviders.filter(p => p.DealRejected).length}</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function WorkersTile({ groups }) {
+    return (
+        <div>
+            <h2>Workers: 1</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Busy workers:</td>
+                    <td className="important-metric">1/1</td>
+                </tr>
+                <tr>
+                    <td>Generating BSST:</td>
+                    <td>0/1</td>
+                </tr>
+                <tr>
+                    <td>Generating VCAR:</td>
+                    <td>0/1</td>
+                </tr>
+                <tr>
+                    <td>Generating CommP:</td>
+                    <td>0/1</td>
+                </tr>
+                <tr>
+                    <td>Making deals:</td>
+                    <td>1/1</td>
                 </tr>
                 </tbody>
             </table>
@@ -224,7 +279,9 @@ function Status() {
         <div className="Status">
             <div className="status-grid">
                 <GroupsTile groups={groups} />
+                <TopIndexTile />
                 <DealsTile />
+                <WorkersTile groups={groups} />
                 <ProvidersTile reachableProviders={reachableProviders} />
                 <CarUploadStatsTile carUploadStats={carUploadStats} />
                 <CrawlStateTile />

@@ -1,0 +1,30 @@
+.Providers {
+    margin: 0 auto;
+    width: 100%;
+}
+
+.providers-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.providers-table th,
+.providers-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #ccc;
+}
+
+.providers-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+}
+
+.providers-table tbody tr:nth-child(odd) {
+    background-color: #f9f9f9;
+}
+
+.stat-gray {
+    color: #777;
+}
