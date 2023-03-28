@@ -50,7 +50,7 @@ func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 
 var (
 	BlockstoreMaxQueuedBlocks    = 64
-	BlockstoreMaxUnflushedBlocks = 4092
+	BlockstoreMaxUnflushedBlocks = 128
 )
 
 func (b *Blockstore) start(ctx context.Context) {

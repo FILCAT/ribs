@@ -1,0 +1,78 @@
+.group {
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+.group h3 {
+    display: flex;
+    justify-content: space-between;
+}
+
+.group p {
+    margin: 0.5rem 0;
+    line-height: 1.1;
+}
+
+.group-state {
+    font-weight: normal;
+    font-size: 1rem;
+}
+
+.progress-bar {
+    background-color: #e0e0e0;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar__fill {
+    background-color: #4caf50;
+    height: 100%;
+}
+
+.Group-deals {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.deal-counts {
+    margin-bottom: 1rem;
+}
+
+.deal-counts-seal {
+    color: #4caf50;
+    font-weight: bold;
+}
+
+.deal-counts-err {
+    color: #f44336;
+    font-weight: bold;
+}
+
+.deal-counts-start {
+    color: #2196f3;
+}
+
+button {
+    background-color: #4caf50;
+    border: none;
+    border-radius: 3px;
+    color: white;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    padding: 8px 16px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    transition-duration: 0.4s;
+}
+
+button:hover {
+    background-color: #45a049;
+    color: white;
+}

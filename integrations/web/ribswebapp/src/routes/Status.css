@@ -30,3 +30,25 @@
         grid-template-columns: 1fr;
     }
 }
+
+.compact-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 0.3rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.compact-table tr:last-child td {
+    border-bottom: none;
+}
+
+.important-metric {
+    color: #4caf50;
+    font-weight: bold;
+}

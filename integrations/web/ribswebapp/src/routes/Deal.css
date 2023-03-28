@@ -1,0 +1,43 @@
+.Deal {
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
+    font-size: 0.8rem;
+    height: 100px;
+    display: grid;
+    grid-template-rows: repeat(4, 1fr);
+    gap: 2px;
+    align-items: center;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.Deal:hover {
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1), 0 12px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
+}
+
+.deal-failed {
+    background: #ffd6cc;
+}
+
+.deal-sealed {
+    background: #ddffdd;
+}
+
+.Deal a {
+    color: #333;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.Deal a:hover {
+    color: #4CAF50;
+}
+
+.deal-err {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    display: block;
+}
