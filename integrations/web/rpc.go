@@ -30,7 +30,7 @@ func (rc *RIBSRpc) CarUploadStats(ctx context.Context) (map[ribs.GroupKey]*ribs.
 	return rc.ribs.Diagnostics().CarUploadStats(), nil
 }
 
-func (rc *RIBSRpc) ReachableProviders(ctx context.Context, group ribs.GroupKey) ([]ribs.ProviderMeta, error) {
+func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta, error) {
 	return rc.ribs.Diagnostics().ReachableProviders(), nil
 }
 
