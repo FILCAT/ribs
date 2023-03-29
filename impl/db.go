@@ -621,8 +621,8 @@ func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
 	res, err := r.db.Query(`WITH deal_summary AS (
     SELECT
         d.group_id,
-        SUM(g.car_size) AS total_data_size,
-        SUM(g.piece_size) AS total_deal_size,
+        SUM(CASE WHEN d.failed = 0 THEN g.car_size ELSE 0 END) AS total_data_size,
+        SUM(CASE WHEN d.failed = 0 THEN g.piece_size ELSE 0 END) AS total_deal_size,
         COUNT(CASE WHEN d.failed = 0 AND d.sealed = 0 THEN 1 ELSE NULL END) AS deals_in_progress,
         COUNT(CASE WHEN d.sealed = 1 THEN 1 ELSE NULL END) AS deals_done,
         COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS deals_failed
