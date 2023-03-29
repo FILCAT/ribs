@@ -160,13 +160,47 @@ create table if not exists providers (
     ask_max_piece_size integer not null default 0
 );
 
-create view if not exists good_providers_view as 
-	select id, ping_ok, boost_deals, booster_http, booster_bitswap,
-       indexed_success, indexed_fail,
-       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
-       ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
-    from providers where in_market = 1 and ping_ok = 1 and ask_ok = 1 and ask_verif_price <= %f and ask_price <= %f and ask_min_piece_size <= %d and ask_max_piece_size >= %d
-    order by (booster_bitswap+booster_http) asc, boost_deals asc, id desc;
+CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
+    SELECT
+        d.provider_addr AS sp_id,
+        COUNT(*) AS total_deals,
+        COUNT(CASE WHEN d.published = 1 THEN 1 ELSE NULL END) AS published_deals,
+        COUNT(CASE WHEN d.sealed = 1 THEN 1 ELSE NULL END) AS sealed_deals,
+        COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS failed_deals,
+        COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) AS rejected_deals,
+        CASE
+            WHEN COUNT(*) >= 4 AND COUNT(*) = COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) THEN 1
+            ELSE 0
+        END AS rejected_all
+    FROM
+        deals d
+    WHERE
+        d.start_time >= strftime('%%s', 'now', '-3 days')
+    GROUP BY
+        d.provider_addr;
+
+drop view if exists good_providers_view;
+
+CREATE VIEW IF NOT EXISTS good_providers_view AS
+    SELECT 
+        p.id, p.ping_ok, p.boost_deals, p.booster_http, p.booster_bitswap,
+        p.indexed_success, p.indexed_fail,
+        p.retrprobe_success, p.retrprobe_fail, p.retrprobe_blocks, p.retrprobe_bytes,
+        p.ask_price, p.ask_verif_price, p.ask_min_piece_size, p.ask_max_piece_size
+    FROM 
+        providers p
+        LEFT JOIN sp_deal_stats_view ds ON p.id = ds.sp_id
+    WHERE 
+        p.in_market = 1 
+        AND p.ping_ok = 1 
+        AND p.ask_ok = 1 
+        AND p.ask_verif_price <= %f 
+        AND p.ask_price <= %f 
+        AND p.ask_min_piece_size <= %d 
+        AND p.ask_max_piece_size >= %d
+        AND (ds.rejected_all IS NULL OR ds.rejected_all = 0)
+    ORDER BY 
+        (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
 /* top level index */
 
@@ -186,7 +220,6 @@ create index if not exists index_group_index
 
 create index if not exists index_hash_index
     on top_index (hash);
-
 `
 
 type ribsDB struct {

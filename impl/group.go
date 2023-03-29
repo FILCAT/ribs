@@ -544,19 +544,6 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			return xerrors.Errorf("get addr info: %w", err)
 		}
 
-		if err := h.Connect(ctx, *addrInfo); err != nil {
-			return xerrors.Errorf("connect to miner: %w", err)
-		}
-
-		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
-		if err != nil {
-			return fmt.Errorf("getting protocols for peer %s: %w", addrInfo.ID, err)
-		}
-
-		if len(x) == 0 {
-			return fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
-		}
-
 		var providerCollateral abi.TokenAmount
 
 		bounds, err := gw.StateDealProviderCollateralBounds(ctx, abi.PaddedPieceSize(dealInfo.PieceSize), verified, chain_types.EmptyTSK)
@@ -604,19 +591,6 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			Transfer:           transfer,
 		}
 
-		// MAKE THE DEAL
-
-		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
-		if err != nil {
-			return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
-		}
-		defer s.Close()
-
-		var resp types.DealResponse
-		if err := doRpc(ctx, s, &dealParams, &resp); err != nil {
-			return fmt.Errorf("send proposal rpc: %w", err)
-		}
-
 		di := dbDealInfo{
 			DealUUID:            dealUuid.String(),
 			GroupID:             m.id,
@@ -628,6 +602,37 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			StartEpoch:          startEpoch,
 			EndEpoch:            startEpoch + abi.ChainEpoch(duration),
 			SignedProposalBytes: proposalBuf.Bytes(),
+		}
+
+		if err := h.Connect(ctx, *addrInfo); err != nil {
+			err = m.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err))
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
+			return xerrors.Errorf("connect to miner: %w", err)
+		}
+
+		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
+		if err != nil {
+			return fmt.Errorf("getting protocols for peer %s: %w", addrInfo.ID, err)
+		}
+
+		if len(x) == 0 {
+			return fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
+		}
+
+		// MAKE THE DEAL
+
+		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
+		if err != nil {
+			return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
+		}
+		defer s.Close()
+
+		var resp types.DealResponse
+		if err := doRpc(ctx, s, &dealParams, &resp); err != nil {
+			return fmt.Errorf("send proposal rpc: %w", err)
 		}
 
 		if !resp.Accepted {

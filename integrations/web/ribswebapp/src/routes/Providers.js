@@ -9,7 +9,7 @@ function Providers() {
     const fetchProviders = async () => {
         try {
             const providerData = await RibsRPC.call("ReachableProviders");
-            setProviders(providerData);
+            setProviders(providerData.reverse());
         } catch (error) {
             console.error("Error fetching providers:", error);
         }
