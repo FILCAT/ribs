@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+
 	"github.com/filecoin-project/go-jsonrpc"
+
 	"github.com/lotus-web3/ribs"
 )
 
@@ -36,6 +38,10 @@ func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta,
 
 func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
 	return rc.ribs.Diagnostics().DealSummary()
+}
+
+func (rc *RIBSRpc) TopIndexStats(ctx context.Context) (ribs.TopIndexStats, error) {
+	return rc.ribs.Diagnostics().TopIndexStats(ctx)
 }
 
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {

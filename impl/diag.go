@@ -94,6 +94,19 @@ func (r *ribs) DealSummary() (iface.DealSummary, error) {
 	return r.db.DealSummary()
 }
 
+func (r *ribs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
+	s, err := r.index.EstimateSize(ctx)
+	if err != nil {
+		return iface.TopIndexStats{}, xerrors.Errorf("estimate size: %w", err)
+	}
+
+	return iface.TopIndexStats{
+		Entries: s,
+		Writes:  atomic.LoadInt64(&r.index.writes),
+		Reads:   atomic.LoadInt64(&r.index.reads),
+	}, nil
+}
+
 func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
 	if err != nil {

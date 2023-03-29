@@ -1,7 +1,7 @@
 import './Status.css';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
-import { formatBytesBinary } from "../helpers/fmt";
+import {formatBytesBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
 
 function WalletInfoTile({ walletInfo }) {
     const truncateAddress = (address) => {
@@ -79,7 +79,58 @@ function GroupsTile({ groups }) {
     );
 }
 
-function TopIndexTile({ groups }) {
+function TopIndexTile() {
+    const [indexStats, setTopIndexStats] = useState({});
+    const prevStatsRef = useRef({});
+    const readRateEMARef = useRef(0);
+    const writeRateEMARef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    const fetchStatus = async () => {
+        try {
+            const topIndexStats = await RibsRPC.call("TopIndexStats");
+
+            const prevStats = prevStatsRef.current;
+            const reads = topIndexStats.Reads;
+            const writes = topIndexStats.Writes;
+
+            if (prevStats.Reads !== undefined && prevStats.Writes !== undefined) {
+                const readRate = reads - prevStats.Reads;
+                const writeRate = writes - prevStats.Writes;
+
+                readRateEMARef.current = calcEMA(
+                    readRate,
+                    readRateEMARef.current,
+                    smoothingFactor
+                );
+                writeRateEMARef.current = calcEMA(
+                    writeRate,
+                    writeRateEMARef.current,
+                    smoothingFactor
+                );
+            }
+
+            setTopIndexStats({
+                ...topIndexStats,
+                ReadRate: Math.round(readRateEMARef.current),
+                WriteRate: Math.round(writeRateEMARef.current),
+            });
+
+            prevStatsRef.current = { Reads: reads, Writes: writes };
+        } catch (error) {
+            console.error("Error fetching status:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 1000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
     return (
         <div>
             <h2>Top Index</h2>
@@ -87,21 +138,22 @@ function TopIndexTile({ groups }) {
                 <tbody>
                 <tr>
                     <td>Entries:</td>
-                    <td className="important-metric">123 423K</td>
+                    <td className="important-metric">{formatNum6(indexStats.Entries)}</td>
                 </tr>
                 <tr>
                     <td>Read rate:</td>
-                    <td>1 234/s</td>
+                    <td>{indexStats.ReadRate}/s</td>
                 </tr>
                 <tr>
                     <td>Write rate:</td>
-                    <td>12/s</td>
+                    <td>{indexStats.WriteRate}/s</td>
                 </tr>
                 </tbody>
             </table>
         </div>
     );
 }
+
 
 function DealsTile({ dealSummary }) {
     return (
@@ -306,6 +358,7 @@ function Status() {
             const carUploadStats = await RibsRPC.call("CarUploadStats");
             const reachableProviders = await RibsRPC.call("ReachableProviders");
             const dealSummary = await RibsRPC.call("DealSummary");
+            const topIndexStats = await RibsRPC.call("TopIndexStats");
 
             setWalletInfo(walletInfo);
             setGroups(groups);

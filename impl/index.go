@@ -108,4 +108,13 @@ func (i *Index) DropGroup(ctx context.Context, mh []multihash.Multihash, group i
 	return nil
 }
 
+func (i *Index) EstimateSize(ctx context.Context) (int64, error) {
+	var count int64
+	if err := i.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM top_index`).Scan(&count); err != nil {
+		return 0, xerrors.Errorf("query: %w", err)
+	}
+
+	return count, nil
+}
+
 var _ iface.Index = (*Index)(nil)

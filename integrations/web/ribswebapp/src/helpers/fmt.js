@@ -16,6 +16,24 @@ export function formatNum(bytes) {
     return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
 }
 
+export function formatNum6(bytes) {
+    const units = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+    let l = 0, n = parseInt(bytes, 10) || 0;
+    while (n >= 1000 && ++l) {
+        n = n / 1000;
+    }
+
+    const intPart = Math.floor(n);
+    const decimalPart = Math.floor((n - intPart) * 1000);
+    const formattedDecimal = decimalPart > 0 ? ` ${decimalPart}` : '';
+
+    return (intPart + formattedDecimal + ' ' + units[l]);
+}
+
+export function calcEMA(currentValue, prevEMA, smoothingFactor) {
+    return smoothingFactor * currentValue + (1 - smoothingFactor) * prevEMA;
+}
+
 export function formatPercent(num) {
     return (num * 100).toFixed(1) + '%';
 }

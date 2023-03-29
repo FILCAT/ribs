@@ -21,6 +21,7 @@ type Index interface {
 	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 	Sync(ctx context.Context) error
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
+	EstimateSize(ctx context.Context) (int64, error)
 }
 
 type GroupState int
@@ -152,6 +153,7 @@ type Diag interface {
 
 	CarUploadStats() map[GroupKey]*UploadStats
 	DealSummary() (DealSummary, error)
+	TopIndexStats(context.Context) (TopIndexStats, error)
 
 	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
@@ -159,6 +161,11 @@ type Diag interface {
 	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type TopIndexStats struct {
+	Entries       int64
+	Writes, Reads int64
 }
 
 type CrawlState struct {

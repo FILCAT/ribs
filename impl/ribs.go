@@ -97,7 +97,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	r := &ribs{
 		root:  root,
 		db:    db,
-		index: NewIndex(db.db),
+		index: NewMeteredIndex(NewIndex(db.db)),
 
 		host:   h,
 		wallet: wallet,
@@ -257,7 +257,7 @@ type ribs struct {
 
 	// todo hide this db behind an interface
 	db    *ribsDB
-	index iface.Index
+	index *MeteredIndex
 
 	lk sync.Mutex
 
