@@ -255,6 +255,8 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
 	// right now we just read from jbob
+
+	// todo: Technically we only need this lock when jbob is writable
 	m.jblk.Lock()
 	defer m.jblk.Unlock()
 
@@ -308,7 +310,7 @@ func (m *Group) Finalize(ctx context.Context) error {
 
 func (m *Group) GenTopCar(ctx context.Context) error {
 	m.jblk.RLock()
-	defer m.jblk.RLock()
+	defer m.jblk.RUnlock()
 
 	if err := os.Mkdir(filepath.Join(m.path, "vcar"), 0755); err != nil {
 		return xerrors.Errorf("make vcar dir: %w", err)

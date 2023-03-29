@@ -257,7 +257,7 @@ func (j *JBOB) truncate(offset, size int64, onRemove TruncCleanup) error {
 		return xerrors.Errorf("getting multihashes to truncate: %w", err)
 	}
 
-	log.Errorw("truncate", "offset", offset, "size", size, "diff", size-offset, "idxEnts", toTruncate, "dataPath", j.DataPath)
+	log.Errorw("truncate", "offset", offset, "size", size, "diff", size-offset, "idxEnts", len(toTruncate), "dataPath", j.DataPath)
 
 	if len(toTruncate) > 0 {
 		if err := onRemove(offset, toTruncate); err != nil {

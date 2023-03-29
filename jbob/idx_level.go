@@ -2,7 +2,6 @@ package jbob
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/multiformats/go-multihash"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
@@ -136,7 +135,6 @@ func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error
 			return nil, xerrors.Errorf("invalid value length")
 		}
 		offs := int64(binary.LittleEndian.Uint64(it.Value()))
-		fmt.Printf("consider off %d\n", offs)
 		if offs >= atOrAbove {
 			mhashes = append(mhashes, it.Key())
 		}
