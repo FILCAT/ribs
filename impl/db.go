@@ -584,6 +584,48 @@ func (r *ribsDB) UpdateActivatedDeal(id string, sectorStart abi.ChainEpoch) erro
 	return nil
 }
 
+func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
+	res, err := r.db.Query(`WITH deal_summary AS (
+    SELECT
+        d.group_id,
+        SUM(g.car_size) AS total_data_size,
+        SUM(g.piece_size) AS total_deal_size,
+        COUNT(CASE WHEN d.failed = 0 AND d.sealed = 0 THEN 1 ELSE NULL END) AS deals_in_progress,
+        COUNT(CASE WHEN d.sealed = 1 THEN 1 ELSE NULL END) AS deals_done,
+        COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS deals_failed
+    FROM
+        deals d
+            JOIN
+        groups g ON d.group_id = g.id
+    GROUP BY
+        d.group_id
+) SELECT
+    SUM(deals_in_progress+deals_done) AS total_non_failed_deal_count,
+    SUM(total_data_size) AS total_data_size,
+    SUM(total_deal_size) AS total_deal_size,
+    SUM(deals_in_progress) AS deals_in_progress,
+    SUM(deals_done) AS deals_done,
+    SUM(deals_failed) AS deals_failed
+FROM
+    deal_summary;`)
+	if err != nil {
+		return iface.DealSummary{}, xerrors.Errorf("finding writable groups: %w", err)
+	}
+
+	var ds iface.DealSummary
+
+	for res.Next() {
+		err := res.Scan(&ds.NonFailed, &ds.TotalDataSize, &ds.TotalDealSize, &ds.InProgress, &ds.Done, &ds.Failed)
+		if err != nil {
+			return iface.DealSummary{}, xerrors.Errorf("scanning group: %w", err)
+		}
+
+		break
+	}
+
+	return ds, nil
+}
+
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
 	res, err := r.db.Query("select id, blocks, bytes, g_state from groups where g_state = 0")
 	if err != nil {

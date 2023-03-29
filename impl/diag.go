@@ -90,6 +90,10 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 	return wi, nil
 }
 
+func (r *ribs) DealSummary() (iface.DealSummary, error) {
+	return r.db.DealSummary()
+}
+
 func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
 	if err != nil {

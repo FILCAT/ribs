@@ -34,6 +34,10 @@ func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta,
 	return rc.ribs.Diagnostics().ReachableProviders(), nil
 }
 
+func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
+	return rc.ribs.Diagnostics().DealSummary()
+}
+
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
 

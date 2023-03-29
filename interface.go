@@ -151,6 +151,7 @@ type Diag interface {
 	GroupMeta(gk GroupKey) (GroupMeta, error)
 
 	CarUploadStats() map[GroupKey]*UploadStats
+	DealSummary() (DealSummary, error)
 
 	CrawlState() string
 	ReachableProviders() []ProviderMeta
@@ -158,6 +159,11 @@ type Diag interface {
 	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type DealSummary struct {
+	NonFailed, InProgress, Done, Failed int64
+	TotalDataSize, TotalDealSize        int64
 }
 
 type UploadStats struct {

@@ -103,31 +103,31 @@ function TopIndexTile({ groups }) {
     );
 }
 
-function DealsTile({}) {
+function DealsTile({ dealSummary }) {
     return (
         <div>
-            <h2>Deals: 123</h2>
+            <h2>Deals: {dealSummary.InProgress + dealSummary.Done}</h2>
             <table className="compact-table">
                 <tbody>
                 <tr>
                     <td>Total data size:</td>
-                    <td className="important-metric">XX TiB</td>
+                    <td className="important-metric">{formatBytesBinary(dealSummary.TotalDataSize)}</td>
                 </tr>
                 <tr>
-                    <td>Avg. deals per group:</td>
-                    <td>4.9/5</td>
+                    <td>Total deal size:</td>
+                    <td className="important-metric">{formatBytesBinary(dealSummary.TotalDealSize)}</td>
                 </tr>
                 <tr>
                     <td>Deals in progress:</td>
-                    <td>12</td>
+                    <td>{dealSummary.InProgress}</td>
                 </tr>
                 <tr>
                     <td>Deals done:</td>
-                    <td>111</td>
+                    <td>{dealSummary.Done}</td>
                 </tr>
                 <tr>
                     <td>Deals failed:</td>
-                    <td>0</td>
+                    <td>{dealSummary.Failed}</td>
                 </tr>
                 </tbody>
             </table>
@@ -247,6 +247,7 @@ function Status() {
     const [crawlState, setCrawlState] = useState("");
     const [carUploadStats, setCarUploadStats] = useState({});
     const [reachableProviders, setReachableProviders] = useState([]);
+    const [dealSummary, setDealSummary] = useState({});
 
     const fetchStatus = async () => {
         try {
@@ -255,12 +256,14 @@ function Status() {
             const crawlState = await RibsRPC.call("CrawlState");
             const carUploadStats = await RibsRPC.call("CarUploadStats");
             const reachableProviders = await RibsRPC.call("ReachableProviders");
+            const dealSummary = await RibsRPC.call("DealSummary");
 
             setWalletInfo(walletInfo);
             setGroups(groups);
             setCrawlState(crawlState);
             setCarUploadStats(carUploadStats);
             setReachableProviders(reachableProviders);
+            setDealSummary(dealSummary);
         } catch (error) {
             console.error("Error fetching status:", error);
         }
@@ -280,7 +283,7 @@ function Status() {
             <div className="status-grid">
                 <GroupsTile groups={groups} />
                 <TopIndexTile />
-                <DealsTile />
+                <DealsTile dealSummary={dealSummary} />
                 <WorkersTile groups={groups} />
                 <ProvidersTile reachableProviders={reachableProviders} />
                 <CarUploadStatsTile carUploadStats={carUploadStats} />
