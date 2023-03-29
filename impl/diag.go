@@ -33,9 +33,39 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	if ok {
 		m.ReadBlocks = atomic.LoadInt64(&g.readBlocks)
 		m.ReadBytes = atomic.LoadInt64(&g.readSize)
+		m.WriteBlocks = atomic.LoadInt64(&g.writeBlocks)
+		m.WriteBytes = atomic.LoadInt64(&g.writeSize)
 	}
 
 	return m, nil
+}
+
+func (r *ribs) GroupIOStats() iface.GroupIOStats {
+	r.lk.Lock()
+	defer r.lk.Unlock()
+
+	// first update global counters
+	for _, group := range r.openGroups {
+		r.grpReadBlocks += group.readBlocks - group.readBlocksSnap
+		r.grpReadSize += group.readSize - group.readSizeSnap
+		r.grpWriteBlocks += group.writeBlocks - group.writeBlocksSnap
+		r.grpWriteSize += group.writeSize - group.writeSizeSnap
+
+		group.readBlocksSnap = group.readBlocks
+		group.readSizeSnap = group.readSize
+		group.writeBlocksSnap = group.writeBlocks
+		group.writeSizeSnap = group.writeSize
+	}
+
+	// then return the global counters
+	stats := iface.GroupIOStats{
+		ReadBlocks:  r.grpReadBlocks,
+		ReadBytes:   r.grpReadSize,
+		WriteBlocks: r.grpWriteBlocks,
+		WriteBytes:  r.grpWriteSize,
+	}
+
+	return stats
 }
 
 func (r *ribs) CrawlState() iface.CrawlState {

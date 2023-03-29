@@ -286,6 +286,11 @@ type ribs struct {
 	// diag cache
 	diagLk sync.Mutex
 
+	grpReadBlocks  int64
+	grpReadSize    int64
+	grpWriteBlocks int64
+	grpWriteSize   int64
+
 	cachedWalletInfo     *iface.WalletInfo
 	lastWalletInfoUpdate time.Time
 }

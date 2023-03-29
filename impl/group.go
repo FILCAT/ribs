@@ -79,8 +79,17 @@ type Group struct {
 	committedBlocks int64
 	committedSize   int64
 
-	readBlocks int64
-	readSize   int64
+	// atomic perf/diag counters
+	readBlocks  int64
+	readSize    int64
+	writeBlocks int64
+	writeSize   int64
+
+	// perf counter snapshots, owned by group manager
+	readBlocksSnap  int64
+	readSizeSnap    int64
+	writeBlocksSnap int64
+	writeSizeSnap   int64
 
 	jb *jbob.JBOB
 }
@@ -161,6 +170,9 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 
 	m.inflightBlocks += int64(writeBlocks)
 	m.inflightSize += writeSize
+
+	atomic.AddInt64(&m.writeBlocks, int64(writeBlocks))
+	atomic.AddInt64(&m.writeSize, writeSize)
 
 	// backend write
 

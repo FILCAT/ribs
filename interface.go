@@ -116,7 +116,8 @@ type GroupMeta struct {
 	Blocks int64
 	Bytes  int64
 
-	ReadBlocks, ReadBytes int64
+	ReadBlocks, ReadBytes   int64
+	WriteBlocks, WriteBytes int64
 
 	Deals []DealMeta
 }
@@ -154,6 +155,7 @@ type Diag interface {
 	CarUploadStats() map[GroupKey]*UploadStats
 	DealSummary() (DealSummary, error)
 	TopIndexStats(context.Context) (TopIndexStats, error)
+	GroupIOStats() GroupIOStats
 
 	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
@@ -161,6 +163,11 @@ type Diag interface {
 	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type GroupIOStats struct {
+	ReadBlocks, ReadBytes   int64
+	WriteBlocks, WriteBytes int64
 }
 
 type TopIndexStats struct {

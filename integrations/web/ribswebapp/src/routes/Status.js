@@ -342,6 +342,103 @@ function CrawlStateTile({ crawlState }) {
     );
 }
 
+function IoStats() {
+    const [groupIOStats, setGroupIOStats] = useState({});
+    const prevStatsRef = useRef({});
+    const readBlocksEMARef = useRef(0);
+    const writeBlocksEMARef = useRef(0);
+    const readBytesEMARef = useRef(0);
+    const writeBytesEMARef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    const fetchStatus = async () => {
+        try {
+            const ioStats = await RibsRPC.call("GroupIOStats");
+
+            const prevStats = prevStatsRef.current;
+            const readBlocks = ioStats.ReadBlocks;
+            const writeBlocks = ioStats.WriteBlocks;
+            const readBytes = ioStats.ReadBytes;
+            const writeBytes = ioStats.WriteBytes;
+
+            if (prevStats.ReadBlocks !== undefined && prevStats.WriteBlocks !== undefined) {
+                const readBlocksRate = readBlocks - prevStats.ReadBlocks;
+                const writeBlocksRate = writeBlocks - prevStats.WriteBlocks;
+                const readBytesRate = readBytes - prevStats.ReadBytes;
+                const writeBytesRate = writeBytes - prevStats.WriteBytes;
+
+                readBlocksEMARef.current = calcEMA(
+                    readBlocksRate,
+                    readBlocksEMARef.current,
+                    smoothingFactor
+                );
+                writeBlocksEMARef.current = calcEMA(
+                    writeBlocksRate,
+                    writeBlocksEMARef.current,
+                    smoothingFactor
+                );
+                readBytesEMARef.current = calcEMA(
+                    readBytesRate,
+                    readBytesEMARef.current,
+                    smoothingFactor
+                );
+                writeBytesEMARef.current = calcEMA(
+                    writeBytesRate,
+                    writeBytesEMARef.current,
+                    smoothingFactor
+                );
+            }
+
+            setGroupIOStats({
+                ...ioStats,
+                ReadBlocksRate: Math.round(readBlocksEMARef.current),
+                WriteBlocksRate: Math.round(writeBlocksEMARef.current),
+                ReadBytesRate: Math.round(readBytesEMARef.current),
+                WriteBytesRate: Math.round(writeBytesEMARef.current),
+            });
+
+            prevStatsRef.current = { ReadBlocks: readBlocks, WriteBlocks: writeBlocks, ReadBytes: readBytes, WriteBytes: writeBytes };
+        } catch (error) {
+            console.error("Error fetching status:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 1000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h2>IO Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Read Rate:</td>
+                    <td>{formatNum(groupIOStats.ReadBlocksRate)} Blk/s</td>
+                </tr>
+                <tr>
+                    <td>Read Bytes:</td>
+                    <td>{formatBytesBinary(groupIOStats.ReadBytesRate)}/s</td>
+                </tr>
+                <tr>
+                    <td>Write Rate:</td>
+                    <td>{formatNum(groupIOStats.WriteBlocksRate)} Blk/s</td>
+                </tr>
+                <tr>
+                    <td>Write Bytes:</td>
+                    <td>{formatBytesBinary(groupIOStats.WriteBytesRate)}/s</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function Status() {
     const [walletInfo, setWalletInfo] = useState(null);
     const [groups, setGroups] = useState([]);
@@ -384,6 +481,7 @@ function Status() {
         <div className="Status">
             <div className="status-grid">
                 <GroupsTile groups={groups} />
+                <IoStats />
                 <TopIndexTile />
                 <DealsTile dealSummary={dealSummary} />
                 <WorkersTile groups={groups} />
