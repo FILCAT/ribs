@@ -255,11 +255,17 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
 	// right now we just read from jbob
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
+
 	return m.jb.View(c, func(cidx int, found bool, data []byte) error {
 		// TODO: handle not found better?
 		if !found {
 			return xerrors.Errorf("group: block not found")
 		}
+
+		m.jblk.Unlock()
+		defer m.jblk.Lock()
 
 		atomic.AddInt64(&m.readBlocks, 1)
 		atomic.AddInt64(&m.readSize, int64(len(data)))
