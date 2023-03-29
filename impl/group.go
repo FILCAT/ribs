@@ -312,7 +312,7 @@ func (m *Group) GenTopCar(ctx context.Context) error {
 	m.jblk.RLock()
 	defer m.jblk.RUnlock()
 
-	if err := os.Mkdir(filepath.Join(m.path, "vcar"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(m.path, "vcar"), 0755); err != nil {
 		return xerrors.Errorf("make vcar dir: %w", err)
 	}
 

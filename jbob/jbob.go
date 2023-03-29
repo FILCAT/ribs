@@ -598,6 +598,20 @@ func (j *JBOB) Finalize() error {
 		return xerrors.Errorf("cannot finalize read-write jbob")
 	}
 
+	var fin bool
+	err := j.mutHead(func(h *Head) error {
+		fin = h.Finalized
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("checking if finalized: %w", err)
+	}
+
+	if fin {
+		// edge case: already finalized, nothing to do
+		return nil
+	}
+
 	bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
 	if err != nil {
 		return xerrors.Errorf("creating bsst index: %w", err)
