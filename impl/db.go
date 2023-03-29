@@ -823,7 +823,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	dealMeta := make([]iface.DealMeta, 0)
 
-	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid from deals where group_id = ?", gk)
+	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -832,6 +832,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		var dealUuid string
 		var provider int64
 		var sealed, failed, rejected bool
+		var startEpoch, endEpoch int64
 		var status *string
 		var sealStatus *string
 		var errMsg *string
@@ -840,7 +841,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		var pubCid *string
 		var dealID *int64
 
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid)
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
 		if err != nil {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
 		}
@@ -851,6 +852,8 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 			Sealed:     sealed,
 			Failed:     failed,
 			Rejected:   rejected,
+			StartEpoch: startEpoch,
+			EndEpoch:   endEpoch,
 			Status:     derefOr(status, ""),
 			SealStatus: derefOr(sealStatus, ""),
 			Error:      derefOr(errMsg, ""),

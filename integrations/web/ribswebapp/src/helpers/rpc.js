@@ -31,6 +31,10 @@ class RibsRPC {
         return await RibsRPC.get().call('RIBS.' + method, params);
     }
 
+    static async callFil(method, params) {
+        return await RibsRPC.get().call('Filecoin.' + method, params);
+    }
+
     static onConnect(callback) {
         RibsRPC.connectCallbacks.push(callback);
         RibsRPC.get().on("open", callback);

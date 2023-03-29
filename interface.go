@@ -2,6 +2,8 @@ package ribs
 
 import (
 	"context"
+	"github.com/filecoin-project/go-jsonrpc"
+	"github.com/filecoin-project/lotus/api"
 	blocks "github.com/ipfs/go-block-format"
 	"io"
 
@@ -124,6 +126,8 @@ type DealMeta struct {
 
 	Sealed, Failed, Rejected bool
 
+	StartEpoch, EndEpoch int64
+
 	Status     string
 	SealStatus string
 	Error      string
@@ -152,6 +156,8 @@ type Diag interface {
 	ReachableProviders() []ProviderMeta
 
 	WalletInfo() (WalletInfo, error)
+
+	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
 }
 
 type UploadStats struct {

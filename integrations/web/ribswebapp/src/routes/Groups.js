@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import RibsRPC from "../helpers/rpc";
-import { formatBytesBinary, formatNum } from "../helpers/fmt";
+import { formatBytesBinary, formatNum, epochToDate, epochToDuration } from "../helpers/fmt";
 import "./Groups.css";
 import "./Deal.css";
 
-function Deal({ deal }) {
+function Deal({ deal, headHeight }) {
     const {
         UUID,
         Provider,
@@ -12,6 +12,8 @@ function Deal({ deal }) {
         DealID,
         Sealed,
         Failed,
+        StartEpoch,
+        EndEpoch,
         BytesRecv,
         TxSize,
         Status,
@@ -23,14 +25,15 @@ function Deal({ deal }) {
 
     return (
         <div className={`Deal${Failed ? " deal-failed" : ""}${Sealed ? " deal-sealed" : ""}`}>
-            <abbr title={UUID}>
-                {UUID.substring(0, 8)}... {Sealed && <strong>SEALED</strong>}
-            </abbr>
             <span>
-        <a href={`https://filfox.info/en/address/f0${Provider}`} target="_blank" rel="noopener noreferrer">
-          f0{Provider}
-        </a>
-      </span>
+                <abbr title={UUID}>{UUID.substring(0, 8)}... </abbr>
+                <a href={`https://filfox.info/en/address/f0${Provider}`} target="_blank" rel="noopener noreferrer">f0{Provider}</a>
+                {Sealed && <strong> SEALED</strong>}
+            </span>
+            <span>
+                {Sealed ? <> Ends {epochToDate(EndEpoch)} in {epochToDuration(EndEpoch-headHeight)}</> :
+                    <> Expires in {epochToDuration(StartEpoch-headHeight)}</>}
+            </span>
             {PubCid && (
                 <span>
                     Deal: <a href={`https://filfox.info/en/message/${PubCid}`} target="_blank" rel="noopener noreferrer">bafy..{PubCid.substr(-16)}</a>
@@ -59,7 +62,7 @@ const groupStateText = [
     "Offloaded"
 ];
 
-function Group({ group }) {
+function Group({ group, headHeight }) {
     const [showFailedDeals, setShowFailedDeals] = useState(false);
     const toggleShowFailedDeals = () => setShowFailedDeals(!showFailedDeals);
 
@@ -118,7 +121,7 @@ function Group({ group }) {
                     <h4>Deals:</h4>
                     <div className="Group-deals">
                         {dealsToDisplay.map((deal) => (
-                            <Deal key={deal.UUID} deal={deal} />
+                            <Deal key={deal.UUID} deal={deal} headHeight={headHeight} />
                         ))}
                     </div>
                 </>
@@ -130,6 +133,7 @@ function Group({ group }) {
 
 function Groups() {
     const [groups, setGroups] = useState([]);
+    const [headHeight, setHeadHeight] = useState(0);
 
     const fetchGroups = async () => {
         try {
@@ -141,6 +145,9 @@ function Groups() {
                 })
             );
             setGroups(groupMetas);
+
+            const head = await RibsRPC.callFil("ChainHead");
+            setHeadHeight(head.Height);
         } catch (error) {
             console.error("Error fetching groups:", error);
         }
@@ -159,7 +166,7 @@ function Groups() {
         <div className="Groups">
             <h2>Groups</h2>
             {groups.map((group, index) => (
-                <Group key={group.GroupKey} group={group} />
+                <Group key={group.GroupKey} group={group} headHeight={headHeight} />
             ))}
         </div>
     );

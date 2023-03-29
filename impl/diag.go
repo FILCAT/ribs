@@ -2,6 +2,8 @@ package impl
 
 import (
 	"context"
+	"github.com/filecoin-project/go-jsonrpc"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/chain/types"
 	iface "github.com/lotus-web3/ribs"
@@ -86,4 +88,13 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 	r.lastWalletInfoUpdate = time.Now()
 
 	return wi, nil
+}
+
+func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
+	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return gw, closer, nil
 }

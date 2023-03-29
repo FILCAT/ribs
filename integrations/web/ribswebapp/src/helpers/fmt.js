@@ -35,5 +35,39 @@ export function formatFil(n) {
     return (n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
 }
 
+export function epochToDuration(epochs) {
+    const epochDuration = 30; // 30 seconds per epoch
+    const totalSeconds = epochs * epochDuration;
+
+    const daysInMonth = 30; // Approximate number of days in a month
+    const months = Math.floor(totalSeconds / (daysInMonth * 24 * 60 * 60));
+    const days = Math.floor((totalSeconds % (daysInMonth * 24 * 60 * 60)) / (24 * 60 * 60));
+    const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((totalSeconds % (60 * 60)) / 60);
+
+    let duration = "";
+    if (months > 0) {
+        duration += `${months}mo `;
+    }
+    if (days > 0) {
+        duration += `${days}d `;
+    }
+    if (hours > 0) {
+        duration += `${hours}h `;
+    }
+    if (minutes > 0) {
+        duration += `${minutes}m`;
+    }
+    return duration.trim();
+}
+
+export function epochToDate(epochs, referenceDate = new Date(Date.UTC(2020, 9, 15, 22, 0, 0))) {
+  const epochDuration = 30; // 30 seconds per epoch
+  const totalSeconds = epochs * epochDuration;
+
+  const newDate = new Date(referenceDate.getTime() + totalSeconds * 1000).toISOString().split('T')[0];
+  return newDate;
+}
+
 export const avgMonthDays = 30.436875;
 export const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;

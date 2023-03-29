@@ -1,11 +1,13 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/lotus-web3/ribs"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"sort"
@@ -114,12 +116,16 @@ func (ri *RIBSWeb) ApiGroup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func Serve(listen string, ribs ribs.RIBS) error {
+func Serve(ctx context.Context, listen string, ribs ribs.RIBS) error {
 	handlers := &RIBSWeb{
 		ribs: ribs,
 	}
 
-	rpc := MakeRPCServer(ribs)
+	rpc, closer, err := MakeRPCServer(ctx, ribs)
+	if err != nil {
+		return err
+	}
+	defer closer()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Index)
@@ -131,5 +137,6 @@ func Serve(listen string, ribs ribs.RIBS) error {
 
 	mux.Handle("/debug/", http.DefaultServeMux)
 
-	return http.ListenAndServe(listen, mux)
+	server := &http.Server{Addr: listen, Handler: mux, BaseContext: func(_ net.Listener) context.Context { return ctx }}
+	return server.ListenAndServe()
 }

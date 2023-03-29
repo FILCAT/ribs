@@ -46,7 +46,7 @@ function WalletInfoTile({ walletInfo }) {
 function GroupsTile({ groups }) {
     return (
         <div>
-            <h2>Groups: {groups.length}</h2>
+            <h2>Block Groups: {groups.length}</h2>
             <table className="compact-table">
                 <tbody>
                 <tr>

@@ -34,11 +34,17 @@ func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta,
 	return rc.ribs.Diagnostics().ReachableProviders(), nil
 }
 
-func MakeRPCServer(ribs ribs.RIBS) *jsonrpc.RPCServer {
+func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
+
+	fgw, closer, err := ribs.Diagnostics().Filecoin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	sv := jsonrpc.NewServer()
 	sv.Register("RIBS", hnd)
+	sv.Register("Filecoin", fgw)
 
-	return sv
+	return sv, closer, nil
 }
