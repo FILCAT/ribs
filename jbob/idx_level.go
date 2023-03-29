@@ -2,6 +2,7 @@ package jbob
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/multiformats/go-multihash"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
@@ -123,6 +124,32 @@ func (l *LevelDBIndex) List(f func(c multihash.Multihash, offs []int64) error) e
 	}
 
 	return nil
+}
+
+func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error) {
+	var mhashes []multihash.Multihash
+	it := l.DB.NewIterator(nil, nil)
+	defer it.Release()
+
+	for it.Next() {
+		if len(it.Value()) != 8 {
+			return nil, xerrors.Errorf("invalid value length")
+		}
+		offs := int64(binary.LittleEndian.Uint64(it.Value()))
+		fmt.Printf("consider off %d\n", offs)
+		if offs >= atOrAbove {
+			mhashes = append(mhashes, it.Key())
+		}
+	}
+	return mhashes, nil
+}
+
+func (l *LevelDBIndex) Del(c []multihash.Multihash) error {
+	batch := new(leveldb.Batch)
+	for _, m := range c {
+		batch.Delete(m)
+	}
+	return l.DB.Write(batch, nil)
 }
 
 // todo sync

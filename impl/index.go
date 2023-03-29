@@ -84,8 +84,28 @@ func (i *Index) AddGroup(ctx context.Context, mh []multihash.Multihash, group if
 }
 
 func (i *Index) DropGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
-	//TODO implement me
-	panic("implement me")
+	tx, err := i.db.BeginTx(ctx, nil)
+	if err != nil {
+		return xerrors.Errorf("begin tx: %w", err)
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `DELETE FROM top_index WHERE hash = ? AND group_id = ?`)
+	if err != nil {
+		return xerrors.Errorf("prepare delete: %w", err)
+	}
+
+	for _, m := range mh {
+		_, err := stmt.ExecContext(ctx, m, group)
+		if err != nil {
+			return xerrors.Errorf("delete: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return xerrors.Errorf("commit: %w", err)
+	}
+
+	return nil
 }
 
 var _ iface.Index = (*Index)(nil)

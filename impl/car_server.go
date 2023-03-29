@@ -230,7 +230,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		r.uploadStatsLk.Unlock()
 	}()
 
-	err = r.withReadableGroup(reqToken.Group, func(group *Group) error {
+	err = r.withReadableGroup(context.TODO(), reqToken.Group, func(group *Group) error {
 		// todo range request handling
 		//http.ServeContent(w, req, "deal.car", time.Now(), &carWriter{})
 

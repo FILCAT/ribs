@@ -626,31 +626,31 @@ FROM
 	return ds, nil
 }
 
-func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes int64, state iface.GroupState, err error) {
-	res, err := r.db.Query("select id, blocks, bytes, g_state from groups where g_state = 0")
+func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, err error) {
+	res, err := r.db.Query("select id, blocks, bytes, jb_recorded_head, g_state from groups where g_state = 0")
 	if err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
+		return 0, 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
 	}
 
 	selectedGroup := iface.UndefGroupKey
 
 	for res.Next() {
-		err := res.Scan(&selectedGroup, &blocks, &bytes, &state)
+		err := res.Scan(&selectedGroup, &blocks, &bytes, &jbhead, &state)
 		if err != nil {
-			return 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
+			return 0, 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
 		}
 
 		break
 	}
 
 	if err := res.Err(); err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
+		return 0, 0, 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
 	}
 	if err := res.Close(); err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
+		return 0, 0, 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
 	}
 
-	return selectedGroup, blocks, bytes, state, nil
+	return selectedGroup, blocks, bytes, jbhead, state, nil
 }
 
 func (r *ribsDB) CreateGroup() (out iface.GroupKey, err error) {
@@ -662,18 +662,18 @@ func (r *ribsDB) CreateGroup() (out iface.GroupKey, err error) {
 	return
 }
 
-func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes int64, state iface.GroupState, err error) {
-	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", gid)
+func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, state iface.GroupState, err error) {
+	res, err := r.db.Query("select blocks, bytes, jb_recorded_head, g_state from groups where id = ?", gid)
 	if err != nil {
-		return 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
+		return 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
 	}
 
 	var found bool
 
 	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &state)
+		err := res.Scan(&blocks, &bytes, &jbhead, &state)
 		if err != nil {
-			return 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
+			return 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
 		}
 
 		found = true
@@ -682,16 +682,16 @@ func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes int64, state iface
 	}
 
 	if err := res.Err(); err != nil {
-		return 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
+		return 0, 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
 	}
 	if err := res.Close(); err != nil {
-		return 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
+		return 0, 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
 	}
 	if !found {
-		return 0, 0, 0, xerrors.Errorf("group %d not found", gid)
+		return 0, 0, 0, 0, xerrors.Errorf("group %d not found", gid)
 	}
 
-	return blocks, bytes, state, nil
+	return blocks, bytes, jbhead, state, nil
 }
 
 func (r *ribsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error) {

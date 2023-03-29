@@ -50,7 +50,8 @@ var (
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
 
-	targetReplicaCount = 5
+	minimumReplicaCount = 5
+	targetReplicaCount  = 7
 )
 
 type Group struct {
@@ -84,7 +85,7 @@ type Group struct {
 	jb *jbob.JBOB
 }
 
-func OpenGroup(db *ribsDB, index iface.Index, id, committedBlocks, committedSize int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -98,11 +99,15 @@ func OpenGroup(db *ribsDB, index iface.Index, id, committedBlocks, committedSize
 		jbOpenFunc = jbob.Create
 	}
 
-	// todo read group head, replay log if needed
+	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"), func(to int64, h []mh.Multihash) error {
+		if to < recordedHead {
+			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
+		}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"))
+		return index.DropGroup(ctx, h, id)
+	})
 	if err != nil {
-		return nil, xerrors.Errorf("open jbob: %w", err)
+		return nil, xerrors.Errorf("open jbob (grp: %s): %w", groupPath, err)
 	}
 
 	return &Group{

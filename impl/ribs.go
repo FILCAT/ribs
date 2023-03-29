@@ -121,7 +121,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
-	go r.resumeGroups()
+	go r.resumeGroups(context.TODO())
 	go r.dealTracker(context.TODO())
 
 	if err := r.setupCarServer(context.TODO(), h); err != nil {
@@ -224,7 +224,7 @@ func (r *ribs) workerExecTask(toExec task) {
 			return
 		}
 
-		if c < targetReplicaCount {
+		if c < minimumReplicaCount {
 			go func() {
 				r.tasks <- task{
 					tt:    taskTypeMakeMoreDeals,
@@ -300,7 +300,7 @@ func (r *ribs) Close() error {
 	return nil
 }
 
-func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
+func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
 	r.lk.Lock()
 	defer r.lk.Unlock()
 
@@ -328,17 +328,16 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 
 	selectedGroup = iface.UndefGroupKey
 	{
-		var blocks int64
-		var bytes int64
+		var blocks, bytes, jbhead int64
 		var state iface.GroupState
 
-		selectedGroup, blocks, bytes, state, err = r.db.GetWritableGroup()
+		selectedGroup, blocks, bytes, jbhead, state, err = r.db.GetWritableGroup()
 		if err != nil {
 			return iface.UndefGroupKey, xerrors.Errorf("finding writable groups: %w", err)
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(r.db, r.index, selectedGroup, blocks, bytes, r.root, state, false)
+			g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -356,7 +355,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
-	g, err := OpenGroup(r.db, r.index, selectedGroup, 0, 0, r.root, iface.GroupStateWritable, true)
+	g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -366,7 +365,7 @@ func (r *ribs) withWritableGroup(prefer iface.GroupKey, cb func(group *Group) er
 	return selectedGroup, cb(g)
 }
 
-func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) error) (err error) {
+func (r *ribs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb func(group *Group) error) (err error) {
 	r.lk.Lock()
 
 	// todo prefer
@@ -377,13 +376,13 @@ func (r *ribs) withReadableGroup(group iface.GroupKey, cb func(group *Group) err
 
 	// not open, open it
 
-	blocks, bytes, state, err := r.db.OpenGroup(group)
+	blocks, bytes, jbhead, state, err := r.db.OpenGroup(group)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
-	g, err := OpenGroup(r.db, r.index, group, blocks, bytes, r.root, state, false)
+	g, err := OpenGroup(ctx, r.db, r.index, group, blocks, bytes, jbhead, r.root, state, false)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)
@@ -481,7 +480,7 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 			toGet[i] = c[cidx]
 		}
 
-		err := r.r.withReadableGroup(g, func(g *Group) error {
+		err := r.r.withReadableGroup(ctx, g, func(g *Group) error {
 			return g.View(ctx, toGet, func(cidx int, data []byte) {
 				cb(cidxs[cidx], data)
 			})
@@ -506,7 +505,7 @@ func (r *ribBatch) Put(ctx context.Context, b []blocks.Block) error {
 	// todo filter blocks that already exist
 	var done int
 	for done < len(b) {
-		gk, err := r.r.withWritableGroup(r.currentWriteTarget, func(g *Group) error {
+		gk, err := r.r.withWritableGroup(ctx, r.currentWriteTarget, func(g *Group) error {
 			wrote, err := g.Put(ctx, b[done:])
 			if err != nil {
 				return err
@@ -562,7 +561,7 @@ func (r *ribBatch) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (r *ribs) resumeGroups() {
+func (r *ribs) resumeGroups(ctx context.Context) {
 	gs, err := r.db.GroupStates()
 	if err != nil {
 		panic(err)
@@ -571,7 +570,7 @@ func (r *ribs) resumeGroups() {
 	for g, st := range gs {
 		switch st {
 		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp, iface.GroupStateDealsInProgress:
-			if err := r.withReadableGroup(g, func(g *Group) error {
+			if err := r.withReadableGroup(ctx, g, func(g *Group) error {
 				return nil
 			}); err != nil {
 				log.Errorw("failed to resume group", "group", g, "err", err)

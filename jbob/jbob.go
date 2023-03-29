@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	blocks "github.com/ipfs/go-block-format"
+	logging "github.com/ipfs/go-log"
 	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/bsst"
 	"io"
@@ -17,6 +18,8 @@ import (
 
 	mh "github.com/multiformats/go-multihash"
 )
+
+var log = logging.Logger("jbob")
 
 const (
 	HeadName = "head"
@@ -85,7 +88,7 @@ const (
 	entBlock
 )
 
-func Create(indexPath, dataPath string) (*JBOB, error) {
+func Create(indexPath, dataPath string, _ TruncCleanup) (*JBOB, error) {
 	if err := os.Mkdir(indexPath, 0755); err != nil {
 		return nil, xerrors.Errorf("mkdir index path (%s): %w", indexPath, err)
 	}
@@ -142,7 +145,7 @@ func Create(indexPath, dataPath string) (*JBOB, error) {
 	}, nil
 }
 
-func Open(indexPath, dataPath string) (*JBOB, error) {
+func Open(indexPath, dataPath string, tc TruncCleanup) (*JBOB, error) {
 	headFile, err := os.OpenFile(filepath.Join(indexPath, HeadName), os.O_RDWR|os.O_SYNC, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening head: %w", err)
@@ -175,21 +178,10 @@ func Open(indexPath, dataPath string) (*JBOB, error) {
 		return nil, xerrors.Errorf("stat data len: %w", err)
 	}
 
-	if dataInfo.Size() > h.RetiredAt { // data ahead means there was an unclean shutdown during a write
-		// todo truncate data / replay
-
-		return nil, xerrors.Errorf("data file is longer than head says it should be (%d > %d, by %d B)", dataInfo.Size(), h.RetiredAt, dataInfo.Size()-h.RetiredAt)
-	}
-
 	if dataInfo.Size() < h.RetiredAt {
 		// something is not yes
 
 		return nil, xerrors.Errorf("data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
-	}
-
-	// seek to data end as writes are appended
-	if _, err := dataFile.Seek(dataInfo.Size(), io.SeekStart); err != nil {
-		return nil, xerrors.Errorf("seeking to data end: %w", err)
 	}
 
 	jb := &JBOB{
@@ -226,7 +218,73 @@ func Open(indexPath, dataPath string) (*JBOB, error) {
 		}
 	}
 
+	if dataInfo.Size() > h.RetiredAt { // data ahead means there was an unclean shutdown during a write
+		if h.ReadOnly {
+			// If the file is truncated while being marked as read-only, something is terribly wrong.
+			return nil, xerrors.Errorf("read only(!) data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
+		}
+
+		//return nil, xerrors.Errorf("data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
+
+		// truncate index
+		err := jb.truncate(h.RetiredAt, dataInfo.Size(), tc)
+		if err != nil {
+			return nil, xerrors.Errorf("truncating jbob: %w", err)
+		}
+	}
+
+	// seek to data end as writes are appended
+	if _, err := dataFile.Seek(jb.dataLen, io.SeekStart); err != nil {
+		return nil, xerrors.Errorf("seeking to data end: %w", err)
+	}
+
 	return jb, nil
+}
+
+type TruncCleanup func(to int64, h []mh.Multihash) error
+
+func (j *JBOB) truncate(offset, size int64, onRemove TruncCleanup) error {
+	if j.wIdx == nil {
+		return xerrors.Errorf("cannot truncate a read-only jbob")
+	}
+
+	if onRemove == nil {
+		return xerrors.Errorf("onRemove callback is nil")
+	}
+
+	toTruncate, err := j.wIdx.ToTruncate(offset)
+	if err != nil {
+		return xerrors.Errorf("getting multihashes to truncate: %w", err)
+	}
+
+	log.Errorw("truncate", "offset", offset, "size", size, "diff", size-offset, "idxEnts", toTruncate, "dataPath", j.DataPath)
+
+	if len(toTruncate) > 0 {
+		if err := onRemove(offset, toTruncate); err != nil {
+			return xerrors.Errorf("truncate callback error: %w", err)
+		}
+		if err := j.wIdx.Del(toTruncate); err != nil {
+			return xerrors.Errorf("deleting multihashes from jbob index: %w", err)
+		}
+	}
+
+	if err := j.data.Truncate(offset); err != nil {
+		return xerrors.Errorf("truncating data file: %w", err)
+	}
+
+	j.dataLen = offset
+
+	// Update the head
+	err = j.mutHead(func(h *Head) error {
+		h.RetiredAt = offset
+		return nil
+	})
+
+	if err != nil {
+		return xerrors.Errorf("updating head after truncate: %w", err)
+	}
+
+	return nil
 }
 
 /* WRITE SIDE */
@@ -236,7 +294,11 @@ type WritableIndex interface {
 	// sync for now, todo
 	// -1 offset means 'skip'
 	Put(c []mh.Multihash, offs []int64) error
-	//Del(c []mh.Multihash, offs []int64) error
+
+	Del(c []mh.Multihash) error
+
+	// Truncate returns a list of multihashes to remove from the index
+	ToTruncate(atOrAbove int64) ([]mh.Multihash, error)
 
 	// todo Sync() error
 
@@ -442,7 +504,7 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		}
 		entType := entHead[4]
 		if entType != byte(entBlock) {
-			return xerrors.Errorf("unexpected entry type %d, expected block (1)", entType)
+			return xerrors.Errorf("unexpected entry type %d, expected block (1) off:%d", entType, locs[i])
 		}
 		mhLen := uint32(binary.LittleEndian.Uint16(entHead[6:]))
 
