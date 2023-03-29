@@ -20,6 +20,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 	"sync"
@@ -37,8 +38,12 @@ var (
 	crawlQueryProviders = "querying providers"
 )
 
+func (r *ribs) setCrawlState(state iface.CrawlState) {
+	r.crawlState.Store(&state)
+}
+
 func (r *ribs) spCrawler() {
-	r.crawlState.Store(&crawlInit)
+	r.setCrawlState(iface.CrawlState{State: crawlInit})
 
 	defer close(r.spCrawlClosed)
 
@@ -72,7 +77,7 @@ func (r *ribs) spCrawler() {
 func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Host) error {
 	boostTptClient := lp2pimpl.NewTransportsClient(pingP2P)
 
-	r.crawlState.Store(&crawlLoadMarket)
+	r.setCrawlState(iface.CrawlState{State: crawlLoadMarket})
 
 	head, err := gw.ChainHead(ctx)
 	if err != nil {
@@ -113,7 +118,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 		n++
 		if n%10 == 0 {
-			r.crawlState.Store(toPtr(fmt.Sprintf("<b>%s</b><div>At <b>%d</b></div>", crawlMarketList, n))) // todo use json
+			r.setCrawlState(iface.CrawlState{State: crawlMarketList, At: int64(n)})
 		}
 
 		select {
@@ -133,13 +138,13 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 		return nil
 	}
 
-	r.crawlState.Store(&crawlStoreMarket)
+	r.setCrawlState(iface.CrawlState{State: crawlStoreMarket})
 
 	if err := r.db.UpsertMarketActors(actors); err != nil {
 		return xerrors.Errorf("upserting market actors: %w", err)
 	}
 
-	r.crawlState.Store(&crawlQueryProviders)
+	r.setCrawlState(iface.CrawlState{State: crawlQueryProviders})
 
 	const parallel = 128
 	throttle := make(chan struct{}, parallel)
@@ -149,7 +154,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 	var started, reachable, boost, bitswap, http int64
 
-	for _, actor := range actors {
+	for n, actor := range actors {
 		select {
 		case <-r.close:
 			return nil
@@ -160,7 +165,15 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 		started++
 
 		if started%10 == 0 {
-			r.crawlState.Store(toPtr(fmt.Sprintf("<b>%s</b><div>At <b>%d</b>; Reachable <b>%d</b>; Boost/BBitswap/BHttp <b>%d/%d/%d</b></div>", crawlQueryProviders, started, atomic.LoadInt64(&reachable), atomic.LoadInt64(&boost), atomic.LoadInt64(&bitswap), atomic.LoadInt64(&http)))) // todo use json
+			r.setCrawlState(iface.CrawlState{
+				State:     crawlQueryProviders,
+				At:        int64(n),
+				Reachable: atomic.LoadInt64(&reachable),
+				Total:     int64(len(actors)),
+				Boost:     atomic.LoadInt64(&boost),
+				BBswap:    atomic.LoadInt64(&bitswap),
+				BHttp:     atomic.LoadInt64(&http),
+			})
 		}
 
 		go func(actor int64) {
@@ -260,10 +273,6 @@ type providerResult struct {
 	BoostDeals     bool
 	BoosterHttp    bool
 	BoosterBitswap bool
-}
-
-func toPtr[T any](v T) *T {
-	return &v
 }
 
 func GetAddrInfo(ctx context.Context, api api.Gateway, maddr address.Address) (*peer.AddrInfo, error) {

@@ -38,7 +38,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	return m, nil
 }
 
-func (r *ribs) CrawlState() string {
+func (r *ribs) CrawlState() iface.CrawlState {
 	return *r.crawlState.Load()
 }
 

@@ -153,12 +153,19 @@ type Diag interface {
 	CarUploadStats() map[GroupKey]*UploadStats
 	DealSummary() (DealSummary, error)
 
-	CrawlState() string
+	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
 
 	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type CrawlState struct {
+	State string
+
+	At, Reachable, Total int64
+	Boost, BBswap, BHttp int64
 }
 
 type DealSummary struct {

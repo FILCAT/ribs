@@ -102,7 +102,6 @@ func (b *Blockstore) start(ctx context.Context) {
 				bt = b.sess.Batch(ctx)
 			}
 
-			fmt.Println("putting", len(toPut), "blocks")
 			err := bt.Put(ctx, toPut)
 			if err != nil {
 				respondAll(err)

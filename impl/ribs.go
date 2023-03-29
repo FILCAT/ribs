@@ -276,7 +276,7 @@ type ribs struct {
 	writableGroups map[int64]*Group
 
 	/* sp tracker */
-	crawlState atomic.Pointer[string]
+	crawlState atomic.Pointer[iface.CrawlState]
 
 	/* car uploads */
 	uploadStats     map[iface.GroupKey]*iface.UploadStats

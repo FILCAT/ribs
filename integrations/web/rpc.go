@@ -22,7 +22,7 @@ func (rc *RIBSRpc) GroupMeta(ctx context.Context, group ribs.GroupKey) (ribs.Gro
 	return rc.ribs.Diagnostics().GroupMeta(group)
 }
 
-func (rc *RIBSRpc) CrawlState(ctx context.Context) (string, error) {
+func (rc *RIBSRpc) CrawlState(ctx context.Context) (ribs.CrawlState, error) {
 	return rc.ribs.Diagnostics().CrawlState(), nil
 }
 

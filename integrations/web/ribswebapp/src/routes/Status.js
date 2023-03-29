@@ -229,14 +229,63 @@ function CarUploadStatsTile({ carUploadStats }) {
     );
 }
 
-function CrawlStateTile() {
+
+function CrawlStateTile({ crawlState }) {
+    const progressBarPercentage = crawlState.State === "querying providers" ? (crawlState.At / crawlState.Total) * 100 : 0;
+    const showAt = ["listing market participants", "querying providers"].includes(crawlState.State);
+
     return (
-        <div>
+        <div className="CrawlStateTile">
             <h2>Crawl State</h2>
-            <b>querying providers</b>
-            <div>
-                At <b>640</b>; Reachable <b>62</b>; Boost/BBitswap/BHttp <b>22/1/1</b>
-            </div>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td><b>State:</b></td>
+                    <td>{crawlState.State}</td>
+                </tr>
+                {showAt && (
+                    <tr>
+                        <td><b>At:</b></td>
+                        <td>{crawlState.At}</td>
+                    </tr>
+                )}
+                {crawlState.State === "querying providers" && (
+                    <>
+                        <tr>
+                            <td><b>Progress:</b></td>
+                            <td>{progressBarPercentage.toFixed(2)}%</td>
+                        </tr>
+                        <tr>
+                            <td colSpan={2}>
+                                <div className="progress-bar">
+                                    <div className="progress-bar__fill" style={{ width: `${progressBarPercentage}%` }}></div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><b>Reachable:</b></td>
+                            <td>{crawlState.Reachable}</td>
+                        </tr>
+                        <tr>
+                            <td><b>Total:</b></td>
+                            <td>{crawlState.Total}</td>
+                        </tr>
+                        <tr>
+                            <td><b>Boost:</b></td>
+                            <td>{crawlState.Boost}</td>
+                        </tr>
+                        <tr>
+                            <td><b>BBswap:</b></td>
+                            <td>{crawlState.BBswap}</td>
+                        </tr>
+                        <tr>
+                            <td><b>BHttp:</b></td>
+                            <td>{crawlState.BHttp}</td>
+                        </tr>
+                    </>
+                )}
+                </tbody>
+            </table>
         </div>
     );
 }
@@ -287,7 +336,7 @@ function Status() {
                 <WorkersTile groups={groups} />
                 <ProvidersTile reachableProviders={reachableProviders} />
                 <CarUploadStatsTile carUploadStats={carUploadStats} />
-                <CrawlStateTile />
+                <CrawlStateTile crawlState={crawlState} />
                 <WalletInfoTile walletInfo={walletInfo} />
             </div>
         </div>

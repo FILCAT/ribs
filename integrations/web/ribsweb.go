@@ -74,7 +74,6 @@ func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(&state{
 		Groups:     gs,
-		CrawlState: ri.ribs.Diagnostics().CrawlState(),
 		Providers:  ri.ribs.Diagnostics().ReachableProviders(),
 		CarUploads: ri.ribs.Diagnostics().CarUploadStats(),
 		Wallet:     wi,
