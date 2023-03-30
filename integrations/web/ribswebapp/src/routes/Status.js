@@ -54,16 +54,12 @@ function GroupsTile({ groups }) {
                     <td className="important-metric">XX TiB</td>
                 </tr>
                 <tr>
-                    <td>Total block count:</td>
-                    <td>14.24G</td>
-                </tr>
-                <tr>
                     <td>Local size:</td>
                     <td>XX TiB</td>
                 </tr>
                 <tr>
                     <td>Offloaded size:</td>
-                    <td>XX TiB</td>
+                    <td>0 B</td>
                 </tr>
                 <tr>
                     <td>Open (RO):</td>
