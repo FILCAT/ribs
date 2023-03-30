@@ -70,8 +70,8 @@ func (r *ribs) updateCarStats() {
 	r.uploadStatsSnap = make(map[iface.GroupKey]*iface.UploadStats)
 	for k, v := range r.uploadStats {
 		r.uploadStatsSnap[k] = &iface.UploadStats{
-			ActiveRequests:       v.ActiveRequests,
-			Last250MsUploadBytes: atomic.SwapInt64(&v.Last250MsUploadBytes, 0),
+			ActiveRequests: v.ActiveRequests,
+			UploadBytes:    atomic.LoadInt64(&v.UploadBytes),
 		}
 	}
 
@@ -217,7 +217,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.uploadStats[reqToken.Group].ActiveRequests++
 
 	sw := &carStatWriter{
-		ctr:       &r.uploadStats[reqToken.Group].Last250MsUploadBytes,
+		ctr:       &r.uploadStats[reqToken.Group].UploadBytes,
 		w:         w,
 		toDiscard: toDiscard,
 	}

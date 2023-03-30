@@ -200,8 +200,8 @@ type DealSummary struct {
 }
 
 type UploadStats struct {
-	ActiveRequests       int
-	Last250MsUploadBytes int64
+	ActiveRequests int
+	UploadBytes    int64
 }
 
 type ProviderMeta struct {

@@ -1,7 +1,7 @@
 import './Status.css';
 import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
-import {formatBytesBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
+import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
 
 function WalletInfoTile({ walletInfo }) {
     const truncateAddress = (address) => {
@@ -280,6 +280,42 @@ function WorkersTile({ groups }) {
 }
 
 function CarUploadStatsTile({ carUploadStats }) {
+    const [displayStats, setDisplayStats] = useState({});
+    const prevStatsRef = useRef({});
+    const rateEMARef = useRef({});
+    const smoothingFactor = 1 / 10;
+
+    const calcRates = () => {
+        const newDisplayStats = {};
+
+        for (const [groupKey, uploadStats] of Object.entries(carUploadStats)) {
+            const prevStats = prevStatsRef.current[groupKey] || { UploadBytes: 0 };
+            const bytesSent = uploadStats.UploadBytes;
+            const bytesRate = bytesSent - prevStats.UploadBytes;
+
+            rateEMARef.current[groupKey] = calcEMA(
+                bytesRate,
+                rateEMARef.current[groupKey] || 0,
+                smoothingFactor
+            );
+
+            newDisplayStats[groupKey] = {
+                ...uploadStats,
+                UploadRate: Math.round(rateEMARef.current[groupKey]),
+            };
+
+            prevStatsRef.current[groupKey] = { UploadBytes: bytesSent };
+        }
+
+        setDisplayStats(newDisplayStats);
+    };
+
+    useEffect(() => {
+        calcRates();
+        const interval = setInterval(calcRates, 1000);
+        return () => clearInterval(interval);
+    }, [carUploadStats]);
+
     return (
         <div>
             <h2>Car Upload Stats</h2>
@@ -292,11 +328,11 @@ function CarUploadStatsTile({ carUploadStats }) {
                 </tr>
                 </thead>
                 <tbody>
-                {Object.entries(carUploadStats).map(([groupKey, uploadStats]) => (
+                {Object.entries(displayStats).map(([groupKey, uploadStats]) => (
                     <tr key={groupKey}>
                         <td>Group {groupKey}</td>
                         <td>{uploadStats.ActiveRequests}</td>
-                        <td>{formatBytesBinary(uploadStats.Last250MsUploadBytes * 4)}/s</td>
+                        <td>{formatBitsBinary(uploadStats.UploadRate)}</td>
                     </tr>
                 ))}
                 </tbody>
@@ -304,7 +340,6 @@ function CarUploadStatsTile({ carUploadStats }) {
         </div>
     );
 }
-
 
 function CrawlStateTile({ crawlState }) {
     const progressBarPercentage = crawlState.State === "querying providers" ? (crawlState.At / crawlState.Total) * 100 : 0;
