@@ -10,6 +10,7 @@ import Root from './routes/Root';
 import Status from './routes/Status';
 import Groups from './routes/Groups';
 import Providers from './routes/Providers';
+import Provider from './routes/Provider';
 
 const router = createBrowserRouter([
     {
@@ -19,6 +20,7 @@ const router = createBrowserRouter([
             { path: "/", element: <Status /> },
             { path: "groups", element: <Groups /> },
             { path: "providers", element: <Providers /> },
+            { path: "provider/:providerID", element: <Provider /> },
         ],
     },
 ]);

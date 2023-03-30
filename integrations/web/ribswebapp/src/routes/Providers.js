@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import RibsRPC from "../helpers/rpc";
 import { formatBytesBinary, formatFil, epochToMonth } from "../helpers/fmt";
 import "./Providers.css";
+import {Link} from "react-router-dom";
 
 function Providers() {
     const [providers, setProviders] = useState([]);
@@ -42,7 +43,7 @@ function Providers() {
                 <tbody>
                 {providers.map((provider) => (
                     <tr key={provider.ID}>
-                        <td>f0{provider.ID}</td>
+                        <td><Link to={`/provider/f0${provider.ID}`}>f0{provider.ID}</Link></td>
                         <td>
                             {formatBytesBinary(provider.AskMinPieceSize)} to{" "}
                             {formatBytesBinary(provider.AskMaxPieceSize)}

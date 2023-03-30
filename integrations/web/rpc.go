@@ -36,6 +36,10 @@ func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta,
 	return rc.ribs.Diagnostics().ReachableProviders(), nil
 }
 
+func (rc *RIBSRpc) ProviderInfo(ctx context.Context, id int64) (ribs.ProviderInfo, error) {
+	return rc.ribs.Diagnostics().ProviderInfo(id)
+}
+
 func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
 	return rc.ribs.Diagnostics().DealSummary()
 }

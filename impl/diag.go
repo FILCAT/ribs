@@ -90,6 +90,10 @@ func (r *ribs) ReachableProviders() []iface.ProviderMeta {
 	return r.db.ReachableProviders()
 }
 
+func (r *ribs) ProviderInfo(id int64) (iface.ProviderInfo, error) {
+	return r.db.ProviderInfo(id)
+}
+
 func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 	r.diagLk.Lock()
 	defer r.diagLk.Unlock()

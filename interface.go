@@ -157,6 +157,7 @@ type Diag interface {
 	TopIndexStats(context.Context) (TopIndexStats, error)
 	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
+	ProviderInfo(id int64) (ProviderInfo, error)
 
 	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
@@ -202,6 +203,11 @@ type DealSummary struct {
 type UploadStats struct {
 	ActiveRequests int
 	UploadBytes    int64
+}
+
+type ProviderInfo struct {
+	Meta        ProviderMeta
+	RecentDeals []DealMeta
 }
 
 type ProviderMeta struct {

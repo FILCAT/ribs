@@ -668,6 +668,67 @@ FROM
 	return ds, nil
 }
 
+func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
+	var pInfo iface.ProviderInfo
+	err := r.db.QueryRow(`
+		SELECT id, ping_ok, boost_deals, booster_http, booster_bitswap,
+		indexed_success, indexed_fail, retrprobe_success, retrprobe_fail,
+		retrprobe_blocks, retrprobe_bytes, ask_price, ask_verif_price,
+		ask_min_piece_size, ask_max_piece_size
+		FROM providers WHERE id = ?`, providerID).Scan(
+		&pInfo.Meta.ID, &pInfo.Meta.PingOk, &pInfo.Meta.BoostDeals,
+		&pInfo.Meta.BoosterHttp, &pInfo.Meta.BoosterBitswap, &pInfo.Meta.IndexedSuccess,
+		&pInfo.Meta.IndexedFail, &pInfo.Meta.RetrProbeSuccess, &pInfo.Meta.RetrProbeFail,
+		&pInfo.Meta.RetrProbeBlocks, &pInfo.Meta.RetrProbeBytes,
+		&pInfo.Meta.AskPrice, &pInfo.Meta.AskVerifiedPrice, &pInfo.Meta.AskMinPieceSize, &pInfo.Meta.AskMaxPieceSize)
+	if err != nil {
+		return pInfo, xerrors.Errorf("querying provider metadata: %w", err)
+	}
+
+	res, err := r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where provider_addr = ? ORDER BY start_time DESC LIMIT 100", providerID)
+	if err != nil {
+		return pInfo, xerrors.Errorf("getting group meta: %w", err)
+	}
+
+	for res.Next() {
+		var dealUuid string
+		var provider int64
+		var sealed, failed, rejected bool
+		var startEpoch, endEpoch int64
+		var status *string
+		var sealStatus *string
+		var errMsg *string
+		var bytesRecv *int64
+		var txSize *int64
+		var pubCid *string
+		var dealID *int64
+
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
+		if err != nil {
+			return pInfo, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		pInfo.RecentDeals = append(pInfo.RecentDeals, iface.DealMeta{
+			UUID:       dealUuid,
+			Provider:   provider,
+			Sealed:     sealed,
+			Failed:     failed,
+			Rejected:   rejected,
+			StartEpoch: startEpoch,
+			EndEpoch:   endEpoch,
+			Status:     derefOr(status, ""),
+			SealStatus: derefOr(sealStatus, ""),
+			Error:      derefOr(errMsg, ""),
+			DealID:     derefOr(dealID, 0),
+			BytesRecv:  derefOr(bytesRecv, 0),
+			TxSize:     derefOr(txSize, 0),
+			PubCid:     derefOr(pubCid, ""),
+		})
+	}
+
+	return pInfo, nil
+}
+
 func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
 	var gs iface.GroupStats
 	err := r.db.QueryRow(`SELECT group_count, total_data_size, non_offloaded_data_size, offloaded_data_size FROM group_stats_view`).Scan(&gs.GroupCount, &gs.TotalDataSize, &gs.NonOffloadedDataSize, &gs.OffloadedDataSize)

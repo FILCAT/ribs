@@ -1,0 +1,9 @@
+.provider-meta-table {
+    width: auto;
+}
+
+.provider-deals-error-col {
+    color: #f44336;
+    max-width: 40ex;
+    overflow-x: scroll;
+}
