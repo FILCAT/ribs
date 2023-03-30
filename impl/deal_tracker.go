@@ -26,6 +26,7 @@ const clientReadDeadline = 10 * time.Second
 const clientWriteDeadline = 10 * time.Second
 
 var DealCheckInterval = 10 * time.Second
+var ParallelDealChecks = 10
 
 func (r *ribs) dealTracker(ctx context.Context) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
@@ -48,6 +49,9 @@ func (r *ribs) dealTracker(ctx context.Context) {
 		}
 
 		checkDuration := time.Since(checkStart)
+
+		log.Errorw("deal check loop finished", "duration", checkDuration)
+
 		if checkDuration < DealCheckInterval {
 			select {
 			case <-r.close:
@@ -154,13 +158,26 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 		// todo also check "failed" not expired deals at some lower interval
 
+		sem := make(chan struct{}, ParallelDealChecks)
+
 		for _, deal := range toCheck {
-			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := r.runDealCheckQuery(ctx, gw, walletAddr, deal)
-			cancel()
-			if err != nil {
-				log.Errorw("deal check failed", "deal", deal.DealUUID, "provider", fmt.Sprintf("f0%d", deal.ProviderAddr), "error", err)
-			}
+			sem <- struct{}{}
+			go func(deal inactiveDealMeta) {
+				defer func() {
+					<-sem
+				}()
+
+				ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				err := r.runDealCheckQuery(ctx, gw, walletAddr, deal)
+				cancel()
+				if err != nil {
+					log.Errorw("deal check failed", "deal", deal.DealUUID, "provider", fmt.Sprintf("f0%d", deal.ProviderAddr), "error", err)
+				}
+			}(deal)
+		}
+
+		for i := 0; i < cap(sem); i++ {
+			sem <- struct{}{}
 		}
 	}
 

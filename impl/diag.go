@@ -40,6 +40,20 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	return m, nil
 }
 
+func (r *ribs) GetGroupStats() (*iface.GroupStats, error) {
+	gs, err := r.db.GetGroupStats()
+	if err != nil {
+		return nil, err
+	}
+
+	r.lk.Lock()
+	gs.OpenGroups = len(r.openGroups)
+	gs.OpenWritable = len(r.writableGroups)
+	r.lk.Unlock()
+
+	return gs, nil
+}
+
 func (r *ribs) GroupIOStats() iface.GroupIOStats {
 	r.lk.Lock()
 	defer r.lk.Unlock()

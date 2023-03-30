@@ -43,31 +43,51 @@ function WalletInfoTile({ walletInfo }) {
     );
 }
 
-function GroupsTile({ groups }) {
+function GroupsTile() {
+    const [groupStats, setGroupStats] = useState(null);
+
+    const fetchStatus = async () => {
+        try {
+            const groupStats = await RibsRPC.call("GetGroupStats");
+            setGroupStats(groupStats);
+        } catch (error) {
+            console.error("Error fetching group stats:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 1000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
     return (
         <div>
-            <h2>Block Groups: {groups.length}</h2>
+            <h2>Block Groups: {groupStats?.GroupCount}</h2>
             <table className="compact-table">
                 <tbody>
                 <tr>
                     <td>Total data size:</td>
-                    <td className="important-metric">XX TiB</td>
+                    <td className="important-metric">{formatBytesBinary(groupStats?.TotalDataSize)}</td>
                 </tr>
                 <tr>
                     <td>Local size:</td>
-                    <td>XX TiB</td>
+                    <td>{formatBytesBinary(groupStats?.NonOffloadedDataSize)}</td>
                 </tr>
                 <tr>
                     <td>Offloaded size:</td>
-                    <td>0 B</td>
+                    <td>{formatBytesBinary(groupStats?.OffloadedDataSize)}</td>
                 </tr>
                 <tr>
                     <td>Open (RO):</td>
-                    <td>3</td>
+                    <td>{groupStats?.OpenGroups ?? 0}</td>
                 </tr>
                 <tr>
                     <td>Open (RW):</td>
-                    <td>1</td>
+                    <td>{groupStats?.OpenWritable ?? 0}</td>
                 </tr>
                 </tbody>
             </table>
@@ -159,11 +179,19 @@ function DealsTile({ dealSummary }) {
                 <tbody>
                 <tr>
                     <td>Total data size:</td>
-                    <td className="important-metric">{formatBytesBinary(dealSummary.TotalDataSize)}</td>
+                    <td>{formatBytesBinary(dealSummary.TotalDataSize)}</td>
                 </tr>
                 <tr>
                     <td>Total deal size:</td>
-                    <td className="important-metric">{formatBytesBinary(dealSummary.TotalDealSize)}</td>
+                    <td>{formatBytesBinary(dealSummary.TotalDealSize)}</td>
+                </tr>
+                <tr>
+                    <td>Stored data size:</td>
+                    <td className="important-metric">{formatBytesBinary(dealSummary.StoredDataSize)}</td>
+                </tr>
+                <tr>
+                    <td>Stored deal size:</td>
+                    <td className="important-metric">{formatBytesBinary(dealSummary.StoredDealSize)}</td>
                 </tr>
                 <tr>
                     <td>Deals in progress:</td>
@@ -171,7 +199,7 @@ function DealsTile({ dealSummary }) {
                 </tr>
                 <tr>
                     <td>Deals done:</td>
-                    <td>{dealSummary.Done}</td>
+                    <td className="important-metric">{dealSummary.Done}</td>
                 </tr>
                 <tr>
                     <td>Deals failed:</td>

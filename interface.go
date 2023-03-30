@@ -155,6 +155,7 @@ type Diag interface {
 	CarUploadStats() map[GroupKey]*UploadStats
 	DealSummary() (DealSummary, error)
 	TopIndexStats(context.Context) (TopIndexStats, error)
+	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
 
 	CrawlState() CrawlState
@@ -163,6 +164,15 @@ type Diag interface {
 	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type GroupStats struct {
+	GroupCount           int64
+	TotalDataSize        int64
+	NonOffloadedDataSize int64
+	OffloadedDataSize    int64
+
+	OpenGroups, OpenWritable int
 }
 
 type GroupIOStats struct {
@@ -184,7 +194,9 @@ type CrawlState struct {
 
 type DealSummary struct {
 	NonFailed, InProgress, Done, Failed int64
-	TotalDataSize, TotalDealSize        int64
+
+	TotalDataSize, TotalDealSize   int64
+	StoredDataSize, StoredDealSize int64
 }
 
 type UploadStats struct {

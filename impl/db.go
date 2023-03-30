@@ -202,6 +202,15 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
     ORDER BY 
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
+CREATE VIEW IF NOT EXISTS group_stats_view AS
+SELECT 
+    COUNT(*) AS group_count,
+    SUM(bytes) AS total_data_size,
+    SUM(CASE WHEN g_state < 8 THEN bytes ELSE 0 END) AS non_offloaded_data_size,
+    SUM(CASE WHEN g_state = 8 THEN bytes ELSE 0 END) AS offloaded_data_size
+FROM 
+    groups;
+
 /* top level index */
 
 create table if not exists top_index
@@ -425,12 +434,6 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 		}
 	}
 
-	/*	out = []dealProvider{{
-		id:              2620,
-		ask_price:       0,
-		ask_verif_price: 0,
-	}}*/
-
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
 
 	return out, nil
@@ -623,6 +626,8 @@ func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
         d.group_id,
         SUM(CASE WHEN d.failed = 0 THEN g.car_size ELSE 0 END) AS total_data_size,
         SUM(CASE WHEN d.failed = 0 THEN g.piece_size ELSE 0 END) AS total_deal_size,
+        SUM(CASE WHEN d.failed = 0 AND d.sealed = 1 THEN g.car_size ELSE 0 END) AS stored_data_size,
+        SUM(CASE WHEN d.failed = 0 AND d.sealed = 1 THEN g.piece_size ELSE 0 END) AS stored_deal_size,
         COUNT(CASE WHEN d.failed = 0 AND d.sealed = 0 THEN 1 ELSE NULL END) AS deals_in_progress,
         COUNT(CASE WHEN d.sealed = 1 THEN 1 ELSE NULL END) AS deals_done,
         COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS deals_failed
@@ -636,6 +641,8 @@ func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
     SUM(deals_in_progress+deals_done) AS total_non_failed_deal_count,
     SUM(total_data_size) AS total_data_size,
     SUM(total_deal_size) AS total_deal_size,
+    SUM(stored_data_size) AS stored_data_size,
+    SUM(stored_deal_size) AS stored_deal_size,
     SUM(deals_in_progress) AS deals_in_progress,
     SUM(deals_done) AS deals_done,
     SUM(deals_failed) AS deals_failed
@@ -648,7 +655,9 @@ FROM
 	var ds iface.DealSummary
 
 	for res.Next() {
-		err := res.Scan(&ds.NonFailed, &ds.TotalDataSize, &ds.TotalDealSize, &ds.InProgress, &ds.Done, &ds.Failed)
+		err := res.Scan(&ds.NonFailed, &ds.TotalDataSize, &ds.TotalDealSize,
+			&ds.StoredDataSize, &ds.StoredDealSize,
+			&ds.InProgress, &ds.Done, &ds.Failed)
 		if err != nil {
 			return iface.DealSummary{}, xerrors.Errorf("scanning group: %w", err)
 		}
@@ -657,6 +666,15 @@ FROM
 	}
 
 	return ds, nil
+}
+
+func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
+	var gs iface.GroupStats
+	err := r.db.QueryRow(`SELECT group_count, total_data_size, non_offloaded_data_size, offloaded_data_size FROM group_stats_view`).Scan(&gs.GroupCount, &gs.TotalDataSize, &gs.NonOffloadedDataSize, &gs.OffloadedDataSize)
+	if err != nil {
+		return nil, xerrors.Errorf("querying group stats: %w", err)
+	}
+	return &gs, nil
 }
 
 func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, err error) {

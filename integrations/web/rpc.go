@@ -48,6 +48,10 @@ func (rc *RIBSRpc) GroupIOStats(ctx context.Context) (ribs.GroupIOStats, error) 
 	return rc.ribs.Diagnostics().GroupIOStats(), nil
 }
 
+func (rc *RIBSRpc) GetGroupStats(ctx context.Context) (*ribs.GroupStats, error) {
+	return rc.ribs.Diagnostics().GetGroupStats()
+}
+
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
 
