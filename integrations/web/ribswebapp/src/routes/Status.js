@@ -311,12 +311,12 @@ function CrawlStateTile({ crawlState }) {
                             </td>
                         </tr>
                         <tr>
-                            <td><b>Reachable:</b></td>
-                            <td>{crawlState.Reachable}</td>
-                        </tr>
-                        <tr>
                             <td><b>Total:</b></td>
                             <td>{crawlState.Total}</td>
+                        </tr>
+                        <tr>
+                            <td><b>Reachable:</b></td>
+                            <td>{crawlState.Reachable}</td>
                         </tr>
                         <tr>
                             <td><b>Boost:</b></td>

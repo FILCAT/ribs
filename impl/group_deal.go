@@ -229,7 +229,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 			continue
 		}*/
 
-		log.Errorw("failed to make deal with provider", "provider", prov, "error", err)
+		log.Errorw("failed to make deal with provider", "provider", fmt.Sprintf("f0%d", prov.id), "error", err)
 	}
 
 	// move to deals made state

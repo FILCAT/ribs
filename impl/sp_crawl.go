@@ -36,7 +36,10 @@ var (
 	crawlMarketList     = "listing market participants"
 	crawlStoreMarket    = "storing market participants"
 	crawlQueryProviders = "querying providers"
+	crawlIdle           = "idle"
 )
+
+var crawlFrequency = 30 * time.Minute
 
 func (r *ribs) setCrawlState(state iface.CrawlState) {
 	r.crawlState.Store(&state)
@@ -70,6 +73,14 @@ func (r *ribs) spCrawler() {
 		err := r.spCrawlLoop(ctx, gw, pingP2P)
 		if err != nil {
 			log.Errorw("sp crawl loop", "err", err)
+		}
+
+		r.setCrawlState(iface.CrawlState{State: crawlIdle})
+
+		select {
+		case <-r.close:
+			return
+		case <-time.After(crawlFrequency):
 		}
 	}
 }
@@ -301,6 +312,7 @@ func GetAddrInfo(ctx context.Context, api api.Gateway, maddr address.Address) (*
 		Addrs: maddrs,
 	}, nil
 }
+
 func doRpc(ctx context.Context, s inet.Stream, req interface{}, resp interface{}) error {
 	errc := make(chan error)
 	go func() {
