@@ -78,9 +78,13 @@ type BSSTHeader struct {
 type BSST struct {
 	f *os.File
 	h *BSSTHeader
+
+	CreateSample []multihash.Multihash
 }
 
-func Create(path string, entries int64, source Source) (*BSST, error) {
+var BsstCIDSampleSize = 1024
+
+func Create(path string, entries int64, source Source) (bsst *BSST, err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, xerrors.Errorf("open file: %w", err)
@@ -123,7 +127,15 @@ func Create(path string, entries int64, source Source) (*BSST, error) {
 	// could dump sorted to disk after some size, then merge (2x more writes, but eh..)
 	var nextLevel []multiHashHash
 
+	createSample := make([]multihash.Multihash, 0, BsstCIDSampleSize)
+
 	err = source.List(func(c multihash.Multihash, offs []int64) error {
+		if len(createSample) < BsstCIDSampleSize {
+			// copy c data
+
+			c := append([]byte(nil), c...)
+			createSample = append(createSample, c)
+		}
 		for i, off := range offs {
 			nextLevel = append(nextLevel, header.makeMHH(c, int64(i), off))
 		}
@@ -293,7 +305,14 @@ func Create(path string, entries int64, source Source) (*BSST, error) {
 	}
 
 	// reopen in read-only mode
-	return Open(path)
+	bsst, err = Open(path)
+	if err != nil {
+		return nil, xerrors.Errorf("reopen bsst: %w", err)
+	}
+
+	bsst.CreateSample = createSample
+
+	return bsst, nil
 }
 
 func Open(path string) (*BSST, error) {

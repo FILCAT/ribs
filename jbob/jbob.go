@@ -27,6 +27,7 @@ const (
 
 	LevelIndex = "index.level"
 	BsstIndex  = "index.bsst"
+	HashSample = "sample.mhlist"
 )
 
 const jbobBufSize = 16 << 20
@@ -615,6 +616,10 @@ func (j *JBOB) Finalize() error {
 	bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
 	if err != nil {
 		return xerrors.Errorf("creating bsst index: %w", err)
+	}
+
+	if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
+		return xerrors.Errorf("saving hash sample: %w", err)
 	}
 
 	err = j.mutHead(func(h *Head) error {
