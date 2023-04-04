@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
+	"sort"
 	"time"
 )
 
@@ -172,6 +173,10 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 		if err != nil {
 			return xerrors.Errorf("get inactive deals: %w", err)
 		}
+
+		sort.SliceStable(toCheck, func(i, j int) bool {
+			return toCheck[i].ProviderAddr < toCheck[j].ProviderAddr
+		})
 
 		// todo also check "failed" not expired deals at some lower interval
 
