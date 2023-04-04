@@ -210,6 +210,17 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 	// check market deal state
 
 	// Inactive, expired deal cleanup
+	{
+		head, err := gw.ChainHead(ctx) // todo lookback
+		if err != nil {
+			return xerrors.Errorf("get chain head: %w", err)
+		}
+
+		// todo make configurable, 60 is 30min
+		if err := r.db.MarkExpiredDeals(int64(head.Height()) - 60); err != nil {
+			return xerrors.Errorf("marking expired deals: %w", err)
+		}
+	}
 
 	return nil
 }

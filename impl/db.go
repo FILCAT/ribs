@@ -620,6 +620,30 @@ func (r *ribsDB) UpdateActivatedDeal(id string, sectorStart abi.ChainEpoch) erro
 	return nil
 }
 
+func (r *ribsDB) MarkExpiredDeals(currentEpoch int64) error {
+	query := `
+		UPDATE deals
+		SET failed = 1,
+			failed_expired = 1
+		WHERE failed = 0 AND sealed = 0
+			AND start_epoch < ?;
+	`
+
+	result, err := r.db.Exec(query, currentEpoch, currentEpoch)
+	if err != nil {
+		return fmt.Errorf("error marking expired deals: %w", err)
+	}
+
+	affectedRows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting affected rows: %w", err)
+	}
+
+	log.Warnw("Marked expired deals", "affectedRows", affectedRows)
+
+	return nil
+}
+
 func (r *ribsDB) GetDealStartEpoch(uuid string) (abi.ChainEpoch, error) {
 	var startEpoch abi.ChainEpoch
 	err := r.db.QueryRow(`SELECT start_epoch FROM deals WHERE uuid = ?`, uuid).Scan(&startEpoch)
