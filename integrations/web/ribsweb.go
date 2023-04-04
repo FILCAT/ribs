@@ -3,21 +3,19 @@ package web
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/lotus-web3/ribs"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"sort"
-	"strconv"
+	"path/filepath"
 	txtempl "text/template"
 )
 
 var log = logging.Logger("ribsweb")
 
-//go:embed static
+//go:embed ribswebapp/build
 var dres embed.FS
 
 type RIBSWeb struct {
@@ -25,7 +23,17 @@ type RIBSWeb struct {
 }
 
 func (ri *RIBSWeb) Index(w http.ResponseWriter, r *http.Request) {
-	tpl, err := txtempl.New("index.html").ParseFS(dres, "static/index.html")
+	// todo there has to be something better than this horrid hack
+	_, err := dres.ReadFile(filepath.Join("ribswebapp", "build", r.URL.Path))
+	if err == nil && r.URL.Path != "/" {
+		r.URL.Path = filepath.Join("ribswebapp", "build", r.URL.Path)
+		http.FileServer(http.FS(dres)).ServeHTTP(w, r)
+		return
+	}
+
+	log.Errorw("index", "path", r.URL.Path)
+
+	tpl, err := txtempl.New("index.html").ParseFS(dres, "ribswebapp/build/index.html")
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -34,82 +42,6 @@ func (ri *RIBSWeb) Index(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	data := map[string]interface{}{}
 	if err := tpl.Execute(w, data); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-}
-
-type state struct {
-	Groups []ribs.GroupKey
-
-	CrawlState string
-	Providers  []ribs.ProviderMeta
-
-	CarUploads map[ribs.GroupKey]*ribs.UploadStats
-
-	Wallet ribs.WalletInfo
-}
-
-func (ri *RIBSWeb) ApiState(w http.ResponseWriter, r *http.Request) {
-	gs, err := ri.ribs.Diagnostics().Groups()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	sort.Slice(gs, func(i, j int) bool {
-		return gs[i] > gs[j]
-	})
-
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
-
-	wi, err := ri.ribs.Diagnostics().WalletInfo()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	if err := json.NewEncoder(w).Encode(&state{
-		Groups:     gs,
-		Providers:  ri.ribs.Diagnostics().ReachableProviders(),
-		CarUploads: ri.ribs.Diagnostics().CarUploadStats(),
-		Wallet:     wi,
-	}); err != nil {
-		log.Errorw("failed to encode state", "error", err)
-		http.Error(w, err.Error(), 500)
-		return
-	}
-}
-
-func (ri *RIBSWeb) ApiGroup(w http.ResponseWriter, r *http.Request) {
-	grp := r.FormValue("group")
-	if grp == "" {
-		http.Error(w, "missing group", 400)
-		return
-	}
-	gint, err := strconv.ParseUint(grp, 10, 64)
-	if err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
-
-	gm, err := ri.ribs.Diagnostics().GroupMeta(ribs.GroupKey(gint))
-	if err != nil {
-		log.Errorw("failed to get group meta", "group", gint, "error", err)
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	if err := json.NewEncoder(w).Encode(gm); err != nil {
-		log.Errorw("failed to encode group meta", "group", gint, "error", err)
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -128,9 +60,6 @@ func Serve(ctx context.Context, listen string, ribs ribs.RIBS) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Index)
-
-	mux.HandleFunc("/api/v0/state", handlers.ApiState)
-	mux.HandleFunc("/api/v0/group", handlers.ApiGroup)
 
 	mux.Handle("/rpc/v0", rpc)
 
