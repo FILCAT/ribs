@@ -289,6 +289,12 @@ function CarUploadStatsTile({ carUploadStats }) {
         const newDisplayStats = {};
 
         for (const [groupKey, uploadStats] of Object.entries(carUploadStats)) {
+            if (!prevStatsRef.current[groupKey]) {
+                // If previous stats for this group are not initialized, set them to the current stats
+                prevStatsRef.current[groupKey] = uploadStats;
+                continue;
+            }
+
             const prevStats = prevStatsRef.current[groupKey] || { UploadBytes: 0 };
             const bytesSent = uploadStats.UploadBytes;
             const bytesRate = bytesSent - prevStats.UploadBytes;
