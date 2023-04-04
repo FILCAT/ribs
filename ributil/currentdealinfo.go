@@ -103,9 +103,10 @@ func (mgr *CurrentDealInfoManager) FindCloseMsgTipset(ctx context.Context, tsk t
 
 		// load 15 tipsets back to curTs
 		headTs = curTs
-		curTs, err = mgr.CDAPI.ChainGetTipSetByHeight(ctx, curTs.Height()-step, curTs.Key())
+		toLoad := curTs.Height() - step
+		curTs, err = mgr.CDAPI.ChainGetTipSetByHeight(ctx, toLoad, curTs.Key())
 		if err != nil {
-			return types.EmptyTSK, xerrors.Errorf("getting tipset %d: %w", curTs.Height()-step, err)
+			return types.EmptyTSK, xerrors.Errorf("getting tipset %d: %w", toLoad, err)
 		}
 	}
 }
@@ -117,7 +118,7 @@ func (mgr *CurrentDealInfoManager) dealIDFromPublishDealsMsg(ctx context.Context
 
 	closeTsk, err := mgr.FindCloseMsgTipset(ctx, tsk, publishCid, 500)
 	if err != nil {
-		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (15) close te publish message %s: %w", publishCid, err)
+		return dealID, types.EmptyTSK, xerrors.Errorf("looking for tipset (500) close te publish message %s: %w", publishCid, err)
 	}
 
 	closeTsk, err = mgr.FindCloseMsgTipset(ctx, closeTsk, publishCid, 100)

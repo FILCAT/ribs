@@ -620,6 +620,25 @@ func (r *ribsDB) UpdateActivatedDeal(id string, sectorStart abi.ChainEpoch) erro
 	return nil
 }
 
+func (r *ribsDB) GetDealStartEpoch(uuid string) (abi.ChainEpoch, error) {
+	var startEpoch abi.ChainEpoch
+	err := r.db.QueryRow(`SELECT start_epoch FROM deals WHERE uuid = ?`, uuid).Scan(&startEpoch)
+	if err != nil {
+		return 0, xerrors.Errorf("getting start_epoch by uuid: %w", err)
+	}
+
+	return startEpoch, nil
+}
+
+func (r *ribsDB) UpdateExpiredDeal(id string) error {
+	_, err := r.db.Exec(`update deals set failed = 1, failed_expired = 1 where uuid = ?`, id)
+	if err != nil {
+		return xerrors.Errorf("update activated deal: %w", err)
+	}
+
+	return nil
+}
+
 func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
 	res, err := r.db.Query(`WITH deal_summary AS (
     SELECT

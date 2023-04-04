@@ -81,7 +81,24 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 		for _, deal := range toCheck {
 			dealInfo, err := gw.StateMarketStorageDeal(ctx, deal.DealID, types2.EmptyTSK)
 			if err != nil {
-				return xerrors.Errorf("get deal info: %w", err)
+				log.Warnw("get deal info", "error", err, "dealid", deal.DealID, "deal", deal.DealUUID)
+
+				startBy, err := r.db.GetDealStartEpoch(deal.DealUUID)
+				if err != nil {
+					return xerrors.Errorf("get deal start epoch: %w", err)
+				}
+
+				head, err := gw.ChainHead(ctx)
+				if err != nil {
+					return xerrors.Errorf("get chain head: %w", err)
+				}
+
+				if head.Height() >= startBy {
+					if err := r.db.UpdateExpiredDeal(deal.DealUUID); err != nil {
+						return xerrors.Errorf("marking deal as expired: %w", err)
+					}
+				}
+				continue
 			}
 
 			if dealInfo.State.SectorStartEpoch > 0 {
