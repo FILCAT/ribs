@@ -204,6 +204,8 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 	// check market deal state
 
+	// Inactive, expired deal cleanup
+
 	return nil
 }
 

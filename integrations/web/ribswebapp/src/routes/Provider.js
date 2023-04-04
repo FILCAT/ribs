@@ -171,8 +171,8 @@ function Provider() {
 
                                 <td><abbr title={deal.UUID}>{deal.UUID.substring(0, 8)}... </abbr></td>
                                 <td>{deal.Status}</td>
-                                <td>{epochToDate(deal.StartEpoch)}, in {epochToDuration(deal.StartEpoch-headHeight)}</td>
-                                <td>{epochToDate(deal.EndEpoch)}, in {epochToDuration(deal.EndEpoch-headHeight)}</td>
+                                <td>{epochToDate(deal.StartEpoch)}, {epochToDuration(deal.StartEpoch-headHeight)}</td>
+                                <td>{epochToDate(deal.EndEpoch)}, {epochToDuration(deal.EndEpoch-headHeight)}</td>
                                 <td className="provider-deals-error-col">{deal.Error && <pre>{deal.Error}</pre>}</td>
                                 <td>{deal.DealID && <a href={`https://filfox.info/en/deal/${deal.DealID}`} target="_blank" rel="noopener noreferrer">{deal.DealID}</a> || <></>}</td>
                                 <td>{deal.BytesRecv && <>{deal.BytesRecv}/{deal.TxSize}</> || <></>}</td>

@@ -64,7 +64,7 @@ export function formatFil(n) {
 
 export function epochToDuration(epochs) {
     const epochDuration = 30; // 30 seconds per epoch
-    const totalSeconds = epochs * epochDuration;
+    const totalSeconds = Math.abs(epochs) * epochDuration;
 
     const daysInMonth = 30; // Approximate number of days in a month
     const months = Math.floor(totalSeconds / (daysInMonth * 24 * 60 * 60));
@@ -85,7 +85,7 @@ export function epochToDuration(epochs) {
     if (minutes > 0) {
         duration += `${minutes}m`;
     }
-    return duration.trim();
+    return epochs < 0 ? `${duration.trim()} ago` : `in ${duration.trim()}`;
 }
 
 export function epochToDate(epochs, referenceDate = new Date(Date.UTC(2020, 9, 15, 22, 0, 0))) {

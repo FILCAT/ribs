@@ -3,6 +3,7 @@ import RibsRPC from "../helpers/rpc";
 import { formatBytesBinary, formatNum, epochToDate, epochToDuration } from "../helpers/fmt";
 import "./Groups.css";
 import "./Deal.css";
+import {Link} from "react-router-dom";
 
 function Deal({ deal, headHeight }) {
     const {
@@ -27,12 +28,12 @@ function Deal({ deal, headHeight }) {
         <div className={`Deal${Failed ? " deal-failed" : ""}${Sealed ? " deal-sealed" : ""}`}>
             <span>
                 <abbr title={UUID}>{UUID.substring(0, 8)}... </abbr>
-                <a href={`https://filfox.info/en/address/f0${Provider}`} target="_blank" rel="noopener noreferrer">f0{Provider}</a>
+                <Link to={`/provider/f0${Provider}`}>f0{Provider}</Link>
                 {Sealed && <strong> SEALED</strong>}
             </span>
             <span>
-                {Sealed ? <> Ends {epochToDate(EndEpoch)} in {epochToDuration(EndEpoch-headHeight)}</> :
-                    <> Expires in {epochToDuration(StartEpoch-headHeight)}</>}
+                {Sealed ? <> Ends {epochToDate(EndEpoch)} {epochToDuration(EndEpoch-headHeight)}</> :
+                    <> Expires {epochToDuration(StartEpoch-headHeight)}</>}
             </span>
             {PubCid && (
                 <span>
