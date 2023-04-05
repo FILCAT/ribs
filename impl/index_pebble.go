@@ -13,14 +13,13 @@ import (
 
 // PebbleIndex is the top-level index, thread-safe.
 type PebbleIndex struct {
-	mu sync.RWMutex
 	db *pebble.DB
 
 	// todo limit size somehow
 	iterPool sync.Pool
 }
 
-// NewIndex creates a new Pebble-backed Index.
+// NewPebbleIndex creates a new Pebble-backed Index.
 func NewPebbleIndex(path string) (*PebbleIndex, error) {
 	db, err := pebble.Open(path, &pebble.Options{})
 	if err != nil {
@@ -42,9 +41,6 @@ func (i *PebbleIndex) Sync(ctx context.Context) error {
 }
 
 func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (more bool, err error)) error {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-
 	groups := make([][]iface.GroupKey, len(mh))
 
 	for idx, m := range mh {
@@ -83,42 +79,42 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 }
 
 func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(group))
 
+	batch := i.db.NewBatch()
+	defer batch.Close()
+
 	for _, m := range mh {
 		key := append(append([]byte("i:"), m...), b...)
-		if err := i.db.Set(key, b, pebble.NoSync); err != nil { // todo nosync plus flush
+		if err := batch.Set(key, b, pebble.NoSync); err != nil {
 			return xerrors.Errorf("addgroup set: %w", err)
 		}
 	}
 
-	if err := i.db.Flush(); err != nil {
-		return xerrors.Errorf("addgroup flush: %w", err)
+	if err := batch.Commit(pebble.NoSync); err != nil {
+		return xerrors.Errorf("addgroup commit: %w", err)
 	}
 
 	return nil
 }
 
 func (i *PebbleIndex) DropGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(group))
 
+	batch := i.db.NewBatch()
+	defer batch.Close()
+
 	for _, m := range mh {
 		key := append(append([]byte("i:"), m...), b...)
-		if err := i.db.Delete(key, pebble.NoSync); err != nil {
+		if err := batch.Delete(key, pebble.NoSync); err != nil {
 			return xerrors.Errorf("dropgroup delete: %w", err)
 		}
 	}
 
-	if err := i.db.Flush(); err != nil {
-		return xerrors.Errorf("dropgroup flush: %w", err)
+	if err := batch.Commit(pebble.NoSync); err != nil {
+		return xerrors.Errorf("dropgroup commit: %w", err)
 	}
 
 	return nil
@@ -127,9 +123,6 @@ func (i *PebbleIndex) DropGroup(ctx context.Context, mh []multihash.Multihash, g
 const averageEntrySize = 56 // multihash is ~36 bytes, groupkey is 8 bytes
 
 func (i *PebbleIndex) EstimateSize(ctx context.Context) (int64, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-
 	lowerBound := []byte("i:")
 	upperBound := []byte("i;")
 	estimatedSize, err := i.db.EstimateDiskUsage(lowerBound, upperBound)
