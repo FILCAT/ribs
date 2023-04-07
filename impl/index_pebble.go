@@ -21,6 +21,7 @@ type PebbleIndex struct {
 
 // NewPebbleIndex creates a new Pebble-backed Index.
 func NewPebbleIndex(path string) (*PebbleIndex, error) {
+
 	db, err := pebble.Open(path, &pebble.Options{})
 	if err != nil {
 		return nil, err
@@ -45,18 +46,16 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 
 	for idx, m := range mh {
 		keyPrefix := append([]byte("i:"), m...)
-		iter := i.iterPool.Get().(*pebble.Iterator)
-		iter.SetBounds(keyPrefix, append(keyPrefix, 0xff))
+		upperBound := append(append([]byte("i:"), m...), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff)
+		//iter := i.iterPool.Get().(*pebble.Iterator)
+		iter := i.db.NewIter(nil)
+		iter.SetBounds(keyPrefix, upperBound)
 
 		var gkList []iface.GroupKey
 		for iter.SeekGE(keyPrefix); iter.Valid(); iter.Next() {
-			groupKeyBytes, err := iter.ValueAndErr()
-			if err != nil {
-				return xerrors.Errorf("iterate: %w", err)
-			}
-
+			key := iter.Key()
+			groupKeyBytes := key[len(key)-8:]
 			groupKey := binary.BigEndian.Uint64(groupKeyBytes)
-
 			gkList = append(gkList, iface.GroupKey(groupKey))
 		}
 
@@ -65,8 +64,9 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 			return xerrors.Errorf("iter error: %w", err)
 		}
 
-		i.iterPool.Put(iter)
-
+		if err := iter.Close(); err != nil {
+			return xerrors.Errorf("closing iterator: %w", err)
+		}
 		groups[idx] = gkList
 	}
 
@@ -87,7 +87,7 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, gr
 
 	for _, m := range mh {
 		key := append(append([]byte("i:"), m...), b...)
-		if err := batch.Set(key, b, pebble.NoSync); err != nil {
+		if err := batch.Set(key, nil, pebble.NoSync); err != nil {
 			return xerrors.Errorf("addgroup set: %w", err)
 		}
 	}
@@ -133,6 +133,10 @@ func (i *PebbleIndex) EstimateSize(ctx context.Context) (int64, error) {
 
 	estimatedEntries := int64(estimatedSize) / averageEntrySize
 	return estimatedEntries, nil
+}
+
+func (i *PebbleIndex) Close() error {
+	return i.db.Close()
 }
 
 var _ iface.Index = (*PebbleIndex)(nil)
