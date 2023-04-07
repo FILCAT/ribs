@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"fmt"
+	"github.com/fatih/color"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
@@ -73,7 +74,27 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 			return nil, xerrors.Errorf("get wallet list: %w", err)
 		}
 
-		if len(wl) != 1 || len(wl) == 0 {
+		if len(wl) == 0 {
+			a, err := wallet.WalletNew(context.TODO(), "secp256k1")
+			if err != nil {
+				return nil, xerrors.Errorf("creating wallet: %w", err)
+			}
+
+			color.Yellow("--------------------------------------------------------------")
+			fmt.Println("CREATED NEW RIBS WALLET")
+			fmt.Println("ADDRESS: ", color.GreenString("%s", a))
+			fmt.Println("")
+			fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", walletPath)
+			fmt.Println("")
+			fmt.Println("Before using RIBS, you must fund your wallet with FIL.")
+			fmt.Println("You can also supply it with DataCap if you want to make")
+			fmt.Println("FIL+ deals.")
+			color.Yellow("--------------------------------------------------------------")
+
+			wl = append(wl, a)
+		}
+
+		if len(wl) != 1 {
 			return nil, xerrors.Errorf("no default wallet or more than one wallet: %#v", wl)
 		}
 
