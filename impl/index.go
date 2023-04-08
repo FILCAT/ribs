@@ -12,6 +12,10 @@ type Index struct {
 	db *sql.DB
 }
 
+func (i *Index) Close() error {
+	return nil // no-op for sqlite
+}
+
 func (i *Index) Sync(ctx context.Context) error {
 	return nil // no-op for sqlite
 }

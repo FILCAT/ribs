@@ -22,6 +22,8 @@ type Index interface {
 	Sync(ctx context.Context) error
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 	EstimateSize(ctx context.Context) (int64, error)
+
+	io.Closer
 }
 
 type GroupState int

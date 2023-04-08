@@ -14,6 +14,7 @@ import (
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,11 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	db, err := openRibsDB(root)
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
+	}
+
+	idx, err := NewPebbleIndex(filepath.Join(root, "index.pebble"))
+	if err != nil {
+		return nil, xerrors.Errorf("open top index: %w", err)
 	}
 
 	opt := &openOptions{
@@ -118,7 +124,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	r := &ribs{
 		root:  root,
 		db:    db,
-		index: NewMeteredIndex(NewIndex(db.db)),
+		index: NewMeteredIndex(idx),
 
 		host:   h,
 		wallet: wallet,
@@ -328,6 +334,10 @@ func (r *ribs) Close() error {
 		if err := g.Close(); err != nil {
 			return xerrors.Errorf("closing group %d: %w", g.id, err)
 		}
+	}
+
+	if err := r.index.Close(); err != nil {
+		return xerrors.Errorf("closing index: %w", err)
 	}
 
 	log.Errorf("TODO mark closed")

@@ -13,6 +13,10 @@ type MeteredIndex struct {
 	reads, writes int64
 }
 
+func (m *MeteredIndex) Close() error {
+	return m.sub.Close()
+}
+
 func (m *MeteredIndex) EstimateSize(ctx context.Context) (int64, error) {
 	return m.sub.EstimateSize(ctx)
 }
