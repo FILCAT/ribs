@@ -269,10 +269,16 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 }
 
 func (m *Group) Close() error {
-	// todo sync
+	if err := m.Sync(context.Background()); err != nil {
+		return err
+	}
 
-	//TODO implement me
-	panic("implement me")
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
+
+	_, err := m.jb.Close()
+	// todo mark as closed
+	return err
 }
 
 type sizerWriter struct {

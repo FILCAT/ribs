@@ -321,7 +321,16 @@ func (r *ribs) Close() error {
 	<-r.workerClosed
 	<-r.spCrawlClosed
 
-	// todo close all open groups
+	r.lk.Lock()
+	defer r.lk.Unlock()
+
+	for _, g := range r.openGroups {
+		if err := g.Close(); err != nil {
+			return xerrors.Errorf("closing group %d: %w", g.id, err)
+		}
+	}
+
+	log.Errorf("TODO mark closed")
 
 	return nil
 }

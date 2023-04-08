@@ -654,15 +654,15 @@ func (j *JBOB) DropLevel() error {
 /* MISC */
 
 func (j *JBOB) Close() (int64, error) {
-	// sync / close log first
-	if err := j.data.Close(); err != nil {
-		return 0, xerrors.Errorf("closing data: %w", err)
-	}
-
-	// then head
+	// then log
 	at, err := j.Commit()
 	if err != nil {
 		return 0, xerrors.Errorf("committing head: %w", err)
+	}
+
+	// sync / close head first
+	if err := j.data.Close(); err != nil {
+		return 0, xerrors.Errorf("closing data: %w", err)
 	}
 
 	if err := j.head.Close(); err != nil {

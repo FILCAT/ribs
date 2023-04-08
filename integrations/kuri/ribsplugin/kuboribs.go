@@ -3,8 +3,6 @@ package kuboribs
 import (
 	"context"
 	"fmt"
-	"os"
-
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/kubo/core"
@@ -19,6 +17,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
+	"os"
 )
 
 var log = logging.Logger("ribsplugin")
@@ -63,7 +62,8 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 type ribsIn struct {
 	fx.In
 
-	H host.Host `optional:"true"`
+	Lc fx.Lifecycle
+	H  host.Host `optional:"true"`
 }
 
 var (
@@ -92,13 +92,21 @@ func makeRibs(ri ribsIn) (ribs.RIBS, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("open ribs: %w", err)
 	}
-	go func() {
-		if err := web.Serve(context.TODO(), ":9010", r); err != nil {
-			panic("ribsweb serve failed")
-		}
-	}()
 
-	_, _ = fmt.Fprintf(os.Stderr, "RIBSWeb at http://%s\n", "127.0.0.1:9010")
+	ri.Lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			return r.Close()
+		},
+	})
+
+	if ri.H != nil {
+		go func() {
+			if err := web.Serve(context.TODO(), ":9010", r); err != nil {
+				panic("ribsweb serve failed")
+			}
+		}()
+		_, _ = fmt.Fprintf(os.Stderr, "RIBSWeb at http://%s\n", "127.0.0.1:9010")
+	}
 
 	return r, nil
 }
