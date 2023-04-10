@@ -2,12 +2,15 @@ package impl
 
 import (
 	"context"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/chain/actors"
 	marketactor "github.com/filecoin-project/lotus/chain/actors/builtin/market"
 	"github.com/filecoin-project/lotus/chain/types"
+	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
+	"time"
 
 	"github.com/ipfs/go-cid"
 
@@ -15,7 +18,15 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 )
 
+var walletUpgradeInterval = time.Minute
+
+var minMarketBalance = types.NewInt(100_000_000_000_000_000)    // 100 mFIL
+var autoMarketBalance = types.NewInt(1_000_000_000_000_000_000) // 1 FIL
+
 func (r *ribs) MarketAdd(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error) {
+	r.marketFundsLk.Lock()
+	defer r.marketFundsLk.Unlock()
+
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		panic(err)
@@ -82,4 +93,91 @@ func (r *ribs) MarketWithdraw(ctx context.Context, amount abi.TokenAmount) (cid.
 func (r *ribs) Withdraw(ctx context.Context, amount abi.TokenAmount, to address.Address) (cid.Cid, error) {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (r *ribs) watchMarket(ctx context.Context) {
+	defer close(r.marketWatchClosed)
+
+	for {
+		select {
+		case <-r.close:
+			return
+		default:
+		}
+
+		i, err := r.WalletInfo()
+		if err != nil {
+			goto cooldown
+		}
+		{
+			avail := types.BigSub(big.MustFromString(i.MarketBalance), big.MustFromString(i.MarketLocked))
+
+			if avail.GreaterThan(minMarketBalance) {
+				goto cooldown
+			}
+
+			log.Infow("market balance low, topping up")
+
+			toAdd := big.Sub(autoMarketBalance, avail)
+
+			c, err := r.MarketAdd(ctx, toAdd)
+			if err != nil {
+				log.Errorw("error adding market funds", "error", err)
+				goto cooldown
+			}
+
+			log.Errorw("AUTO-ADDED MARKET FUNDS", "amount", types.FIL(toAdd), "msg", c)
+		}
+
+	cooldown:
+		select {
+		case <-r.close:
+			return
+		case <-time.After(2 * walletUpgradeInterval):
+		}
+	}
+}
+
+func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
+	r.marketFundsLk.Lock()
+	defer r.marketFundsLk.Unlock()
+
+	if r.cachedWalletInfo != nil && time.Since(r.lastWalletInfoUpdate) < walletUpgradeInterval {
+		return *r.cachedWalletInfo, nil
+	}
+
+	addr, err := r.wallet.GetDefault()
+	if err != nil {
+		return iface.WalletInfo{}, xerrors.Errorf("get default wallet: %w", err)
+	}
+
+	ctx := context.TODO()
+
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer closer()
+
+	b, err := gw.WalletBalance(ctx, addr)
+	if err != nil {
+		return iface.WalletInfo{}, xerrors.Errorf("get wallet balance: %w", err)
+	}
+
+	mb, err := gw.StateMarketBalance(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return iface.WalletInfo{}, xerrors.Errorf("get market balance: %w", err)
+	}
+
+	wi := iface.WalletInfo{
+		Addr:          addr.String(),
+		Balance:       types.FIL(b).Short(),
+		MarketBalance: types.FIL(mb.Escrow).Short(),
+		MarketLocked:  types.FIL(mb.Locked).Short(),
+	}
+
+	r.cachedWalletInfo = &wi
+	r.lastWalletInfoUpdate = time.Now()
+
+	return wi, nil
 }

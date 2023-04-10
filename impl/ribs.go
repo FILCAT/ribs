@@ -141,17 +141,17 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		tasks: make(chan task, 1024),
 
-		close:         make(chan struct{}),
-		workerClosed:  make(chan struct{}),
-		spCrawlClosed: make(chan struct{}),
+		close:             make(chan struct{}),
+		workerClosed:      make(chan struct{}),
+		spCrawlClosed:     make(chan struct{}),
+		marketWatchClosed: make(chan struct{}),
 	}
-
-	// todo resume tasks
 
 	go r.groupWorker(opt.workerGate)
 	go r.spCrawler()
 	go r.resumeGroups(context.TODO())
 	go r.dealTracker(context.TODO())
+	go r.watchMarket(context.TODO())
 
 	if err := r.setupCarServer(context.TODO(), h); err != nil {
 		return nil, xerrors.Errorf("setup car server: %w", err)
@@ -295,11 +295,16 @@ type ribs struct {
 
 	lotusRPCAddr string
 
+	marketFundsLk        sync.Mutex
+	cachedWalletInfo     *iface.WalletInfo
+	lastWalletInfoUpdate time.Time
+
 	/* storage */
 
-	close         chan struct{}
-	workerClosed  chan struct{}
-	spCrawlClosed chan struct{}
+	close             chan struct{}
+	workerClosed      chan struct{}
+	spCrawlClosed     chan struct{}
+	marketWatchClosed chan struct{}
 
 	tasks chan task
 
@@ -321,9 +326,6 @@ type ribs struct {
 	grpReadSize    int64
 	grpWriteBlocks int64
 	grpWriteSize   int64
-
-	cachedWalletInfo     *iface.WalletInfo
-	lastWalletInfoUpdate time.Time
 }
 
 func (r *ribs) Wallet() iface.Wallet {
@@ -334,6 +336,7 @@ func (r *ribs) Close() error {
 	close(r.close)
 	<-r.workerClosed
 	<-r.spCrawlClosed
+	<-r.marketWatchClosed
 
 	r.lk.Lock()
 	defer r.lk.Unlock()
