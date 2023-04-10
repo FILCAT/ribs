@@ -33,7 +33,7 @@ function WalletInfoTile({ walletInfo }) {
             } else {
                 cid = await RibsRPC.call("WalletMarketWithdraw", [(amount*oneFil).toString()]);
             }
-            alert(`Operation successful. CID: ${cid}`);
+            alert(`Operation successful. CID: ${cid['/']}`);
             setDropdownOpen(false);
         } catch (error) {
             console.error("Error during operation:", error);
