@@ -129,6 +129,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		host:   h,
 		wallet: wallet,
 
+		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
+
 		writableGroups: make(map[iface.GroupKey]*Group),
 
 		// all open groups (including all writable)
@@ -291,6 +293,8 @@ type ribs struct {
 	host   host.Host
 	wallet *ributil.LocalWallet
 
+	lotusRPCAddr string
+
 	/* storage */
 
 	close         chan struct{}
@@ -386,7 +390,7 @@ func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb 
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
+			g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -404,7 +408,7 @@ func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb 
 		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
+	g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -431,7 +435,7 @@ func (r *ribs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb f
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, group, blocks, bytes, jbhead, r.root, state, false)
+	g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, group, blocks, bytes, jbhead, r.root, state, false)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)

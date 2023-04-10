@@ -37,6 +37,8 @@ type Group struct {
 	db    *ribsDB
 	index iface.Index
 
+	lotusRPCAddr string
+
 	path string
 	id   int64
 
@@ -73,7 +75,7 @@ type Group struct {
 	jb *jbob.JBOB
 }
 
-func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, lrpc string, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -101,6 +103,8 @@ func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, id, committed
 	return &Group{
 		db:    db,
 		index: index,
+
+		lotusRPCAddr: lrpc,
 
 		jb: jb,
 

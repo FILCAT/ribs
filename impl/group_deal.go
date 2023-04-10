@@ -50,7 +50,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return xerrors.Errorf("getting non-failed deal count: %w", err)
 	}
 
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, m.lotusRPCAddr, nil)
 	if err != nil {
 		return xerrors.Errorf("creating gateway rpc client: %w", err)
 	}

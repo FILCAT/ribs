@@ -109,7 +109,7 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 
 	ctx := context.TODO()
 
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +156,7 @@ func (r *ribs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
 }
 
 func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		panic(err)
 	}

@@ -30,7 +30,7 @@ var DealCheckInterval = 10 * time.Second
 var ParallelDealChecks = 10
 
 func (r *ribs) dealTracker(ctx context.Context) {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -64,7 +64,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 }
 
 func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		return xerrors.Errorf("creating gateway rpc client: %w", err)
 	}

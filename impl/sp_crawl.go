@@ -52,7 +52,7 @@ func (r *ribs) spCrawler() {
 
 	ctx := context.TODO()
 
-	gw, closer, err := client.NewGatewayRPCV1(ctx, "http://api.chain.love/rpc/v1", nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		panic(err)
 	}
