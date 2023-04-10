@@ -2,6 +2,9 @@ package web
 
 import (
 	"context"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/go-jsonrpc"
 
@@ -13,7 +16,19 @@ type RIBSRpc struct {
 }
 
 func (rc *RIBSRpc) WalletInfo(ctx context.Context) (ribs.WalletInfo, error) {
-	return rc.ribs.Diagnostics().WalletInfo()
+	return rc.ribs.Wallet().WalletInfo()
+}
+
+func (rc *RIBSRpc) WalletMarketAdd(ctx context.Context, amt abi.TokenAmount) (cid.Cid, error) {
+	return rc.ribs.Wallet().MarketAdd(ctx, amt)
+}
+
+func (rc *RIBSRpc) WalletMarketWithdraw(ctx context.Context, amt abi.TokenAmount) (cid.Cid, error) {
+	return rc.ribs.Wallet().MarketWithdraw(ctx, amt)
+}
+
+func (rc *RIBSRpc) WalletWithdraw(ctx context.Context, amt abi.TokenAmount, to address.Address) (cid.Cid, error) {
+	return rc.ribs.Wallet().Withdraw(ctx, amt, to)
 }
 
 func (rc *RIBSRpc) Groups(ctx context.Context) ([]ribs.GroupKey, error) {

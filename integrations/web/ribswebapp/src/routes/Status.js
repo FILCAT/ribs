@@ -3,11 +3,42 @@ import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
 import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
 
+const oneFil = 1000000000000000000
+
 function WalletInfoTile({ walletInfo }) {
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [amount, setAmount] = useState(oneFil);
+    const [operationType, setOperationType] = useState('');
+
     const truncateAddress = (address) => {
         const head = address.slice(0, 10);
         const tail = address.slice(-10);
         return `${head}...${tail}`;
+    };
+
+    const handleAddWithdrawClick = (type) => {
+        setOperationType(type);
+        setDropdownOpen(!dropdownOpen);
+    };
+
+    const handleAmountChange = (event) => {
+        setAmount(event.target.value);
+    };
+
+    const handleSubmit = async () => {
+        try {
+            let cid;
+            if (operationType === 'add') {
+                cid = await RibsRPC.call("WalletMarketAdd", [(amount*oneFil).toString()]);
+            } else {
+                cid = await RibsRPC.call("WalletMarketWithdraw", [(amount*oneFil).toString()]);
+            }
+            alert(`Operation successful. CID: ${cid}`);
+            setDropdownOpen(false);
+        } catch (error) {
+            console.error("Error during operation:", error);
+            alert('Error during operation. Please try again.');
+        }
     };
 
     return (
@@ -22,12 +53,31 @@ function WalletInfoTile({ walletInfo }) {
                     </tr>
                     <tr>
                         <td>Balance:</td>
-                        <td>{walletInfo.Balance}</td>
+                        <td>{walletInfo.Balance} [Send]</td>
                     </tr>
                     <tr>
                         <td>Market Balance:</td>
-                        <td>{walletInfo.MarketBalance}</td>
+                        <td>
+                            {walletInfo.MarketBalance}
+                            {' '}
+                            <button className="button-sm" onClick={() => handleAddWithdrawClick('add')}>Add</button>
+                            {' '}
+                            <button className="button-sm" onClick={() => handleAddWithdrawClick('withdraw')}>Withdraw</button>
+                        </td>
                     </tr>
+                    {dropdownOpen && (
+                        <tr>
+                            <td colSpan="2">
+                                <input
+                                    type="text"
+                                    value={amount}
+                                    onChange={handleAmountChange}
+                                    placeholder="Enter amount"
+                                />
+                                <button className="button-sm" onClick={handleSubmit}>{operationType === 'add' ? 'Add' : 'Withdraw'}</button>
+                            </td>
+                        </tr>
+                    )}
                     <tr>
                         <td>Market Locked:</td>
                         <td>{walletInfo.MarketLocked}</td>
@@ -515,6 +565,7 @@ function Status() {
     const fetchStatus = async () => {
         try {
             const walletInfo = await RibsRPC.call("WalletInfo");
+            setWalletInfo(walletInfo);
             const groups = await RibsRPC.call("Groups");
             const crawlState = await RibsRPC.call("CrawlState");
             const carUploadStats = await RibsRPC.call("CarUploadStats");
@@ -522,7 +573,6 @@ function Status() {
             const dealSummary = await RibsRPC.call("DealSummary");
             const topIndexStats = await RibsRPC.call("TopIndexStats");
 
-            setWalletInfo(walletInfo);
             setGroups(groups);
             setCrawlState(crawlState);
             setCarUploadStats(carUploadStats);

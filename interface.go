@@ -2,9 +2,12 @@ package ribs
 
 import (
 	"context"
+	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-jsonrpc"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	"io"
 
 	"github.com/multiformats/go-multihash"
@@ -106,6 +109,8 @@ type RIBS interface {
 	Session(ctx context.Context) Session
 	Diagnostics() Diag
 
+	Wallet() Wallet
+
 	io.Closer
 }
 
@@ -142,6 +147,15 @@ type DealMeta struct {
 	PubCid    string
 }
 
+type Wallet interface {
+	WalletInfo() (WalletInfo, error)
+
+	MarketAdd(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error)
+	MarketWithdraw(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error)
+
+	Withdraw(ctx context.Context, amount abi.TokenAmount, to address.Address) (cid.Cid, error)
+}
+
 type WalletInfo struct {
 	Addr string
 
@@ -163,8 +177,6 @@ type Diag interface {
 
 	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
-
-	WalletInfo() (WalletInfo, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
 }

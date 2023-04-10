@@ -322,6 +322,10 @@ type ribs struct {
 	lastWalletInfoUpdate time.Time
 }
 
+func (r *ribs) Wallet() iface.Wallet {
+	return r
+}
+
 func (r *ribs) Close() error {
 	close(r.close)
 	<-r.workerClosed

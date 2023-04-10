@@ -56,23 +56,3 @@
 .deal-counts-start {
     color: #2196f3;
 }
-
-button {
-    background-color: #4caf50;
-    border: none;
-    border-radius: 3px;
-    color: white;
-    cursor: pointer;
-    font-size: 1rem;
-    margin-bottom: 1rem;
-    padding: 8px 16px;
-    text-align: center;
-    text-decoration: none;
-    display: inline-block;
-    transition-duration: 0.4s;
-}
-
-button:hover {
-    background-color: #45a049;
-    color: white;
-}
