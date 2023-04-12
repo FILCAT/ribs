@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors"
 	marketactor "github.com/filecoin-project/lotus/chain/actors/builtin/market"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/lib/result"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"time"
@@ -110,7 +111,8 @@ func (r *ribs) watchMarket(ctx context.Context) {
 			goto cooldown
 		}
 		{
-			avail := types.BigSub(big.MustFromString(i.MarketBalance), big.MustFromString(i.MarketLocked))
+			avail := types.BigSub(abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketBalance)).Assert(must)),
+				abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketLocked)).Assert(must)))
 
 			if avail.GreaterThan(minMarketBalance) {
 				goto cooldown
@@ -135,6 +137,12 @@ func (r *ribs) watchMarket(ctx context.Context) {
 			return
 		case <-time.After(2 * walletUpgradeInterval):
 		}
+	}
+}
+
+func must(err error, msgAndArgs ...interface{}) {
+	if err != nil {
+		panic(xerrors.Errorf(msgAndArgs[0].(string)+": %w", err))
 	}
 }
 

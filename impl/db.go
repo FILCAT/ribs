@@ -680,17 +680,19 @@ func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
         groups g ON d.group_id = g.id
     GROUP BY
         d.group_id
-) SELECT
-    SUM(deals_in_progress+deals_done) AS total_non_failed_deal_count,
-    SUM(total_data_size) AS total_data_size,
-    SUM(total_deal_size) AS total_deal_size,
-    SUM(stored_data_size) AS stored_data_size,
-    SUM(stored_deal_size) AS stored_deal_size,
-    SUM(deals_in_progress) AS deals_in_progress,
-    SUM(deals_done) AS deals_done,
-    SUM(deals_failed) AS deals_failed
+)
+SELECT
+    COALESCE(SUM(deals_in_progress+deals_done), 0) AS total_non_failed_deal_count,
+    COALESCE(SUM(total_data_size), 0) AS total_data_size,
+    COALESCE(SUM(total_deal_size), 0) AS total_deal_size,
+    COALESCE(SUM(stored_data_size), 0) AS stored_data_size,
+    COALESCE(SUM(stored_deal_size), 0) AS stored_deal_size,
+    COALESCE(SUM(deals_in_progress), 0) AS deals_in_progress,
+    COALESCE(SUM(deals_done), 0) AS deals_done,
+    COALESCE(SUM(deals_failed), 0) AS deals_failed
 FROM
-    deal_summary;`)
+    deal_summary
+;`)
 	if err != nil {
 		return iface.DealSummary{}, xerrors.Errorf("finding writable groups: %w", err)
 	}
