@@ -28,7 +28,7 @@ import (
 
 const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 
-var verified = false
+var verified = true
 
 type ErrRejected struct {
 	Reason string

@@ -25,6 +25,8 @@ var log = logging.Logger("ribs")
 type openOptions struct {
 	workerGate chan struct{} // for testing
 	hostGetter func(...libp2p.Option) (host.Host, error)
+
+	disableDealMaking bool
 }
 
 type OpenOption func(*openOptions)
@@ -38,6 +40,12 @@ func WithWorkerGate(gate chan struct{}) OpenOption {
 func WithHostGetter(hg func(...libp2p.Option) (host.Host, error)) OpenOption {
 	return func(o *openOptions) {
 		o.hostGetter = hg
+	}
+}
+
+func DisableDealMaking() OpenOption {
+	return func(o *openOptions) {
+		o.disableDealMaking = true
 	}
 }
 
@@ -66,68 +74,12 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		o(opt)
 	}
 
-	walletPath := "~/.ribswallet"
-
-	wallet, err := ributil.OpenWallet(walletPath)
-	if err != nil {
-		return nil, xerrors.Errorf("open wallet: %w", err)
-	}
-
-	defWallet, err := wallet.GetDefault()
-	if err != nil {
-		wl, err := wallet.WalletList(context.TODO())
-		if err != nil {
-			return nil, xerrors.Errorf("get wallet list: %w", err)
-		}
-
-		if len(wl) == 0 {
-			a, err := wallet.WalletNew(context.TODO(), "secp256k1")
-			if err != nil {
-				return nil, xerrors.Errorf("creating wallet: %w", err)
-			}
-
-			color.Yellow("--------------------------------------------------------------")
-			fmt.Println("CREATED NEW RIBS WALLET")
-			fmt.Println("ADDRESS: ", color.GreenString("%s", a))
-			fmt.Println("")
-			fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", walletPath)
-			fmt.Println("")
-			fmt.Println("Before using RIBS, you must fund your wallet with FIL.")
-			fmt.Println("You can also supply it with DataCap if you want to make")
-			fmt.Println("FIL+ deals.")
-			color.Yellow("--------------------------------------------------------------")
-
-			wl = append(wl, a)
-		}
-
-		if len(wl) != 1 {
-			return nil, xerrors.Errorf("no default wallet or more than one wallet: %#v", wl)
-		}
-
-		if err := wallet.SetDefault(wl[0]); err != nil {
-			return nil, xerrors.Errorf("setting default wallet: %w", err)
-		}
-
-		defWallet, err = wallet.GetDefault()
-		if err != nil {
-			return nil, xerrors.Errorf("getting default wallet: %w", err)
-		}
-	}
-
-	fmt.Println("RIBS Wallet: ", defWallet)
-
-	h, err := opt.hostGetter()
-	if err != nil {
-		return nil, xerrors.Errorf("creating host: %w", err)
-	}
-
 	r := &ribs{
 		root:  root,
 		db:    db,
 		index: NewMeteredIndex(idx),
 
-		host:   h,
-		wallet: wallet,
+		doDeals: !opt.disableDealMaking,
 
 		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
 
@@ -147,15 +99,80 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		marketWatchClosed: make(chan struct{}),
 	}
 
-	go r.groupWorker(opt.workerGate)
-	go r.spCrawler()
-	go r.resumeGroups(context.TODO())
-	go r.dealTracker(context.TODO())
-	go r.watchMarket(context.TODO())
+	if !opt.disableDealMaking {
+		walletPath := "~/.ribswallet"
 
-	if err := r.setupCarServer(context.TODO(), h); err != nil {
-		return nil, xerrors.Errorf("setup car server: %w", err)
+		wallet, err := ributil.OpenWallet(walletPath)
+		if err != nil {
+			return nil, xerrors.Errorf("open wallet: %w", err)
+		}
+
+		defWallet, err := wallet.GetDefault()
+		if err != nil {
+			wl, err := wallet.WalletList(context.TODO())
+			if err != nil {
+				return nil, xerrors.Errorf("get wallet list: %w", err)
+			}
+
+			if len(wl) == 0 {
+				a, err := wallet.WalletNew(context.TODO(), "secp256k1")
+				if err != nil {
+					return nil, xerrors.Errorf("creating wallet: %w", err)
+				}
+
+				color.Yellow("--------------------------------------------------------------")
+				fmt.Println("CREATED NEW RIBS WALLET")
+				fmt.Println("ADDRESS: ", color.GreenString("%s", a))
+				fmt.Println("")
+				fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", walletPath)
+				fmt.Println("")
+				fmt.Println("Before using RIBS, you must fund your wallet with FIL.")
+				fmt.Println("You can also supply it with DataCap if you want to make")
+				fmt.Println("FIL+ deals.")
+				color.Yellow("--------------------------------------------------------------")
+
+				wl = append(wl, a)
+			}
+
+			if len(wl) != 1 {
+				return nil, xerrors.Errorf("no default wallet or more than one wallet: %#v", wl)
+			}
+
+			if err := wallet.SetDefault(wl[0]); err != nil {
+				return nil, xerrors.Errorf("setting default wallet: %w", err)
+			}
+
+			defWallet, err = wallet.GetDefault()
+			if err != nil {
+				return nil, xerrors.Errorf("getting default wallet: %w", err)
+			}
+		}
+
+		fmt.Println("RIBS Wallet: ", defWallet)
+
+		r.wallet = wallet
+
+		r.host, err = opt.hostGetter()
+		if err != nil {
+			return nil, xerrors.Errorf("creating host: %w", err)
+		}
 	}
+
+	go r.groupWorker(opt.workerGate)
+
+	if !opt.disableDealMaking {
+		go r.spCrawler()
+		go r.dealTracker(context.TODO())
+		go r.watchMarket(context.TODO())
+		if err := r.setupCarServer(context.TODO(), r.host); err != nil {
+			return nil, xerrors.Errorf("setup car server: %w", err)
+		}
+	} else {
+		close(r.spCrawlClosed)
+		close(r.marketWatchClosed)
+	}
+
+	go r.resumeGroups(context.TODO())
 
 	return r, nil
 }
@@ -220,6 +237,10 @@ func (r *ribs) workerExecTask(toExec task) {
 		}
 		fallthrough
 	case taskTypeMakeMoreDeals:
+		if !r.doDeals {
+			return
+		}
+
 		r.lk.Lock()
 		g, ok := r.openGroups[toExec.group]
 		r.lk.Unlock()
@@ -246,6 +267,9 @@ func (r *ribs) workerExecTask(toExec task) {
 		}
 		fallthrough
 	case taskMonitorDeals:
+		if !r.doDeals {
+			return
+		}
 
 		c, err := r.db.GetNonFailedDealCount(toExec.group)
 		if err != nil {
@@ -292,6 +316,8 @@ type ribs struct {
 
 	host   host.Host
 	wallet *ributil.LocalWallet
+
+	doDeals bool
 
 	lotusRPCAddr string
 
