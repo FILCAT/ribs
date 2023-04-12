@@ -13,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -660,6 +661,40 @@ func (r *ribs) resumeGroups(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (r *ribs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
+	var out []iface.GroupKey
+
+	err := r.index.GetGroups(ctx, []mh.Multihash{hash}, func(i [][]iface.GroupKey) (bool, error) {
+		for _, groups := range i {
+			for _, g := range groups {
+				if g == iface.UndefGroupKey {
+					continue
+				}
+				out = append(out, g)
+			}
+		}
+
+		return true, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *ribs) ReadCar(ctx context.Context, group iface.GroupKey, out io.Writer) error {
+	return r.withReadableGroup(ctx, group, func(g *Group) error {
+		_, _, err := g.writeCar(out)
+		return err
+	})
+}
+
+func (r *ribs) Storage() iface.Storage {
+	return r
 }
 
 var _ iface.RIBS = &ribs{}

@@ -105,9 +105,15 @@ type Session interface {
 	Batch(ctx context.Context) Batch
 }
 
+type Storage interface {
+	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
+	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
+}
+
 type RIBS interface {
 	Session(ctx context.Context) Session
 	Diagnostics() Diag
+	Storage() Storage
 
 	Wallet() Wallet
 
