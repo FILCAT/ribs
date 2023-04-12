@@ -159,6 +159,8 @@ type Wallet interface {
 type WalletInfo struct {
 	Addr string
 
+	DataCap string
+
 	Balance       string
 	MarketBalance string
 	MarketLocked  string

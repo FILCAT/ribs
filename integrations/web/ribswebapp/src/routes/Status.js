@@ -84,7 +84,7 @@ function WalletInfoTile({ walletInfo }) {
                     </tr>
                     <tr>
                         <td>DataCap:</td>
-                        <td className="important-metric">XX TiB</td>
+                        <td className="important-metric">{walletInfo.DataCap}</td>
                     </tr>
                     </tbody>
                 </table>

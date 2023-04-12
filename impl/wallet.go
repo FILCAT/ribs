@@ -177,11 +177,20 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 		return iface.WalletInfo{}, xerrors.Errorf("get market balance: %w", err)
 	}
 
+	dc, err := gw.StateVerifiedClientStatus(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return iface.WalletInfo{}, xerrors.Errorf("get verified client status: %w", err)
+	}
+
 	wi := iface.WalletInfo{
 		Addr:          addr.String(),
 		Balance:       types.FIL(b).Short(),
 		MarketBalance: types.FIL(mb.Escrow).Short(),
 		MarketLocked:  types.FIL(mb.Locked).Short(),
+	}
+
+	if dc != nil {
+		wi.DataCap = types.SizeStr(*dc)
 	}
 
 	r.cachedWalletInfo = &wi
