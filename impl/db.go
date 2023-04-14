@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/filecoin-project/boost/storagemarket/types"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
 	types2 "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
@@ -13,7 +12,6 @@ import (
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
-	"sort"
 )
 
 const mFil = 1_000_000_000_000_000
@@ -258,7 +256,7 @@ func openRibsDB(root string) (*ribsDB, error) {
 	}, nil
 }
 
-func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
+/*func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
        indexed_success, indexed_fail,
        retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
@@ -324,7 +322,7 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	}
 
 	return out
-}
+}*/
 
 type dealProvider struct {
 	id              int64
@@ -663,7 +661,7 @@ func (r *ribsDB) UpdateExpiredDeal(id string) error {
 	return nil
 }
 
-func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
+/*func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
 	res, err := r.db.Query(`WITH deal_summary AS (
     SELECT
         d.group_id,
@@ -711,9 +709,9 @@ FROM
 	}
 
 	return ds, nil
-}
+}*/
 
-func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
+/*func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 	var pInfo iface.ProviderInfo
 	err := r.db.QueryRow(`
 		SELECT id, ping_ok, boost_deals, booster_http, booster_bitswap,
@@ -761,18 +759,18 @@ func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 			Rejected:   rejected,
 			StartEpoch: startEpoch,
 			EndEpoch:   endEpoch,
-			Status:     derefOr(status, ""),
-			SealStatus: derefOr(sealStatus, ""),
-			Error:      derefOr(errMsg, ""),
-			DealID:     derefOr(dealID, 0),
-			BytesRecv:  derefOr(bytesRecv, 0),
-			TxSize:     derefOr(txSize, 0),
-			PubCid:     derefOr(pubCid, ""),
+			Status:     DerefOr(status, ""),
+			SealStatus: DerefOr(sealStatus, ""),
+			Error:      DerefOr(errMsg, ""),
+			DealID:     DerefOr(dealID, 0),
+			BytesRecv:  DerefOr(bytesRecv, 0),
+			TxSize:     DerefOr(txSize, 0),
+			PubCid:     DerefOr(pubCid, ""),
 		})
 	}
 
 	return pInfo, nil
-}
+}*/
 
 func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
 	var gs iface.GroupStats
@@ -1020,9 +1018,9 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		return iface.GroupMeta{}, xerrors.Errorf("group %d not found", gk)
 	}
 
-	dealMeta := make([]iface.DealMeta, 0)
+	//dealMeta := make([]iface.DealMeta, 0)
 
-	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
+	/*res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -1053,13 +1051,13 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 			Rejected:   rejected,
 			StartEpoch: startEpoch,
 			EndEpoch:   endEpoch,
-			Status:     derefOr(status, ""),
-			SealStatus: derefOr(sealStatus, ""),
-			Error:      derefOr(errMsg, ""),
-			DealID:     derefOr(dealID, 0),
-			BytesRecv:  derefOr(bytesRecv, 0),
-			TxSize:     derefOr(txSize, 0),
-			PubCid:     derefOr(pubCid, ""),
+			Status:     DerefOr(status, ""),
+			SealStatus: DerefOr(sealStatus, ""),
+			Error:      DerefOr(errMsg, ""),
+			DealID:     DerefOr(dealID, 0),
+			BytesRecv:  DerefOr(bytesRecv, 0),
+			TxSize:     DerefOr(txSize, 0),
+			PubCid:     DerefOr(pubCid, ""),
 		})
 	}
 
@@ -1073,7 +1071,7 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 	if err := res.Close(); err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("closing deals iterator: %w", err)
-	}
+	}*/
 
 	return iface.GroupMeta{
 		State: state,
@@ -1084,17 +1082,17 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		Blocks: blocks,
 		Bytes:  bytes,
 
-		Deals: dealMeta,
+		//Deals: dealMeta,
 	}, nil
 }
 
-func (r *ribsDB) UpsertMarketActors(actors []int64) error {
+/*func (r *ribsDB) UpsertMarketActors(actors []int64) error {
 	/*_, err := r.db.Exec(`
 	begin transaction;
 	    update providers set in_market = 0 where in_market = 1;
 	    insert into providers (address, in_market) values (?, 1) on conflict (address) do update set in_market = 1;
 	end transaction;
-	`, actors)*/
+	`, actors)* /
 
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -1133,8 +1131,9 @@ func (r *ribsDB) UpsertMarketActors(actors []int64) error {
 	}
 
 	return nil
-}
+}*/
 
+/*
 func (r *ribsDB) UpdateProviderProtocols(provider int64, pres providerResult) error {
 	_, err := r.db.Exec(`
 	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ? where id = ?;
@@ -1155,9 +1154,9 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 	}
 
 	return nil
-}
+}*/
 
-func derefOr[T any](v *T, def T) T {
+func DerefOr[T any](v *T, def T) T {
 	if v == nil {
 		return def
 	}

@@ -2,16 +2,13 @@ package ribs
 
 import (
 	"context"
-	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-jsonrpc"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/lotus/api"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-cid"
 	"io"
 
 	"github.com/multiformats/go-multihash"
 )
+
+/* Storage internal */
 
 type GroupKey = int64
 
@@ -38,8 +35,6 @@ const (
 	GroupStateLevelIndexDropped
 	GroupStateVRCARDone
 	GroupStateHasCommp
-	GroupStateDealsInProgress
-	GroupStateDealsDone
 	GroupStateOffloaded
 )
 
@@ -110,15 +105,20 @@ type Storage interface {
 	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
 }
 
-type RIBS interface {
+type RBS interface {
 	Session(ctx context.Context) Session
-	Diagnostics() Diag
 	Storage() Storage
-
-	Wallet() Wallet
-
 	io.Closer
 }
+
+type RIBS interface {
+	RBS
+
+	Diagnostics() Diag
+	//Wallet() Wallet
+}
+
+/* Deal diag */
 
 type GroupMeta struct {
 	State GroupState
@@ -132,10 +132,10 @@ type GroupMeta struct {
 	ReadBlocks, ReadBytes   int64
 	WriteBlocks, WriteBytes int64
 
-	Deals []DealMeta
+	//Deals []DealMeta
 }
 
-type DealMeta struct {
+/*type DealMeta struct {
 	UUID     string
 	Provider int64
 
@@ -151,8 +151,8 @@ type DealMeta struct {
 	BytesRecv int64
 	TxSize    int64
 	PubCid    string
-}
-
+}*/
+/*
 type Wallet interface {
 	WalletInfo() (WalletInfo, error)
 
@@ -161,8 +161,8 @@ type Wallet interface {
 
 	Withdraw(ctx context.Context, amount abi.TokenAmount, to address.Address) (cid.Cid, error)
 }
-
-type WalletInfo struct {
+*/
+/*type WalletInfo struct {
 	Addr string
 
 	DataCap string
@@ -170,23 +170,23 @@ type WalletInfo struct {
 	Balance       string
 	MarketBalance string
 	MarketLocked  string
-}
+}*/
 
 type Diag interface {
 	Groups() ([]GroupKey, error)
 	GroupMeta(gk GroupKey) (GroupMeta, error)
 
-	CarUploadStats() map[GroupKey]*UploadStats
-	DealSummary() (DealSummary, error)
+	//CarUploadStats() map[GroupKey]*UploadStats
+	//DealSummary() (DealSummary, error)
 	TopIndexStats(context.Context) (TopIndexStats, error)
 	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
-	ProviderInfo(id int64) (ProviderInfo, error)
+	//ProviderInfo(id int64) (ProviderInfo, error)
 
-	CrawlState() CrawlState
-	ReachableProviders() []ProviderMeta
+	//CrawlState() CrawlState
+	//ReachableProviders() []ProviderMeta
 
-	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+	//Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
 }
 
 type GroupStats struct {
@@ -208,14 +208,14 @@ type TopIndexStats struct {
 	Writes, Reads int64
 }
 
-type CrawlState struct {
+/*type CrawlState struct {
 	State string
 
 	At, Reachable, Total int64
 	Boost, BBswap, BHttp int64
-}
+}*/
 
-type DealSummary struct {
+/*type DealSummary struct {
 	NonFailed, InProgress, Done, Failed int64
 
 	TotalDataSize, TotalDealSize   int64
@@ -225,14 +225,14 @@ type DealSummary struct {
 type UploadStats struct {
 	ActiveRequests int
 	UploadBytes    int64
-}
+}*/
 
-type ProviderInfo struct {
+/*type ProviderInfo struct {
 	Meta        ProviderMeta
 	RecentDeals []DealMeta
-}
+}*/
 
-type ProviderMeta struct {
+/*type ProviderMeta struct {
 	ID     int64
 	PingOk bool
 
@@ -259,4 +259,4 @@ type ProviderMeta struct {
 
 	AskMinPieceSize float64
 	AskMaxPieceSize float64
-}
+}*/

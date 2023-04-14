@@ -2,8 +2,6 @@ package impl
 
 import (
 	"context"
-	"fmt"
-	"github.com/fatih/color"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
@@ -17,8 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
 var log = logging.Logger("ribs")
@@ -26,8 +22,6 @@ var log = logging.Logger("ribs")
 type openOptions struct {
 	workerGate chan struct{} // for testing
 	hostGetter func(...libp2p.Option) (host.Host, error)
-
-	disableDealMaking bool
 }
 
 type OpenOption func(*openOptions)
@@ -41,12 +35,6 @@ func WithWorkerGate(gate chan struct{}) OpenOption {
 func WithHostGetter(hg func(...libp2p.Option) (host.Host, error)) OpenOption {
 	return func(o *openOptions) {
 		o.hostGetter = hg
-	}
-}
-
-func DisableDealMaking() OpenOption {
-	return func(o *openOptions) {
-		o.disableDealMaking = true
 	}
 }
 
@@ -80,8 +68,6 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		db:    db,
 		index: NewMeteredIndex(idx),
 
-		doDeals: !opt.disableDealMaking,
-
 		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
 
 		writableGroups: make(map[iface.GroupKey]*Group),
@@ -89,18 +75,18 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		// all open groups (including all writable)
 		openGroups: make(map[iface.GroupKey]*Group),
 
-		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
-		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
+		//uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
+		//uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
 
 		tasks: make(chan task, 1024),
 
-		close:             make(chan struct{}),
-		workerClosed:      make(chan struct{}),
-		spCrawlClosed:     make(chan struct{}),
-		marketWatchClosed: make(chan struct{}),
+		close:        make(chan struct{}),
+		workerClosed: make(chan struct{}),
+		/*spCrawlClosed:     make(chan struct{}),
+		marketWatchClosed: make(chan struct{}),*/
 	}
 
-	if !opt.disableDealMaking {
+	/*if !opt.disableDealMaking {
 		walletPath := "~/.ribswallet"
 
 		wallet, err := ributil.OpenWallet(walletPath)
@@ -157,21 +143,21 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		if err != nil {
 			return nil, xerrors.Errorf("creating host: %w", err)
 		}
-	}
+	}*/
 
 	go r.groupWorker(opt.workerGate)
 
-	if !opt.disableDealMaking {
-		go r.spCrawler()
-		go r.dealTracker(context.TODO())
-		go r.watchMarket(context.TODO())
-		if err := r.setupCarServer(context.TODO(), r.host); err != nil {
+	/*if !opt.disableDealMaking {
+		//go r.spCrawler()
+		//go r.dealTracker(context.TODO())
+		//go r.watchMarket(context.TODO())
+		/*if err := r.setupCarServer(context.TODO(), r.host); err != nil {
 			return nil, xerrors.Errorf("setup car server: %w", err)
-		}
+		}* /
 	} else {
 		close(r.spCrawlClosed)
 		close(r.marketWatchClosed)
-	}
+	}*/
 
 	go r.resumeGroups(context.TODO())
 
@@ -236,57 +222,57 @@ func (r *ribs) workerExecTask(toExec task) {
 		if err != nil {
 			log.Errorf("generating commP: %s", err)
 		}
-		fallthrough
-	case taskTypeMakeMoreDeals:
-		if !r.doDeals {
-			return
-		}
+		//fallthrough
+		/*case taskTypeMakeMoreDeals:
+			if !r.doDeals {
+				return
+			}
 
-		r.lk.Lock()
-		g, ok := r.openGroups[toExec.group]
-		r.lk.Unlock()
-		if !ok {
-			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-			return
-		}
+			r.lk.Lock()
+			g, ok := r.openGroups[toExec.group]
+			r.lk.Unlock()
+			if !ok {
+				log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
+				return
+			}
 
-		dealInfo, err := r.db.GetDealParams(context.TODO(), toExec.group)
-		if err != nil {
-			log.Errorf("getting deal params: %s", err)
-			return
-		}
+			dealInfo, err := r.db.GetDealParams(context.TODO(), toExec.group)
+			if err != nil {
+				log.Errorf("getting deal params: %s", err)
+				return
+			}
 
-		reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36, dealInfo.CarSize)
-		if err != nil {
-			log.Errorf("making car request token: %s", err)
-			return
-		}
+			reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36, dealInfo.CarSize)
+			if err != nil {
+				log.Errorf("making car request token: %s", err)
+				return
+			}
 
-		err = g.MakeMoreDeals(context.TODO(), r.host, r.wallet, reqToken)
-		if err != nil {
-			log.Errorf("starting new deals: %s", err)
-		}
-		fallthrough
-	case taskMonitorDeals:
-		if !r.doDeals {
-			return
-		}
+			err = g.MakeMoreDeals(context.TODO(), r.host, r.wallet, reqToken)
+			if err != nil {
+				log.Errorf("starting new deals: %s", err)
+			}
+			fallthrough
+		case taskMonitorDeals:
+			if !r.doDeals {
+				return
+			}
 
-		c, err := r.db.GetNonFailedDealCount(toExec.group)
-		if err != nil {
-			log.Errorf("getting non-failed deal count: %s", err)
-			return
-		}
+			c, err := r.db.GetNonFailedDealCount(toExec.group)
+			if err != nil {
+				log.Errorf("getting non-failed deal count: %s", err)
+				return
+			}
 
-		if c < minimumReplicaCount {
-			go func() {
-				r.tasks <- task{
-					tt:    taskTypeMakeMoreDeals,
-					group: toExec.group,
-				}
-			}()
-		}
-
+			if c < minimumReplicaCount {
+				go func() {
+					r.tasks <- task{
+						tt:    taskTypeMakeMoreDeals,
+						group: toExec.group,
+					}
+				}()
+			}
+		*/
 		// todo add a check-in task to some timed queue
 	}
 }
@@ -297,8 +283,8 @@ const (
 	taskTypeFinalize taskType = iota
 	taskTypeMakeVCAR
 	taskTypeGenCommP
-	taskTypeMakeMoreDeals
-	taskMonitorDeals
+	//taskTypeMakeMoreDeals
+	//taskMonitorDeals
 )
 
 type task struct {
@@ -318,20 +304,18 @@ type ribs struct {
 	host   host.Host
 	wallet *ributil.LocalWallet
 
-	doDeals bool
-
 	lotusRPCAddr string
 
-	marketFundsLk        sync.Mutex
-	cachedWalletInfo     *iface.WalletInfo
-	lastWalletInfoUpdate time.Time
+	//marketFundsLk        sync.Mutex
+	//cachedWalletInfo     *iface.WalletInfo
+	//lastWalletInfoUpdate time.Time
 
 	/* storage */
 
-	close             chan struct{}
-	workerClosed      chan struct{}
-	spCrawlClosed     chan struct{}
-	marketWatchClosed chan struct{}
+	close        chan struct{}
+	workerClosed chan struct{}
+	//spCrawlClosed     chan struct{}
+	//marketWatchClosed chan struct{}
 
 	tasks chan task
 
@@ -339,12 +323,12 @@ type ribs struct {
 	writableGroups map[int64]*Group
 
 	/* sp tracker */
-	crawlState atomic.Pointer[iface.CrawlState]
+	//crawlState atomic.Pointer[iface.CrawlState]
 
 	/* car uploads */
-	uploadStats     map[iface.GroupKey]*iface.UploadStats
-	uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
-	uploadStatsLk   sync.Mutex
+	//uploadStats     map[iface.GroupKey]*iface.UploadStats
+	//uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
+	//uploadStatsLk   sync.Mutex
 
 	// diag cache
 	diagLk sync.Mutex
@@ -355,15 +339,15 @@ type ribs struct {
 	grpWriteSize   int64
 }
 
-func (r *ribs) Wallet() iface.Wallet {
+/*func (r *ribs) Wallet() iface.Wallet {
 	return r
-}
+}*/
 
 func (r *ribs) Close() error {
 	close(r.close)
 	<-r.workerClosed
-	<-r.spCrawlClosed
-	<-r.marketWatchClosed
+	//<-r.spCrawlClosed
+	//<-r.marketWatchClosed
 
 	r.lk.Lock()
 	defer r.lk.Unlock()
@@ -503,10 +487,6 @@ func (r *ribs) resumeGroup(group iface.GroupKey) {
 	case iface.GroupStateVRCARDone:
 		sendTask(taskTypeGenCommP)
 	case iface.GroupStateHasCommp:
-		sendTask(taskTypeMakeMoreDeals)
-	case iface.GroupStateDealsInProgress:
-		sendTask(taskMonitorDeals)
-	case iface.GroupStateDealsDone:
 	case iface.GroupStateOffloaded:
 	}
 }
@@ -652,7 +632,7 @@ func (r *ribs) resumeGroups(ctx context.Context) {
 
 	for g, st := range gs {
 		switch st {
-		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp, iface.GroupStateDealsInProgress:
+		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp:
 			if err := r.withReadableGroup(ctx, g, func(g *Group) error {
 				return nil
 			}); err != nil {

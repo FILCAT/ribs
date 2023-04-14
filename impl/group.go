@@ -22,7 +22,6 @@ import (
 )
 
 var (
-	// 100MB for now
 	// TODO: make this configurable
 	maxGroupSize int64 = 2500 << 20
 

@@ -80,7 +80,7 @@ func (r *ribs) GroupIOStats() iface.GroupIOStats {
 	return stats
 }
 
-func (r *ribs) CrawlState() iface.CrawlState {
+/*func (r *ribs) CrawlState() iface.CrawlState {
 	return *r.crawlState.Load()
 }
 
@@ -90,12 +90,13 @@ func (r *ribs) ReachableProviders() []iface.ProviderMeta {
 
 func (r *ribs) ProviderInfo(id int64) (iface.ProviderInfo, error) {
 	return r.db.ProviderInfo(id)
-}
+}*/
 
-func (r *ribs) DealSummary() (iface.DealSummary, error) {
-	return r.db.DealSummary()
-}
-
+/*
+	func (r *ribs) DealSummary() (iface.DealSummary, error) {
+		return r.db.DealSummary()
+	}
+*/
 func (r *ribs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
 	s, err := r.index.EstimateSize(ctx)
 	if err != nil {
