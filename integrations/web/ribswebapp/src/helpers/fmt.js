@@ -34,7 +34,7 @@ export function formatNum6(bytes) {
 
     const intPart = Math.floor(n);
     const decimalPart = Math.floor((n - intPart) * 1000);
-    const formattedDecimal = decimalPart > 0 ? ` ${decimalPart}` : '';
+    const formattedDecimal = decimalPart > 0 ? `.${decimalPart}` : '';
 
     return (intPart + formattedDecimal + ' ' + units[l]);
 }

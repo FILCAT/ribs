@@ -120,7 +120,7 @@ func (i *PebbleIndex) DropGroup(ctx context.Context, mh []multihash.Multihash, g
 	return nil
 }
 
-const averageEntrySize = 56 // multihash is ~36 bytes, groupkey is 8 bytes
+const averageEntrySize = 35 + 8 // multihash is ~35 bytes, groupkey is 8 bytes
 
 func (i *PebbleIndex) EstimateSize(ctx context.Context) (int64, error) {
 	lowerBound := []byte("i:")
