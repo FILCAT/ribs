@@ -207,7 +207,7 @@ func (m *Group) GenCommP() error {
 
 	p, _ := commcid.CIDToDataCommitmentV1(sum.PieceCID)
 
-	if err := m.setCommP(context.Background(), iface.GroupStateHasCommp, p, int64(sum.PieceSize), root, carSize); err != nil {
+	if err := m.setCommP(context.Background(), iface.GroupStateLocalReadyForDeals, p, int64(sum.PieceSize), root, carSize); err != nil {
 		return xerrors.Errorf("set commP: %w", err)
 	}
 

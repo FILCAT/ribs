@@ -168,7 +168,34 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 func (r *ribs) subGroupChanges() {
 	r.Storage().Subscribe(func(group iface.GroupKey, from, to iface.GroupState) {
+		if to == iface.GroupStateLocalReadyForDeals {
+			c, err := r.db.GetNonFailedDealCount(group)
+			if err != nil {
+				log.Errorf("getting non-failed deal count: %s", err)
+				return
+			}
 
+			if c >= minimumReplicaCount {
+				return
+			}
+
+			dealInfo, err := r.db.GetDealParams(context.TODO(), group)
+			if err != nil {
+				log.Errorf("getting deal params: %s", err)
+				return
+			}
+
+			reqToken, err := r.makeCarRequestToken(context.TODO(), group, time.Hour*36, dealInfo.CarSize)
+			if err != nil {
+				log.Errorf("making car request token: %s", err)
+				return
+			}
+
+			err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet, reqToken)
+			if err != nil {
+				log.Errorf("starting new deals: %s", err)
+			}
+		}
 	})
 }
 

@@ -64,58 +64,6 @@ func (r *rbs) workerExecTask(toExec task) {
 		if err != nil {
 			log.Errorf("generating commP: %s", err)
 		}
-		//fallthrough
-		/*case taskTypeMakeMoreDeals:
-			if !r.doDeals {
-				return
-			}
-
-			r.lk.Lock()
-			g, ok := r.openGroups[toExec.group]
-			r.lk.Unlock()
-			if !ok {
-				log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-				return
-			}
-
-			dealInfo, err := r.db.GetDealParams(context.TODO(), toExec.group)
-			if err != nil {
-				log.Errorf("getting deal params: %s", err)
-				return
-			}
-
-			reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36, dealInfo.CarSize)
-			if err != nil {
-				log.Errorf("making car request token: %s", err)
-				return
-			}
-
-			err = g.MakeMoreDeals(context.TODO(), r.host, r.wallet, reqToken)
-			if err != nil {
-				log.Errorf("starting new deals: %s", err)
-			}
-			fallthrough
-		case taskMonitorDeals:
-			if !r.doDeals {
-				return
-			}
-
-			c, err := r.db.GetNonFailedDealCount(toExec.group)
-			if err != nil {
-				log.Errorf("getting non-failed deal count: %s", err)
-				return
-			}
-
-			if c < minimumReplicaCount {
-				go func() {
-					r.tasks <- task{
-						tt:    taskTypeMakeMoreDeals,
-						group: toExec.group,
-					}
-				}()
-			}
-		*/
-		// todo add a check-in task to some timed queue
 	}
 }
 
@@ -132,7 +80,7 @@ func (r *rbs) resumeGroups(ctx context.Context) {
 
 	for g, st := range gs {
 		switch st {
-		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp:
+		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals:
 			if err := r.withReadableGroup(ctx, g, func(g *Group) error {
 				return nil
 			}); err != nil {

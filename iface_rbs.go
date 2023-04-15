@@ -36,7 +36,8 @@ const (
 	GroupStateBSSTExists
 	GroupStateLevelIndexDropped
 	GroupStateVRCARDone
-	GroupStateHasCommp
+
+	GroupStateLocalReadyForDeals
 	GroupStateOffloaded
 )
 

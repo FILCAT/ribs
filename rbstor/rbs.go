@@ -256,7 +256,7 @@ func (r *rbs) resumeGroup(group iface.GroupKey) {
 		sendTask(taskTypeMakeVCAR)
 	case iface.GroupStateVRCARDone:
 		sendTask(taskTypeGenCommP)
-	case iface.GroupStateHasCommp:
+	case iface.GroupStateLocalReadyForDeals:
 	case iface.GroupStateOffloaded:
 	}
 }

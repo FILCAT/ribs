@@ -144,15 +144,15 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         providers p
         LEFT JOIN sp_deal_stats_view ds ON p.id = ds.sp_id
     WHERE 
-        p.in_market = 1 
-        AND p.ping_ok = 1 
-        AND p.ask_ok = 1 
-        AND p.ask_verif_price <= %f 
+        p.in_market = 1
+        AND p.ping_ok = 1
+        AND p.ask_ok = 1
+        AND p.ask_verif_price <= %f
         AND p.ask_price <= %f 
-        AND p.ask_min_piece_size <= %d 
+        AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
         AND (ds.rejected_all IS NULL OR ds.rejected_all = 0)
-    ORDER BY 
+    ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
 `
