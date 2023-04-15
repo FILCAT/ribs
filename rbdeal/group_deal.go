@@ -1,4 +1,4 @@
-package impl
+package rbdeal
 
 import (
 	"bytes"
@@ -30,6 +30,11 @@ const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 
 var verified = true
 
+var (
+	minimumReplicaCount = 5
+	targetReplicaCount  = 7
+)
+
 type ErrRejected struct {
 	Reason string
 }
@@ -38,19 +43,19 @@ func (e ErrRejected) Error() string {
 	return fmt.Sprintf("deal proposal rejected: %s", e.Reason)
 }
 
-func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
-	provs, err := m.db.SelectDealProviders(m.id)
+func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
+	provs, err := r.db.SelectDealProviders(id)
 	if err != nil {
 		return xerrors.Errorf("select deal providers: %w", err)
 	}
 
-	notFailed, err := m.db.GetNonFailedDealCount(m.id)
+	notFailed, err := r.db.GetNonFailedDealCount(id)
 	if err != nil {
 		log.Errorf("getting non-failed deal count: %s", err)
 		return xerrors.Errorf("getting non-failed deal count: %w", err)
 	}
 
-	gw, closer, err := client.NewGatewayRPCV1(ctx, m.lotusRPCAddr, nil)
+	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		return xerrors.Errorf("creating gateway rpc client: %w", err)
 	}
@@ -61,7 +66,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		return xerrors.Errorf("get wallet address: %w", err)
 	}
 
-	dealInfo, err := m.db.GetDealParams(ctx, m.id)
+	dealInfo, err := r.db.GetDealParams(ctx, id)
 	if err != nil {
 		return xerrors.Errorf("get deal params: %w", err)
 	}
@@ -147,7 +152,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 
 		di := dbDealInfo{
 			DealUUID:            dealUuid.String(),
-			GroupID:             m.id,
+			GroupID:             id,
 			ClientAddr:          walletAddr.String(),
 			ProviderAddr:        prov.id,
 			PricePerEpoch:       price.Int64(),
@@ -159,7 +164,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}
 
 		if err := h.Connect(ctx, *addrInfo); err != nil {
-			err = m.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err))
+			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err))
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -190,7 +195,7 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}
 
 		if !resp.Accepted {
-			err = m.db.StoreRejectedDeal(di, resp.Message)
+			err = r.db.StoreRejectedDeal(di, resp.Message)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -200,12 +205,12 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 
 		// SAVE DETAILS
 
-		err = m.db.StoreProposedDeal(di)
+		err = r.db.StoreProposedDeal(di)
 		if err != nil {
 			return fmt.Errorf("saving deal info: %w", err)
 		}
 
-		log.Warnf("Deal %s with %s accepted for group %d!!!", dealUuid, maddr, m.id)
+		log.Warnf("Deal %s with %s accepted for group %d!!!", dealUuid, maddr, id)
 
 		return nil
 	}
@@ -230,11 +235,6 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}*/
 
 		log.Errorw("failed to make deal with provider", "provider", fmt.Sprintf("f0%d", prov.id), "error", err)
-	}
-
-	// move to deals made state
-	if err := m.advanceState(ctx, iface.GroupStateDealsInProgress); err != nil {
-		return xerrors.Errorf("mark level index dropped: %w", err)
 	}
 
 	return nil

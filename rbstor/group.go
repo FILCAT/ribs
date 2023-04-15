@@ -1,4 +1,4 @@
-package impl
+package rbstor
 
 import (
 	"bufio"
@@ -22,22 +22,18 @@ import (
 )
 
 var (
-	// 100MB for now
 	// TODO: make this configurable
 	maxGroupSize int64 = 2500 << 20
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
-
-	minimumReplicaCount = 5
-	targetReplicaCount  = 7
 )
 
 type Group struct {
-	db    *ribsDB
+	db    *rbsDB
 	index iface.Index
 
-	lotusRPCAddr string
+	//lotusRPCAddr string
 
 	path string
 	id   int64
@@ -75,7 +71,7 @@ type Group struct {
 	jb *jbob.JBOB
 }
 
-func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, lrpc string, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -103,8 +99,6 @@ func OpenGroup(ctx context.Context, db *ribsDB, index iface.Index, lrpc string, 
 	return &Group{
 		db:    db,
 		index: index,
-
-		lotusRPCAddr: lrpc,
 
 		jb: jb,
 

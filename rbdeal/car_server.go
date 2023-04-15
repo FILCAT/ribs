@@ -1,4 +1,4 @@
-package impl
+package rbdeal
 
 import (
 	"context"
@@ -230,13 +230,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		r.uploadStatsLk.Unlock()
 	}()
 
-	err = r.withReadableGroup(context.TODO(), reqToken.Group, func(group *Group) error {
-		// todo range request handling
-		//http.ServeContent(w, req, "deal.car", time.Now(), &carWriter{})
-
-		_, _, err := group.writeCar(sw)
-		return err
-	})
+	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, sw)
 	if err != nil {
 		log.Errorw("car request: write car", "error", err, "url", req.URL)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

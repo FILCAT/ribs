@@ -1,4 +1,4 @@
-package impl
+package rbdeal
 
 import (
 	"context"
@@ -31,57 +31,11 @@ var (
 	dealPublishFinality abi.ChainEpoch = 60
 )
 
-var pragmas = []string{
-	"PRAGMA synchronous = normal",
-	"PRAGMA temp_store = memory",
-	"PRAGMA mmap_size = 30000000000",
-	"PRAGMA page_size = 32768",
-	/*	"PRAGMA auto_vacuum = NONE",
-		"PRAGMA automatic_index = OFF",*/
-	"PRAGMA journal_mode = WAL",
-	"PRAGMA read_uncommitted = ON",
+type ribsDB struct {
+	db *sql.DB
 }
 
 const dbSchema = `
-
-/* groups */
-
-create table if not exists groups
-(
-    id        integer not null
-        constraint groups_pk
-            primary key autoincrement,
-    blocks      integer not null,
-    bytes integer not null,    
-    /* States
-	 * 0 - writable
-     * 1 - full
-     * 2 - bsst exists
-     * 3 - level index dropped
-     * 4 - vrcar done
-     * 5 - has commp
-     * 6 - deals started
-     * 7 - deals done
-     * 8 - offloaded
-     */
-    g_state     integer not null,
-    
-    /* jbob */
-    jb_recorded_head integer not null,
-    
-    /* vrcar */
-    piece_size integer,
-    commp blob,
-    car_size integer,
-    root blob
-);
-
-create index if not exists groups_id_index
-    on groups (id);
-
-create index if not exists groups_g_state_index
-    on groups (g_state);
-
 /* deals */
 create table if not exists deals (
     uuid text not null constraint deals_pk primary key,
@@ -191,61 +145,23 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         providers p
         LEFT JOIN sp_deal_stats_view ds ON p.id = ds.sp_id
     WHERE 
-        p.in_market = 1 
-        AND p.ping_ok = 1 
-        AND p.ask_ok = 1 
-        AND p.ask_verif_price <= %f 
+        p.in_market = 1
+        AND p.ping_ok = 1
+        AND p.ask_ok = 1
+        AND p.ask_verif_price <= %f
         AND p.ask_price <= %f 
-        AND p.ask_min_piece_size <= %d 
+        AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
         AND (ds.rejected_all IS NULL OR ds.rejected_all = 0)
-    ORDER BY 
+    ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
-CREATE VIEW IF NOT EXISTS group_stats_view AS
-SELECT 
-    COUNT(*) AS group_count,
-    SUM(bytes) AS total_data_size,
-    SUM(CASE WHEN g_state < 8 THEN bytes ELSE 0 END) AS non_offloaded_data_size,
-    SUM(CASE WHEN g_state = 8 THEN bytes ELSE 0 END) AS offloaded_data_size
-FROM 
-    groups;
-
-/* top level index */
-
-create table if not exists top_index
-(
-    hash    BLOB not null,
-    group_id integer
-    constraint index_groups_id_fk
-        references groups,
-    constraint index_pk
-        primary key (hash, group_id) on conflict ignore
-)
-    without rowid;
-
-create index if not exists index_group_index
-    on top_index (group_id);
-
-create index if not exists index_hash_index
-    on top_index (hash);
 `
-
-type ribsDB struct {
-	db *sql.DB
-}
 
 func openRibsDB(root string) (*ribsDB, error) {
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
-	}
-
-	for _, pragma := range pragmas {
-		_, err = db.Exec(pragma)
-		if err != nil {
-			return nil, xerrors.Errorf("exec pragma: %w", err)
-		}
 	}
 
 	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice, maxPrice, minPieceSize, maxPieceSize))
@@ -256,74 +172,6 @@ func openRibsDB(root string) (*ribsDB, error) {
 	return &ribsDB{
 		db: db,
 	}, nil
-}
-
-func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
-	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
-       indexed_success, indexed_fail,
-       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
-       ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
-    from good_providers_view`)
-
-	if err != nil {
-		log.Errorw("querying providers", "error", err)
-		return nil
-	}
-
-	out := make([]iface.ProviderMeta, 0)
-
-	for res.Next() {
-		var pm iface.ProviderMeta
-		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap,
-			&pm.IndexedSuccess, &pm.IndexedFail, // &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
-			&pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes,
-			&pm.AskPrice, &pm.AskVerifiedPrice, &pm.AskMinPieceSize, &pm.AskMaxPieceSize)
-		if err != nil {
-			log.Errorw("scanning provider", "error", err)
-			return nil
-		}
-
-		out = append(out, pm)
-	}
-
-	if err := res.Err(); err != nil {
-		log.Errorw("scanning providers", "error", err)
-		return nil
-	}
-	if err := res.Close(); err != nil {
-		log.Errorw("closing providers", "error", err)
-		return nil
-	}
-
-	res, err = r.db.Query(`select provider_addr, count(*),
-       sum(case when sealed = 1 then 1 else 0 end),
-       sum(case when rejected != 1 and failed = 1 then 1 else 0 end),
-       sum(case when rejected = 1 then 1 else 0 end) from deals group by provider_addr`)
-	if err != nil {
-		log.Errorw("querying deals", "error", err)
-		return nil
-	}
-
-	for res.Next() {
-		var id int64
-		var dealStarted, dealSuccess, dealFail, dealRejected int64
-		err := res.Scan(&id, &dealStarted, &dealSuccess, &dealFail, &dealRejected)
-		if err != nil {
-			log.Errorw("scanning deal", "error", err)
-			return nil
-		}
-
-		for i := range out {
-			if out[i].ID == id {
-				out[i].DealStarted = dealStarted
-				out[i].DealSuccess = dealSuccess
-				out[i].DealFail = dealFail
-				out[i].DealRejected = dealRejected
-			}
-		}
-	}
-
-	return out
 }
 
 type dealProvider struct {
@@ -437,6 +285,74 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
 
 	return out, nil
+}
+
+func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
+	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
+       indexed_success, indexed_fail,
+       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
+       ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
+    from good_providers_view`)
+
+	if err != nil {
+		log.Errorw("querying providers", "error", err)
+		return nil
+	}
+
+	out := make([]iface.ProviderMeta, 0)
+
+	for res.Next() {
+		var pm iface.ProviderMeta
+		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap,
+			&pm.IndexedSuccess, &pm.IndexedFail, // &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
+			&pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes,
+			&pm.AskPrice, &pm.AskVerifiedPrice, &pm.AskMinPieceSize, &pm.AskMaxPieceSize)
+		if err != nil {
+			log.Errorw("scanning provider", "error", err)
+			return nil
+		}
+
+		out = append(out, pm)
+	}
+
+	if err := res.Err(); err != nil {
+		log.Errorw("scanning providers", "error", err)
+		return nil
+	}
+	if err := res.Close(); err != nil {
+		log.Errorw("closing providers", "error", err)
+		return nil
+	}
+
+	res, err = r.db.Query(`select provider_addr, count(*),
+       sum(case when sealed = 1 then 1 else 0 end),
+       sum(case when rejected != 1 and failed = 1 then 1 else 0 end),
+       sum(case when rejected = 1 then 1 else 0 end) from deals group by provider_addr`)
+	if err != nil {
+		log.Errorw("querying deals", "error", err)
+		return nil
+	}
+
+	for res.Next() {
+		var id int64
+		var dealStarted, dealSuccess, dealFail, dealRejected int64
+		err := res.Scan(&id, &dealStarted, &dealSuccess, &dealFail, &dealRejected)
+		if err != nil {
+			log.Errorw("scanning deal", "error", err)
+			return nil
+		}
+
+		for i := range out {
+			if out[i].ID == id {
+				out[i].DealStarted = dealStarted
+				out[i].DealSuccess = dealSuccess
+				out[i].DealFail = dealFail
+				out[i].DealRejected = dealRejected
+			}
+		}
+	}
+
+	return out
 }
 
 func (r *ribsDB) GetNonFailedDealCount(group iface.GroupKey) (int, error) {
@@ -761,153 +677,17 @@ func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 			Rejected:   rejected,
 			StartEpoch: startEpoch,
 			EndEpoch:   endEpoch,
-			Status:     derefOr(status, ""),
-			SealStatus: derefOr(sealStatus, ""),
-			Error:      derefOr(errMsg, ""),
-			DealID:     derefOr(dealID, 0),
-			BytesRecv:  derefOr(bytesRecv, 0),
-			TxSize:     derefOr(txSize, 0),
-			PubCid:     derefOr(pubCid, ""),
+			Status:     DerefOr(status, ""),
+			SealStatus: DerefOr(sealStatus, ""),
+			Error:      DerefOr(errMsg, ""),
+			DealID:     DerefOr(dealID, 0),
+			BytesRecv:  DerefOr(bytesRecv, 0),
+			TxSize:     DerefOr(txSize, 0),
+			PubCid:     DerefOr(pubCid, ""),
 		})
 	}
 
 	return pInfo, nil
-}
-
-func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
-	var gs iface.GroupStats
-	err := r.db.QueryRow(`SELECT group_count, total_data_size, non_offloaded_data_size, offloaded_data_size FROM group_stats_view`).Scan(&gs.GroupCount, &gs.TotalDataSize, &gs.NonOffloadedDataSize, &gs.OffloadedDataSize)
-	if err != nil {
-		return nil, xerrors.Errorf("querying group stats: %w", err)
-	}
-	return &gs, nil
-}
-
-func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, err error) {
-	res, err := r.db.Query("select id, blocks, bytes, jb_recorded_head, g_state from groups where g_state = 0")
-	if err != nil {
-		return 0, 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
-	}
-
-	selectedGroup := iface.UndefGroupKey
-
-	for res.Next() {
-		err := res.Scan(&selectedGroup, &blocks, &bytes, &jbhead, &state)
-		if err != nil {
-			return 0, 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
-		}
-
-		break
-	}
-
-	if err := res.Err(); err != nil {
-		return 0, 0, 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
-	}
-	if err := res.Close(); err != nil {
-		return 0, 0, 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
-	}
-
-	return selectedGroup, blocks, bytes, jbhead, state, nil
-}
-
-func (r *ribsDB) CreateGroup() (out iface.GroupKey, err error) {
-	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state, jb_recorded_head) values (0, 0, 0, 0) returning id").Scan(&out)
-	if err != nil {
-		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
-	}
-
-	return
-}
-
-func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, state iface.GroupState, err error) {
-	res, err := r.db.Query("select blocks, bytes, jb_recorded_head, g_state from groups where id = ?", gid)
-	if err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
-	}
-
-	var found bool
-
-	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &jbhead, &state)
-		if err != nil {
-			return 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
-		}
-
-		found = true
-
-		break
-	}
-
-	if err := res.Err(); err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("iterating groups: %w", err)
-	}
-	if err := res.Close(); err != nil {
-		return 0, 0, 0, 0, xerrors.Errorf("closing group iterator: %w", err)
-	}
-	if !found {
-		return 0, 0, 0, 0, xerrors.Errorf("group %d not found", gid)
-	}
-
-	return blocks, bytes, jbhead, state, nil
-}
-
-func (r *ribsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error) {
-	res, err := r.db.Query("select id, g_state from groups")
-	if err != nil {
-		return nil, xerrors.Errorf("finding writable groups: %w", err)
-	}
-
-	gs = make(map[iface.GroupKey]iface.GroupState)
-
-	for res.Next() {
-		var id iface.GroupKey
-		var state iface.GroupState
-		err := res.Scan(&id, &state)
-		if err != nil {
-			return nil, xerrors.Errorf("scanning group: %w", err)
-		}
-
-		gs[id] = state
-	}
-
-	if err := res.Err(); err != nil {
-		return nil, xerrors.Errorf("iterating groups: %w", err)
-	}
-	if err := res.Close(); err != nil {
-		return nil, xerrors.Errorf("closing group iterator: %w", err)
-	}
-
-	return gs, nil
-}
-
-func (r *ribsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state iface.GroupState, commBlk, commSz, at int64) error {
-	_, err := r.db.ExecContext(ctx, `begin transaction;
-		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;
-		commit;`, commBlk, commSz, state, at, id)
-	if err != nil {
-		return xerrors.Errorf("update group head: %w", err)
-	}
-
-	return nil
-}
-
-func (r *ribsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state iface.GroupState) error {
-	_, err := r.db.ExecContext(ctx, `update groups set g_state = ? where id = ?;`, state, id)
-	if err != nil {
-		return xerrors.Errorf("update group state: %w", err)
-	}
-
-	return nil
-}
-
-func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64, root cid.Cid, carSize int64) error {
-	_, err := r.db.ExecContext(ctx, `update groups set commp = ?, piece_size = ?, root = ?, car_size = ?, g_state = ? where id = ?;`,
-		commp[:], paddedPieceSize, root.Bytes(), carSize, state, id)
-	if err != nil {
-		return xerrors.Errorf("update group commp: %w", err)
-	}
-
-	return nil
 }
 
 type dealParams struct {
@@ -954,138 +734,6 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 	}
 
 	return out, nil
-}
-
-/* DIAGNOSTICS */
-
-func (r *ribsDB) Groups() ([]iface.GroupKey, error) {
-	res, err := r.db.Query("select id from groups")
-	if err != nil {
-		return nil, xerrors.Errorf("listing groups: %w", err)
-	}
-
-	var groups []iface.GroupKey
-	for res.Next() {
-		var id int64
-		err := res.Scan(&id)
-		if err != nil {
-			return nil, xerrors.Errorf("scanning group: %w", err)
-		}
-
-		groups = append(groups, id)
-	}
-
-	if err := res.Err(); err != nil {
-		return nil, xerrors.Errorf("iterating groups: %w", err)
-	}
-
-	if err := res.Close(); err != nil {
-		return nil, xerrors.Errorf("closing group iterator: %w", err)
-	}
-
-	return groups, nil
-}
-
-func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
-	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", gk)
-	if err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
-	}
-
-	var blocks int64
-	var bytes int64
-	var state iface.GroupState
-	var found bool
-
-	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &state)
-		if err != nil {
-			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
-		}
-
-		found = true
-
-		break
-	}
-
-	if err := res.Err(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("iterating groups: %w", err)
-	}
-
-	if err := res.Close(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("closing group iterator: %w", err)
-	}
-
-	if !found {
-		return iface.GroupMeta{}, xerrors.Errorf("group %d not found", gk)
-	}
-
-	dealMeta := make([]iface.DealMeta, 0)
-
-	res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
-	if err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
-	}
-
-	for res.Next() {
-		var dealUuid string
-		var provider int64
-		var sealed, failed, rejected bool
-		var startEpoch, endEpoch int64
-		var status *string
-		var sealStatus *string
-		var errMsg *string
-		var bytesRecv *int64
-		var txSize *int64
-		var pubCid *string
-		var dealID *int64
-
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
-		if err != nil {
-			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
-		}
-
-		dealMeta = append(dealMeta, iface.DealMeta{
-			UUID:       dealUuid,
-			Provider:   provider,
-			Sealed:     sealed,
-			Failed:     failed,
-			Rejected:   rejected,
-			StartEpoch: startEpoch,
-			EndEpoch:   endEpoch,
-			Status:     derefOr(status, ""),
-			SealStatus: derefOr(sealStatus, ""),
-			Error:      derefOr(errMsg, ""),
-			DealID:     derefOr(dealID, 0),
-			BytesRecv:  derefOr(bytesRecv, 0),
-			TxSize:     derefOr(txSize, 0),
-			PubCid:     derefOr(pubCid, ""),
-		})
-	}
-
-	sort.SliceStable(dealMeta, func(i, j int) bool {
-		return (dealMeta[i].Sealed && !dealMeta[j].Sealed) || (!dealMeta[i].Failed && dealMeta[j].Failed)
-	})
-
-	if err := res.Err(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("iterating deals: %w", err)
-	}
-
-	if err := res.Close(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("closing deals iterator: %w", err)
-	}
-
-	return iface.GroupMeta{
-		State: state,
-
-		MaxBlocks: maxGroupBlocks,
-		MaxBytes:  maxGroupSize,
-
-		Blocks: blocks,
-		Bytes:  bytes,
-
-		Deals: dealMeta,
-	}, nil
 }
 
 func (r *ribsDB) UpsertMarketActors(actors []int64) error {
@@ -1157,7 +805,66 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 	return nil
 }
 
-func derefOr[T any](v *T, def T) T {
+func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
+	dealMeta := make([]iface.DealMeta, 0)
+
+	res, err := r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
+	if err != nil {
+		return nil, xerrors.Errorf("getting group meta: %w", err)
+	}
+
+	for res.Next() {
+		var dealUuid string
+		var provider int64
+		var sealed, failed, rejected bool
+		var startEpoch, endEpoch int64
+		var status *string
+		var sealStatus *string
+		var errMsg *string
+		var bytesRecv *int64
+		var txSize *int64
+		var pubCid *string
+		var dealID *int64
+
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		dealMeta = append(dealMeta, iface.DealMeta{
+			UUID:       dealUuid,
+			Provider:   provider,
+			Sealed:     sealed,
+			Failed:     failed,
+			Rejected:   rejected,
+			StartEpoch: startEpoch,
+			EndEpoch:   endEpoch,
+			Status:     DerefOr(status, ""),
+			SealStatus: DerefOr(sealStatus, ""),
+			Error:      DerefOr(errMsg, ""),
+			DealID:     DerefOr(dealID, 0),
+			BytesRecv:  DerefOr(bytesRecv, 0),
+			TxSize:     DerefOr(txSize, 0),
+			PubCid:     DerefOr(pubCid, ""),
+		})
+	}
+
+	sort.SliceStable(dealMeta, func(i, j int) bool {
+		return (dealMeta[i].Sealed && !dealMeta[j].Sealed) || (!dealMeta[i].Failed && dealMeta[j].Failed)
+	})
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating deals: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing deals iterator: %w", err)
+	}
+
+	return dealMeta, nil
+}
+
+func DerefOr[T any](v *T, def T) T {
 	if v == nil {
 		return def
 	}

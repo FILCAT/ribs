@@ -3,10 +3,9 @@ package web
 import (
 	"context"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
-
-	"github.com/filecoin-project/go-jsonrpc"
 
 	"github.com/lotus-web3/ribs"
 )
@@ -32,49 +31,53 @@ func (rc *RIBSRpc) WalletWithdraw(ctx context.Context, amt abi.TokenAmount, to a
 }
 
 func (rc *RIBSRpc) Groups(ctx context.Context) ([]ribs.GroupKey, error) {
-	return rc.ribs.Diagnostics().Groups()
+	return rc.ribs.StorageDiag().Groups()
 }
 
 func (rc *RIBSRpc) GroupMeta(ctx context.Context, group ribs.GroupKey) (ribs.GroupMeta, error) {
-	return rc.ribs.Diagnostics().GroupMeta(group)
+	return rc.ribs.StorageDiag().GroupMeta(group)
+}
+
+func (rc *RIBSRpc) GroupDeals(ctx context.Context, group ribs.GroupKey) ([]ribs.DealMeta, error) {
+	return rc.ribs.DealDiag().GroupDeals(group)
 }
 
 func (rc *RIBSRpc) CrawlState(ctx context.Context) (ribs.CrawlState, error) {
-	return rc.ribs.Diagnostics().CrawlState(), nil
+	return rc.ribs.DealDiag().CrawlState(), nil
 }
 
 func (rc *RIBSRpc) CarUploadStats(ctx context.Context) (map[ribs.GroupKey]*ribs.UploadStats, error) {
-	return rc.ribs.Diagnostics().CarUploadStats(), nil
+	return rc.ribs.DealDiag().CarUploadStats(), nil
 }
 
 func (rc *RIBSRpc) ReachableProviders(ctx context.Context) ([]ribs.ProviderMeta, error) {
-	return rc.ribs.Diagnostics().ReachableProviders(), nil
+	return rc.ribs.DealDiag().ReachableProviders(), nil
 }
 
 func (rc *RIBSRpc) ProviderInfo(ctx context.Context, id int64) (ribs.ProviderInfo, error) {
-	return rc.ribs.Diagnostics().ProviderInfo(id)
+	return rc.ribs.DealDiag().ProviderInfo(id)
 }
 
 func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
-	return rc.ribs.Diagnostics().DealSummary()
+	return rc.ribs.DealDiag().DealSummary()
 }
 
 func (rc *RIBSRpc) TopIndexStats(ctx context.Context) (ribs.TopIndexStats, error) {
-	return rc.ribs.Diagnostics().TopIndexStats(ctx)
+	return rc.ribs.StorageDiag().TopIndexStats(ctx)
 }
 
 func (rc *RIBSRpc) GroupIOStats(ctx context.Context) (ribs.GroupIOStats, error) {
-	return rc.ribs.Diagnostics().GroupIOStats(), nil
+	return rc.ribs.StorageDiag().GroupIOStats(), nil
 }
 
 func (rc *RIBSRpc) GetGroupStats(ctx context.Context) (*ribs.GroupStats, error) {
-	return rc.ribs.Diagnostics().GetGroupStats()
+	return rc.ribs.StorageDiag().GetGroupStats()
 }
 
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
 
-	fgw, closer, err := ribs.Diagnostics().Filecoin(ctx)
+	fgw, closer, err := ribs.DealDiag().Filecoin(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

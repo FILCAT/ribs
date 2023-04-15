@@ -11,9 +11,9 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/impl"
 	ribsbstore "github.com/lotus-web3/ribs/integrations/blockstore"
 	"github.com/lotus-web3/ribs/integrations/web"
+	"github.com/lotus-web3/ribs/rbdeal"
 	"github.com/mitchellh/go-homedir"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
@@ -72,9 +72,9 @@ var (
 )
 
 func makeRibs(ri ribsIn) (ribs.RIBS, error) {
-	var opts []impl.OpenOption
+	var opts []rbdeal.OpenOption
 	if ri.H != nil {
-		opts = append(opts, impl.WithHostGetter(func(...libp2p.Option) (host.Host, error) {
+		opts = append(opts, rbdeal.WithHostGetter(func(...libp2p.Option) (host.Host, error) {
 			return ri.H, nil
 		}))
 	}
@@ -88,7 +88,7 @@ func makeRibs(ri ribsIn) (ribs.RIBS, error) {
 		return nil, xerrors.Errorf("expand data dir: %w", err)
 	}
 
-	r, err := impl.Open(dataDir, opts...)
+	r, err := rbdeal.Open(dataDir, opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("open ribs: %w", err)
 	}
