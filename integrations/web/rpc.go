@@ -28,11 +28,11 @@ func (rc *RIBSRpc) WalletWithdraw(ctx context.Context, amt abi.TokenAmount, to a
 }*/
 
 func (rc *RIBSRpc) Groups(ctx context.Context) ([]ribs.GroupKey, error) {
-	return rc.ribs.Diagnostics().Groups()
+	return rc.ribs.StorageDiag().Groups()
 }
 
 func (rc *RIBSRpc) GroupMeta(ctx context.Context, group ribs.GroupKey) (ribs.GroupMeta, error) {
-	return rc.ribs.Diagnostics().GroupMeta(group)
+	return rc.ribs.StorageDiag().GroupMeta(group)
 }
 
 /*func (rc *RIBSRpc) CrawlState(ctx context.Context) (ribs.CrawlState, error) {
@@ -57,15 +57,15 @@ func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
 */
 
 func (rc *RIBSRpc) TopIndexStats(ctx context.Context) (ribs.TopIndexStats, error) {
-	return rc.ribs.Diagnostics().TopIndexStats(ctx)
+	return rc.ribs.StorageDiag().TopIndexStats(ctx)
 }
 
 func (rc *RIBSRpc) GroupIOStats(ctx context.Context) (ribs.GroupIOStats, error) {
-	return rc.ribs.Diagnostics().GroupIOStats(), nil
+	return rc.ribs.StorageDiag().GroupIOStats(), nil
 }
 
 func (rc *RIBSRpc) GetGroupStats(ctx context.Context) (*ribs.GroupStats, error) {
-	return rc.ribs.Diagnostics().GetGroupStats()
+	return rc.ribs.StorageDiag().GetGroupStats()
 }
 
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {

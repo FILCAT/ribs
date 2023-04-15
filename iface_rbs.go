@@ -2,6 +2,8 @@ package ribs
 
 import (
 	"context"
+	"github.com/filecoin-project/go-jsonrpc"
+	"github.com/filecoin-project/lotus/api"
 	blocks "github.com/ipfs/go-block-format"
 	"io"
 
@@ -100,22 +102,32 @@ type Session interface {
 	Batch(ctx context.Context) Batch
 }
 
+type GroupSub func(group GroupKey, from, to GroupState)
+
 type Storage interface {
 	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
 	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
+
+	// todo offload
+
+	Subscribe(GroupSub)
 }
 
 type RBS interface {
 	Session(ctx context.Context) Session
 	Storage() Storage
+	StorageDiag() RBSDiag
+
 	io.Closer
 }
 
 type RIBS interface {
 	RBS
 
-	Diagnostics() Diag
-	//Wallet() Wallet
+	Wallet() Wallet
+	DealDiag() RIBSDiag
+
+	io.Closer
 }
 
 /* Deal diag */
@@ -135,58 +147,24 @@ type GroupMeta struct {
 	//Deals []DealMeta
 }
 
-/*type DealMeta struct {
-	UUID     string
-	Provider int64
-
-	Sealed, Failed, Rejected bool
-
-	StartEpoch, EndEpoch int64
-
-	Status     string
-	SealStatus string
-	Error      string
-	DealID     int64
-
-	BytesRecv int64
-	TxSize    int64
-	PubCid    string
-}*/
-/*
-type Wallet interface {
-	WalletInfo() (WalletInfo, error)
-
-	MarketAdd(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error)
-	MarketWithdraw(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error)
-
-	Withdraw(ctx context.Context, amount abi.TokenAmount, to address.Address) (cid.Cid, error)
-}
-*/
-/*type WalletInfo struct {
-	Addr string
-
-	DataCap string
-
-	Balance       string
-	MarketBalance string
-	MarketLocked  string
-}*/
-
-type Diag interface {
+type RBSDiag interface {
 	Groups() ([]GroupKey, error)
 	GroupMeta(gk GroupKey) (GroupMeta, error)
 
-	//CarUploadStats() map[GroupKey]*UploadStats
-	//DealSummary() (DealSummary, error)
 	TopIndexStats(context.Context) (TopIndexStats, error)
 	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
-	//ProviderInfo(id int64) (ProviderInfo, error)
+}
 
-	//CrawlState() CrawlState
-	//ReachableProviders() []ProviderMeta
+type RIBSDiag interface {
+	CarUploadStats() map[GroupKey]*UploadStats
+	DealSummary() (DealSummary, error)
 
-	//Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+	ProviderInfo(id int64) (ProviderInfo, error)
+	CrawlState() CrawlState
+	ReachableProviders() []ProviderMeta
+
+	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
 }
 
 type GroupStats struct {
@@ -207,56 +185,3 @@ type TopIndexStats struct {
 	Entries       int64
 	Writes, Reads int64
 }
-
-/*type CrawlState struct {
-	State string
-
-	At, Reachable, Total int64
-	Boost, BBswap, BHttp int64
-}*/
-
-/*type DealSummary struct {
-	NonFailed, InProgress, Done, Failed int64
-
-	TotalDataSize, TotalDealSize   int64
-	StoredDataSize, StoredDealSize int64
-}
-
-type UploadStats struct {
-	ActiveRequests int
-	UploadBytes    int64
-}*/
-
-/*type ProviderInfo struct {
-	Meta        ProviderMeta
-	RecentDeals []DealMeta
-}*/
-
-/*type ProviderMeta struct {
-	ID     int64
-	PingOk bool
-
-	BoostDeals     bool
-	BoosterHttp    bool
-	BoosterBitswap bool
-
-	IndexedSuccess int64
-	IndexedFail    int64
-
-	DealStarted  int64
-	DealSuccess  int64
-	DealFail     int64
-	DealRejected int64
-
-	RetrProbeSuccess int64
-	RetrProbeFail    int64
-	RetrProbeBlocks  int64
-	RetrProbeBytes   int64
-
-	// price in fil/gib/epoch
-	AskPrice         float64
-	AskVerifiedPrice float64
-
-	AskMinPieceSize float64
-	AskMaxPieceSize float64
-}*/

@@ -1,9 +1,11 @@
-package comment
+package rbdeal
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"github.com/filecoin-project/boost/storagemarket/types"
+	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
 	types2 "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
@@ -27,6 +29,10 @@ var (
 
 	dealPublishFinality abi.ChainEpoch = 60
 )
+
+type ribsDB struct {
+	db *sql.DB
+}
 
 const dbSchema = `
 /* deals */
@@ -280,7 +286,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 	return out, nil
 }
 
-/*func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
+func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
        indexed_success, indexed_fail,
        retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
@@ -346,7 +352,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 	}
 
 	return out
-}*/
+}
 
 func (r *ribsDB) GetNonFailedDealCount(group iface.GroupKey) (int, error) {
 	var count int
@@ -572,7 +578,7 @@ func (r *ribsDB) UpdateExpiredDeal(id string) error {
 	return nil
 }
 
-/*func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
+func (r *ribsDB) DealSummary() (iface.DealSummary, error) {
 	res, err := r.db.Query(`WITH deal_summary AS (
     SELECT
         d.group_id,
@@ -620,9 +626,9 @@ FROM
 	}
 
 	return ds, nil
-}*/
+}
 
-/*func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
+func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 	var pInfo iface.ProviderInfo
 	err := r.db.QueryRow(`
 		SELECT id, ping_ok, boost_deals, booster_http, booster_bitswap,
@@ -681,7 +687,7 @@ FROM
 	}
 
 	return pInfo, nil
-}*/
+}
 
 type dealParams struct {
 	CommP     []byte
@@ -729,13 +735,13 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 	return out, nil
 }
 
-/*func (r *ribsDB) UpsertMarketActors(actors []int64) error {
+func (r *ribsDB) UpsertMarketActors(actors []int64) error {
 	/*_, err := r.db.Exec(`
 	begin transaction;
 	    update providers set in_market = 0 where in_market = 1;
 	    insert into providers (address, in_market) values (?, 1) on conflict (address) do update set in_market = 1;
 	end transaction;
-	`, actors)* /
+	`, actors)*/
 
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -774,9 +780,8 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 	}
 
 	return nil
-}*/
+}
 
-/*
 func (r *ribsDB) UpdateProviderProtocols(provider int64, pres providerResult) error {
 	_, err := r.db.Exec(`
 	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ? where id = ?;
@@ -797,4 +802,11 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 	}
 
 	return nil
-}*/
+}
+
+func DerefOr[T any](v *T, def T) T {
+	if v == nil {
+		return def
+	}
+	return *v
+}

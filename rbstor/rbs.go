@@ -4,10 +4,7 @@ import (
 	"context"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/ributil"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
@@ -17,11 +14,10 @@ import (
 	"sync"
 )
 
-var log = logging.Logger("ribs")
+var log = logging.Logger("rbs")
 
 type openOptions struct {
 	workerGate chan struct{} // for testing
-	hostGetter func(...libp2p.Option) (host.Host, error)
 }
 
 type OpenOption func(*openOptions)
@@ -32,13 +28,7 @@ func WithWorkerGate(gate chan struct{}) OpenOption {
 	}
 }
 
-func WithHostGetter(hg func(...libp2p.Option) (host.Host, error)) OpenOption {
-	return func(o *openOptions) {
-		o.hostGetter = hg
-	}
-}
-
-func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
+func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
 	}
@@ -55,7 +45,6 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	opt := &openOptions{
 		workerGate: make(chan struct{}),
-		hostGetter: libp2p.New,
 	}
 	close(opt.workerGate)
 
@@ -63,218 +52,26 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		o(opt)
 	}
 
-	r := &ribs{
+	r := &rbs{
 		root:  root,
 		db:    db,
 		index: NewMeteredIndex(idx),
-
-		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
 
 		writableGroups: make(map[iface.GroupKey]*Group),
 
 		// all open groups (including all writable)
 		openGroups: make(map[iface.GroupKey]*Group),
 
-		//uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
-		//uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
-
 		tasks: make(chan task, 1024),
 
 		close:        make(chan struct{}),
 		workerClosed: make(chan struct{}),
-		/*spCrawlClosed:     make(chan struct{}),
-		marketWatchClosed: make(chan struct{}),*/
 	}
 
-	/*if !opt.disableDealMaking {
-		walletPath := "~/.ribswallet"
-
-		wallet, err := ributil.OpenWallet(walletPath)
-		if err != nil {
-			return nil, xerrors.Errorf("open wallet: %w", err)
-		}
-
-		defWallet, err := wallet.GetDefault()
-		if err != nil {
-			wl, err := wallet.WalletList(context.TODO())
-			if err != nil {
-				return nil, xerrors.Errorf("get wallet list: %w", err)
-			}
-
-			if len(wl) == 0 {
-				a, err := wallet.WalletNew(context.TODO(), "secp256k1")
-				if err != nil {
-					return nil, xerrors.Errorf("creating wallet: %w", err)
-				}
-
-				color.Yellow("--------------------------------------------------------------")
-				fmt.Println("CREATED NEW RIBS WALLET")
-				fmt.Println("ADDRESS: ", color.GreenString("%s", a))
-				fmt.Println("")
-				fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", walletPath)
-				fmt.Println("")
-				fmt.Println("Before using RIBS, you must fund your wallet with FIL.")
-				fmt.Println("You can also supply it with DataCap if you want to make")
-				fmt.Println("FIL+ deals.")
-				color.Yellow("--------------------------------------------------------------")
-
-				wl = append(wl, a)
-			}
-
-			if len(wl) != 1 {
-				return nil, xerrors.Errorf("no default wallet or more than one wallet: %#v", wl)
-			}
-
-			if err := wallet.SetDefault(wl[0]); err != nil {
-				return nil, xerrors.Errorf("setting default wallet: %w", err)
-			}
-
-			defWallet, err = wallet.GetDefault()
-			if err != nil {
-				return nil, xerrors.Errorf("getting default wallet: %w", err)
-			}
-		}
-
-		fmt.Println("RIBS Wallet: ", defWallet)
-
-		r.wallet = wallet
-
-		r.host, err = opt.hostGetter()
-		if err != nil {
-			return nil, xerrors.Errorf("creating host: %w", err)
-		}
-	}*/
-
 	go r.groupWorker(opt.workerGate)
-
-	/*if !opt.disableDealMaking {
-		//go r.spCrawler()
-		//go r.dealTracker(context.TODO())
-		//go r.watchMarket(context.TODO())
-		/*if err := r.setupCarServer(context.TODO(), r.host); err != nil {
-			return nil, xerrors.Errorf("setup car server: %w", err)
-		}* /
-	} else {
-		close(r.spCrawlClosed)
-		close(r.marketWatchClosed)
-	}*/
-
 	go r.resumeGroups(context.TODO())
 
 	return r, nil
-}
-
-func (r *ribs) groupWorker(gate <-chan struct{}) {
-	for {
-		<-gate
-		select {
-		case task := <-r.tasks:
-			r.workerExecTask(task)
-		case <-r.close:
-			close(r.workerClosed)
-			return
-		}
-	}
-}
-
-func (r *ribs) workerExecTask(toExec task) {
-	switch toExec.tt {
-	case taskTypeFinalize:
-
-		r.lk.Lock()
-		g, ok := r.openGroups[toExec.group]
-		if !ok {
-			r.lk.Unlock()
-			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-			return
-		}
-
-		err := g.Finalize(context.TODO())
-		r.lk.Unlock()
-		if err != nil {
-			log.Errorf("finalizing group: %s", err)
-		}
-		fallthrough
-	case taskTypeMakeVCAR:
-		r.lk.Lock()
-		g, ok := r.openGroups[toExec.group]
-		r.lk.Unlock()
-		if !ok {
-			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-			return
-		}
-
-		err := g.GenTopCar(context.TODO())
-		if err != nil {
-			log.Errorf("generating top car: %s", err)
-		}
-		fallthrough
-	case taskTypeGenCommP:
-		r.lk.Lock()
-		g, ok := r.openGroups[toExec.group]
-		r.lk.Unlock()
-		if !ok {
-			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-			return
-		}
-
-		err := g.GenCommP()
-		if err != nil {
-			log.Errorf("generating commP: %s", err)
-		}
-		//fallthrough
-		/*case taskTypeMakeMoreDeals:
-			if !r.doDeals {
-				return
-			}
-
-			r.lk.Lock()
-			g, ok := r.openGroups[toExec.group]
-			r.lk.Unlock()
-			if !ok {
-				log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-				return
-			}
-
-			dealInfo, err := r.db.GetDealParams(context.TODO(), toExec.group)
-			if err != nil {
-				log.Errorf("getting deal params: %s", err)
-				return
-			}
-
-			reqToken, err := r.makeCarRequestToken(context.TODO(), toExec.group, time.Hour*36, dealInfo.CarSize)
-			if err != nil {
-				log.Errorf("making car request token: %s", err)
-				return
-			}
-
-			err = g.MakeMoreDeals(context.TODO(), r.host, r.wallet, reqToken)
-			if err != nil {
-				log.Errorf("starting new deals: %s", err)
-			}
-			fallthrough
-		case taskMonitorDeals:
-			if !r.doDeals {
-				return
-			}
-
-			c, err := r.db.GetNonFailedDealCount(toExec.group)
-			if err != nil {
-				log.Errorf("getting non-failed deal count: %s", err)
-				return
-			}
-
-			if c < minimumReplicaCount {
-				go func() {
-					r.tasks <- task{
-						tt:    taskTypeMakeMoreDeals,
-						group: toExec.group,
-					}
-				}()
-			}
-		*/
-		// todo add a check-in task to some timed queue
-	}
 }
 
 type taskType int
@@ -283,8 +80,6 @@ const (
 	taskTypeFinalize taskType = iota
 	taskTypeMakeVCAR
 	taskTypeGenCommP
-	//taskTypeMakeMoreDeals
-	//taskMonitorDeals
 )
 
 type task struct {
@@ -292,43 +87,24 @@ type task struct {
 	group iface.GroupKey
 }
 
-type ribs struct {
+type rbs struct {
 	root string
 
 	// todo hide this db behind an interface
-	db    *ribsDB
+	db    *rbsDB
 	index *MeteredIndex
 
 	lk sync.Mutex
-
-	host   host.Host
-	wallet *ributil.LocalWallet
-
-	lotusRPCAddr string
-
-	//marketFundsLk        sync.Mutex
-	//cachedWalletInfo     *iface.WalletInfo
-	//lastWalletInfoUpdate time.Time
 
 	/* storage */
 
 	close        chan struct{}
 	workerClosed chan struct{}
-	//spCrawlClosed     chan struct{}
-	//marketWatchClosed chan struct{}
 
 	tasks chan task
 
 	openGroups     map[int64]*Group
 	writableGroups map[int64]*Group
-
-	/* sp tracker */
-	//crawlState atomic.Pointer[iface.CrawlState]
-
-	/* car uploads */
-	//uploadStats     map[iface.GroupKey]*iface.UploadStats
-	//uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
-	//uploadStatsLk   sync.Mutex
 
 	// diag cache
 	diagLk sync.Mutex
@@ -339,15 +115,9 @@ type ribs struct {
 	grpWriteSize   int64
 }
 
-/*func (r *ribs) Wallet() iface.Wallet {
-	return r
-}*/
-
-func (r *ribs) Close() error {
+func (r *rbs) Close() error {
 	close(r.close)
 	<-r.workerClosed
-	//<-r.spCrawlClosed
-	//<-r.marketWatchClosed
 
 	r.lk.Lock()
 	defer r.lk.Unlock()
@@ -367,7 +137,7 @@ func (r *ribs) Close() error {
 	return nil
 }
 
-func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
+func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
 	r.lk.Lock()
 	defer r.lk.Unlock()
 
@@ -404,7 +174,7 @@ func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb 
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
+			g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -422,7 +192,7 @@ func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb 
 		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
+	g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -432,7 +202,7 @@ func (r *ribs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb 
 	return selectedGroup, cb(g)
 }
 
-func (r *ribs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb func(group *Group) error) (err error) {
+func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb func(group *Group) error) (err error) {
 	r.lk.Lock()
 
 	// todo prefer
@@ -449,7 +219,7 @@ func (r *ribs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb f
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, r.lotusRPCAddr, group, blocks, bytes, jbhead, r.root, state, false)
+	g, err := OpenGroup(ctx, r.db, r.index, group, blocks, bytes, jbhead, r.root, state, false)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)
@@ -466,7 +236,7 @@ func (r *ribs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb f
 	return cb(g)
 }
 
-func (r *ribs) resumeGroup(group iface.GroupKey) {
+func (r *rbs) resumeGroup(group iface.GroupKey) {
 	sendTask := func(tt taskType) {
 		go func() {
 			r.tasks <- task{
@@ -492,11 +262,11 @@ func (r *ribs) resumeGroup(group iface.GroupKey) {
 }
 
 type ribSession struct {
-	r *ribs
+	r *rbs
 }
 
 type ribBatch struct {
-	r *ribs
+	r *rbs
 
 	currentWriteTarget iface.GroupKey
 	toFlush            map[iface.GroupKey]struct{}
@@ -505,7 +275,7 @@ type ribBatch struct {
 	currentReadTarget iface.GroupKey
 }
 
-func (r *ribs) Session(ctx context.Context) iface.Session {
+func (r *rbs) Session(ctx context.Context) iface.Session {
 	return &ribSession{
 		r: r,
 	}
@@ -624,26 +394,7 @@ func (r *ribBatch) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (r *ribs) resumeGroups(ctx context.Context) {
-	gs, err := r.db.GroupStates()
-	if err != nil {
-		panic(err)
-	}
-
-	for g, st := range gs {
-		switch st {
-		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateHasCommp:
-			if err := r.withReadableGroup(ctx, g, func(g *Group) error {
-				return nil
-			}); err != nil {
-				log.Errorw("failed to resume group", "group", g, "err", err)
-				return
-			}
-		}
-	}
-}
-
-func (r *ribs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
+func (r *rbs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
 	var out []iface.GroupKey
 
 	err := r.index.GetGroups(ctx, []mh.Multihash{hash}, func(i [][]iface.GroupKey) (bool, error) {
@@ -666,15 +417,15 @@ func (r *ribs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.Group
 	return out, nil
 }
 
-func (r *ribs) ReadCar(ctx context.Context, group iface.GroupKey, out io.Writer) error {
+func (r *rbs) ReadCar(ctx context.Context, group iface.GroupKey, out io.Writer) error {
 	return r.withReadableGroup(ctx, group, func(g *Group) error {
 		_, _, err := g.writeCar(out)
 		return err
 	})
 }
 
-func (r *ribs) Storage() iface.Storage {
+func (r *rbs) Storage() iface.Storage {
 	return r
 }
 
-var _ iface.RIBS = &ribs{}
+var _ iface.RBS = &rbs{}

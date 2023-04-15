@@ -92,7 +92,7 @@ func TestFullGroup(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	gs, err := ri.Diagnostics().GroupMeta(1)
+	gs, err := ri.StorageDiag().GroupMeta(1)
 	require.NoError(t, err)
 	require.Equal(t, iface.GroupStateFull, gs.State)
 
@@ -105,7 +105,7 @@ func TestFullGroup(t *testing.T) {
 	workerGate <- struct{}{} // trigger a worker to run for one cycle
 
 	require.Eventually(t, func() bool {
-		gs, err := ri.Diagnostics().GroupMeta(1)
+		gs, err := ri.StorageDiag().GroupMeta(1)
 		require.NoError(t, err)
 		fmt.Println("state now ", gs.State)
 		return gs.State == iface.GroupStateVRCARDone
@@ -117,7 +117,7 @@ func TestFullGroup(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	err = ri.(*ribs).openGroups[1].writeCar(f)
+	err = ri.(*rbs).openGroups[1].writeCar(f)
 	require.NoError(t, err)*/
 
 	require.NoError(t, ri.Close())

@@ -1,4 +1,4 @@
-package comment
+package rbdeal
 
 import (
 	"bytes"
@@ -30,6 +30,11 @@ const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 
 var verified = true
 
+var (
+	minimumReplicaCount = 5
+	targetReplicaCount  = 7
+)
+
 type ErrRejected struct {
 	Reason string
 }
@@ -38,7 +43,14 @@ func (e ErrRejected) Error() string {
 	return fmt.Sprintf("deal proposal rejected: %s", e.Reason)
 }
 
-func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
+type ribsGroup struct {
+	id iface.GroupKey
+	db *ribsDB
+
+	lotusRPCAddr string
+}
+
+func (m *ribsGroup) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
 	provs, err := m.db.SelectDealProviders(m.id)
 	if err != nil {
 		return xerrors.Errorf("select deal providers: %w", err)
@@ -230,11 +242,6 @@ func (m *Group) MakeMoreDeals(ctx context.Context, h host.Host, w *ributil.Local
 		}*/
 
 		log.Errorw("failed to make deal with provider", "provider", fmt.Sprintf("f0%d", prov.id), "error", err)
-	}
-
-	// move to deals made state
-	if err := m.advanceState(ctx, iface.GroupStateDealsInProgress); err != nil {
-		return xerrors.Errorf("mark level index dropped: %w", err)
 	}
 
 	return nil

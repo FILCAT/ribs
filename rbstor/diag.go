@@ -2,23 +2,20 @@ package rbstor
 
 import (
 	"context"
-	"github.com/filecoin-project/go-jsonrpc"
-	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/api/client"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"sync/atomic"
 )
 
-func (r *ribs) Diagnostics() iface.Diag {
+func (r *rbs) StorageDiag() iface.RBSDiag {
 	return r
 }
 
-func (r *ribs) Groups() ([]iface.GroupKey, error) {
+func (r *rbs) Groups() ([]iface.GroupKey, error) {
 	return r.db.Groups()
 }
 
-func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
+func (r *rbs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	m, err := r.db.GroupMeta(gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("get group meta: %w", err)
@@ -38,7 +35,7 @@ func (r *ribs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	return m, nil
 }
 
-func (r *ribs) GetGroupStats() (*iface.GroupStats, error) {
+func (r *rbs) GetGroupStats() (*iface.GroupStats, error) {
 	gs, err := r.db.GetGroupStats()
 	if err != nil {
 		return nil, err
@@ -52,7 +49,7 @@ func (r *ribs) GetGroupStats() (*iface.GroupStats, error) {
 	return gs, nil
 }
 
-func (r *ribs) GroupIOStats() iface.GroupIOStats {
+func (r *rbs) GroupIOStats() iface.GroupIOStats {
 	r.lk.Lock()
 	defer r.lk.Unlock()
 
@@ -80,24 +77,7 @@ func (r *ribs) GroupIOStats() iface.GroupIOStats {
 	return stats
 }
 
-/*func (r *ribs) CrawlState() iface.CrawlState {
-	return *r.crawlState.Load()
-}
-
-func (r *ribs) ReachableProviders() []iface.ProviderMeta {
-	return r.db.ReachableProviders()
-}
-
-func (r *ribs) ProviderInfo(id int64) (iface.ProviderInfo, error) {
-	return r.db.ProviderInfo(id)
-}*/
-
-/*
-	func (r *ribs) DealSummary() (iface.DealSummary, error) {
-		return r.db.DealSummary()
-	}
-*/
-func (r *ribs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
+func (r *rbs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
 	s, err := r.index.EstimateSize(ctx)
 	if err != nil {
 		return iface.TopIndexStats{}, xerrors.Errorf("estimate size: %w", err)
@@ -108,13 +88,4 @@ func (r *ribs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
 		Writes:  atomic.LoadInt64(&r.index.writes),
 		Reads:   atomic.LoadInt64(&r.index.reads),
 	}, nil
-}
-
-func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	return gw, closer, nil
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/lotus-web3/ribs"
 	ribsbstore "github.com/lotus-web3/ribs/integrations/blockstore"
 	"github.com/lotus-web3/ribs/integrations/web"
-	"github.com/lotus-web3/ribs/rbstor"
+	"github.com/lotus-web3/ribs/rbdeal"
 	"github.com/mitchellh/go-homedir"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
@@ -72,9 +72,9 @@ var (
 )
 
 func makeRibs(ri ribsIn) (ribs.RIBS, error) {
-	var opts []rbstor.OpenOption
+	var opts []rbdeal.OpenOption
 	if ri.H != nil {
-		opts = append(opts, rbstor.WithHostGetter(func(...libp2p.Option) (host.Host, error) {
+		opts = append(opts, rbdeal.WithHostGetter(func(...libp2p.Option) (host.Host, error) {
 			return ri.H, nil
 		}))
 	}
@@ -88,7 +88,7 @@ func makeRibs(ri ribsIn) (ribs.RIBS, error) {
 		return nil, xerrors.Errorf("expand data dir: %w", err)
 	}
 
-	r, err := rbstor.Open(dataDir, opts...)
+	r, err := rbdeal.Open(dataDir, opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("open ribs: %w", err)
 	}

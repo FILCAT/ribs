@@ -66,32 +66,13 @@ SELECT
     SUM(CASE WHEN g_state = 6 THEN bytes ELSE 0 END) AS offloaded_data_size
 FROM 
     groups;
-
-/* top level index */
-
-create table if not exists top_index
-(
-    hash    BLOB not null,
-    group_id integer
-    constraint index_groups_id_fk
-        references groups,
-    constraint index_pk
-        primary key (hash, group_id) on conflict ignore
-)
-    without rowid;
-
-create index if not exists index_group_index
-    on top_index (group_id);
-
-create index if not exists index_hash_index
-    on top_index (hash);
 `
 
-type ribsDB struct {
+type rbsDB struct {
 	db *sql.DB
 }
 
-func openRibsDB(root string) (*ribsDB, error) {
+func openRibsDB(root string) (*rbsDB, error) {
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
@@ -109,12 +90,12 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
 
-	return &ribsDB{
+	return &rbsDB{
 		db: db,
 	}, nil
 }
 
-func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
+func (r *rbsDB) GetGroupStats() (*iface.GroupStats, error) {
 	var gs iface.GroupStats
 	err := r.db.QueryRow(`SELECT group_count, total_data_size, non_offloaded_data_size, offloaded_data_size FROM group_stats_view`).Scan(&gs.GroupCount, &gs.TotalDataSize, &gs.NonOffloadedDataSize, &gs.OffloadedDataSize)
 	if err != nil {
@@ -123,7 +104,7 @@ func (r *ribsDB) GetGroupStats() (*iface.GroupStats, error) {
 	return &gs, nil
 }
 
-func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, err error) {
+func (r *rbsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, err error) {
 	res, err := r.db.Query("select id, blocks, bytes, jb_recorded_head, g_state from groups where g_state = 0")
 	if err != nil {
 		return 0, 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
@@ -150,7 +131,7 @@ func (r *ribsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbh
 	return selectedGroup, blocks, bytes, jbhead, state, nil
 }
 
-func (r *ribsDB) CreateGroup() (out iface.GroupKey, err error) {
+func (r *rbsDB) CreateGroup() (out iface.GroupKey, err error) {
 	err = r.db.QueryRow("insert into groups (blocks, bytes, g_state, jb_recorded_head) values (0, 0, 0, 0) returning id").Scan(&out)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("creating group entry: %w", err)
@@ -159,7 +140,7 @@ func (r *ribsDB) CreateGroup() (out iface.GroupKey, err error) {
 	return
 }
 
-func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, state iface.GroupState, err error) {
+func (r *rbsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, state iface.GroupState, err error) {
 	res, err := r.db.Query("select blocks, bytes, jb_recorded_head, g_state from groups where id = ?", gid)
 	if err != nil {
 		return 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
@@ -191,7 +172,7 @@ func (r *ribsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, sta
 	return blocks, bytes, jbhead, state, nil
 }
 
-func (r *ribsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error) {
+func (r *rbsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error) {
 	res, err := r.db.Query("select id, g_state from groups")
 	if err != nil {
 		return nil, xerrors.Errorf("finding writable groups: %w", err)
@@ -220,7 +201,7 @@ func (r *ribsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err erro
 	return gs, nil
 }
 
-func (r *ribsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state iface.GroupState, commBlk, commSz, at int64) error {
+func (r *rbsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state iface.GroupState, commBlk, commSz, at int64) error {
 	_, err := r.db.ExecContext(ctx, `begin transaction;
 		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;
 		commit;`, commBlk, commSz, state, at, id)
@@ -231,7 +212,7 @@ func (r *ribsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state ifac
 	return nil
 }
 
-func (r *ribsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state iface.GroupState) error {
+func (r *rbsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state iface.GroupState) error {
 	_, err := r.db.ExecContext(ctx, `update groups set g_state = ? where id = ?;`, state, id)
 	if err != nil {
 		return xerrors.Errorf("update group state: %w", err)
@@ -240,7 +221,7 @@ func (r *ribsDB) SetGroupState(ctx context.Context, id iface.GroupKey, state ifa
 	return nil
 }
 
-func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64, root cid.Cid, carSize int64) error {
+func (r *rbsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.GroupState, commp []byte, paddedPieceSize int64, root cid.Cid, carSize int64) error {
 	_, err := r.db.ExecContext(ctx, `update groups set commp = ?, piece_size = ?, root = ?, car_size = ?, g_state = ? where id = ?;`,
 		commp[:], paddedPieceSize, root.Bytes(), carSize, state, id)
 	if err != nil {
@@ -252,7 +233,7 @@ func (r *ribsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.Gr
 
 /* DIAGNOSTICS */
 
-func (r *ribsDB) Groups() ([]iface.GroupKey, error) {
+func (r *rbsDB) Groups() ([]iface.GroupKey, error) {
 	res, err := r.db.Query("select id from groups")
 	if err != nil {
 		return nil, xerrors.Errorf("listing groups: %w", err)
@@ -280,7 +261,7 @@ func (r *ribsDB) Groups() ([]iface.GroupKey, error) {
 	return groups, nil
 }
 
-func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
+func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
@@ -380,11 +361,4 @@ func (r *ribsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 		//Deals: dealMeta,
 	}, nil
-}
-
-func DerefOr[T any](v *T, def T) T {
-	if v == nil {
-		return def
-	}
-	return *v
 }
