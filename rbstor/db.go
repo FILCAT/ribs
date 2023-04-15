@@ -72,20 +72,25 @@ type rbsDB struct {
 	db *sql.DB
 }
 
-func openRibsDB(root string) (*rbsDB, error) {
-	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
-	if err != nil {
-		return nil, xerrors.Errorf("open db: %w", err)
+func openRibsDB(root string, opt *sql.DB) (*rbsDB, error) {
+	db := opt
+	if db == nil {
+		var err error
+		db, err = sql.Open("sqlite3", filepath.Join(root, "store.db"))
+		if err != nil {
+			return nil, xerrors.Errorf("open db: %w", err)
+
+		}
 	}
 
 	for _, pragma := range pragmas {
-		_, err = db.Exec(pragma)
+		_, err := db.Exec(pragma)
 		if err != nil {
 			return nil, xerrors.Errorf("exec pragma: %w", err)
 		}
 	}
 
-	_, err = db.Exec(dbSchema)
+	_, err := db.Exec(dbSchema)
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}

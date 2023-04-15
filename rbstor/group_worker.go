@@ -36,6 +36,9 @@ func (r *rbs) workerExecTask(toExec task) {
 		if err != nil {
 			log.Errorf("finalizing group: %s", err)
 		}
+
+		r.sendSub(toExec.group, iface.GroupStateFull, iface.GroupStateLevelIndexDropped)
+
 		fallthrough
 	case taskTypeMakeVCAR:
 		r.lk.Lock()
@@ -50,6 +53,9 @@ func (r *rbs) workerExecTask(toExec task) {
 		if err != nil {
 			log.Errorf("generating top car: %s", err)
 		}
+
+		r.sendSub(toExec.group, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone)
+
 		fallthrough
 	case taskTypeGenCommP:
 		r.lk.Lock()
@@ -64,12 +70,16 @@ func (r *rbs) workerExecTask(toExec task) {
 		if err != nil {
 			log.Errorf("generating commP: %s", err)
 		}
+
+		r.sendSub(toExec.group, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals)
 	}
 }
 
 func (r *rbs) Subscribe(sub iface.GroupSub) {
-	//TODO implement me
-	panic("implement me")
+	r.subLk.Lock()
+	defer r.subLk.Unlock()
+
+	r.subs = append(r.subs, sub)
 }
 
 func (r *rbs) resumeGroups(ctx context.Context) {
@@ -88,5 +98,41 @@ func (r *rbs) resumeGroups(ctx context.Context) {
 				return
 			}
 		}
+	}
+}
+
+func (r *rbs) resumeGroup(group iface.GroupKey) {
+	sendTask := func(tt taskType) {
+		go func() {
+			r.tasks <- task{
+				tt:    tt,
+				group: group,
+			}
+		}()
+	}
+
+	r.sendSub(group, r.openGroups[group].state, r.openGroups[group].state)
+
+	switch r.openGroups[group].state {
+	case iface.GroupStateWritable: // nothing to do
+	case iface.GroupStateFull:
+		sendTask(taskTypeFinalize)
+	case iface.GroupStateBSSTExists:
+		sendTask(taskTypeMakeVCAR)
+	case iface.GroupStateLevelIndexDropped:
+		sendTask(taskTypeMakeVCAR)
+	case iface.GroupStateVRCARDone:
+		sendTask(taskTypeGenCommP)
+	case iface.GroupStateLocalReadyForDeals:
+	case iface.GroupStateOffloaded:
+	}
+}
+
+func (r *rbs) sendSub(group iface.GroupKey, old, new iface.GroupState) {
+	r.subLk.Lock()
+	defer r.subLk.Unlock()
+
+	for _, sub := range r.subs {
+		sub(group, old, new)
 	}
 }

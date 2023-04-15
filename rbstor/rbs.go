@@ -2,6 +2,7 @@ package rbstor
 
 import (
 	"context"
+	"database/sql"
 	blocks "github.com/ipfs/go-block-format"
 	logging "github.com/ipfs/go-log/v2"
 	iface "github.com/lotus-web3/ribs"
@@ -18,6 +19,7 @@ var log = logging.Logger("rbs")
 
 type openOptions struct {
 	workerGate chan struct{} // for testing
+	db         *sql.DB
 }
 
 type OpenOption func(*openOptions)
@@ -28,14 +30,15 @@ func WithWorkerGate(gate chan struct{}) OpenOption {
 	}
 }
 
+func WithDB(db *sql.DB) OpenOption {
+	return func(o *openOptions) {
+		o.db = db
+	}
+}
+
 func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
-	}
-
-	db, err := openRibsDB(root)
-	if err != nil {
-		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
 	idx, err := NewPebbleIndex(filepath.Join(root, "index.pebble"))
@@ -50,6 +53,11 @@ func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 
 	for _, o := range opts {
 		o(opt)
+	}
+
+	db, err := openRibsDB(root, opt.db)
+	if err != nil {
+		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
 	r := &rbs{
@@ -95,6 +103,10 @@ type rbs struct {
 	index *MeteredIndex
 
 	lk sync.Mutex
+
+	/* subs */
+	subLk sync.Mutex
+	subs  []iface.GroupSub
 
 	/* storage */
 
@@ -234,31 +246,6 @@ func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb fu
 
 	r.lk.Unlock()
 	return cb(g)
-}
-
-func (r *rbs) resumeGroup(group iface.GroupKey) {
-	sendTask := func(tt taskType) {
-		go func() {
-			r.tasks <- task{
-				tt:    tt,
-				group: group,
-			}
-		}()
-	}
-
-	switch r.openGroups[group].state {
-	case iface.GroupStateWritable: // nothing to do
-	case iface.GroupStateFull:
-		sendTask(taskTypeFinalize)
-	case iface.GroupStateBSSTExists:
-		sendTask(taskTypeMakeVCAR)
-	case iface.GroupStateLevelIndexDropped:
-		sendTask(taskTypeMakeVCAR)
-	case iface.GroupStateVRCARDone:
-		sendTask(taskTypeGenCommP)
-	case iface.GroupStateLocalReadyForDeals:
-	case iface.GroupStateOffloaded:
-	}
 }
 
 type ribSession struct {

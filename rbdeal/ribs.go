@@ -11,6 +11,7 @@ import (
 	"github.com/lotus-web3/ribs/rbstor"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,6 @@ import (
 var log = logging.Logger("ribs")
 
 type openOptions struct {
-	workerGate chan struct{} // for testing
 	hostGetter func(...libp2p.Option) (host.Host, error)
 }
 
@@ -67,22 +67,31 @@ func (r *ribs) Wallet() iface.Wallet {
 }
 
 func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
-	opt := &openOptions{
-		workerGate: make(chan struct{}),
+	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
+		return nil, xerrors.Errorf("make root dir: %w", err)
 	}
-	close(opt.workerGate)
+
+	opt := &openOptions{
+		hostGetter: libp2p.New,
+	}
 
 	for _, o := range opts {
 		o(opt)
 	}
 
-	rbs, err := rbstor.Open(root)
+	db, err := openRibsDB(root)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("open db: %w", err)
+	}
+
+	rbs, err := rbstor.Open(root, rbstor.WithDB(db.db))
+	if err != nil {
+		return nil, xerrors.Errorf("open RBS: %w", err)
 	}
 
 	r := &ribs{
 		RBS: rbs,
+		db:  db,
 
 		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
 
@@ -168,35 +177,39 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 func (r *ribs) subGroupChanges() {
 	r.Storage().Subscribe(func(group iface.GroupKey, from, to iface.GroupState) {
-		if to == iface.GroupStateLocalReadyForDeals {
-			c, err := r.db.GetNonFailedDealCount(group)
-			if err != nil {
-				log.Errorf("getting non-failed deal count: %s", err)
-				return
-			}
-
-			if c >= minimumReplicaCount {
-				return
-			}
-
-			dealInfo, err := r.db.GetDealParams(context.TODO(), group)
-			if err != nil {
-				log.Errorf("getting deal params: %s", err)
-				return
-			}
-
-			reqToken, err := r.makeCarRequestToken(context.TODO(), group, time.Hour*36, dealInfo.CarSize)
-			if err != nil {
-				log.Errorf("making car request token: %s", err)
-				return
-			}
-
-			err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet, reqToken)
-			if err != nil {
-				log.Errorf("starting new deals: %s", err)
-			}
-		}
+		go r.onSub(group, from, to)
 	})
+}
+
+func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
+	if to == iface.GroupStateLocalReadyForDeals {
+		c, err := r.db.GetNonFailedDealCount(group)
+		if err != nil {
+			log.Errorf("getting non-failed deal count: %s", err)
+			return
+		}
+
+		if c >= minimumReplicaCount {
+			return
+		}
+
+		dealInfo, err := r.db.GetDealParams(context.TODO(), group)
+		if err != nil {
+			log.Errorf("getting deal params: %s", err)
+			return
+		}
+
+		reqToken, err := r.makeCarRequestToken(context.TODO(), group, time.Hour*36, dealInfo.CarSize)
+		if err != nil {
+			log.Errorf("making car request token: %s", err)
+			return
+		}
+
+		err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet, reqToken)
+		if err != nil {
+			log.Errorf("starting new deals: %s", err)
+		}
+	}
 }
 
 func (r *ribs) Close() error {
