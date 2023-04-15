@@ -13,6 +13,7 @@ import (
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 	"path/filepath"
+	"sort"
 )
 
 const mFil = 1_000_000_000_000_000
@@ -802,6 +803,65 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 	}
 
 	return nil
+}
+
+func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
+	dealMeta := make([]iface.DealMeta, 0)
+
+	res, err := r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
+	if err != nil {
+		return nil, xerrors.Errorf("getting group meta: %w", err)
+	}
+
+	for res.Next() {
+		var dealUuid string
+		var provider int64
+		var sealed, failed, rejected bool
+		var startEpoch, endEpoch int64
+		var status *string
+		var sealStatus *string
+		var errMsg *string
+		var bytesRecv *int64
+		var txSize *int64
+		var pubCid *string
+		var dealID *int64
+
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+
+		dealMeta = append(dealMeta, iface.DealMeta{
+			UUID:       dealUuid,
+			Provider:   provider,
+			Sealed:     sealed,
+			Failed:     failed,
+			Rejected:   rejected,
+			StartEpoch: startEpoch,
+			EndEpoch:   endEpoch,
+			Status:     DerefOr(status, ""),
+			SealStatus: DerefOr(sealStatus, ""),
+			Error:      DerefOr(errMsg, ""),
+			DealID:     DerefOr(dealID, 0),
+			BytesRecv:  DerefOr(bytesRecv, 0),
+			TxSize:     DerefOr(txSize, 0),
+			PubCid:     DerefOr(pubCid, ""),
+		})
+	}
+
+	sort.SliceStable(dealMeta, func(i, j int) bool {
+		return (dealMeta[i].Sealed && !dealMeta[j].Sealed) || (!dealMeta[i].Failed && dealMeta[j].Failed)
+	})
+
+	if err := res.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating deals: %w", err)
+	}
+
+	if err := res.Close(); err != nil {
+		return nil, xerrors.Errorf("closing deals iterator: %w", err)
+	}
+
+	return dealMeta, nil
 }
 
 func DerefOr[T any](v *T, def T) T {

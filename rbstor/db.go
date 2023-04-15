@@ -295,61 +295,6 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		return iface.GroupMeta{}, xerrors.Errorf("group %d not found", gk)
 	}
 
-	//dealMeta := make([]iface.DealMeta, 0)
-
-	/*res, err = r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
-	if err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
-	}
-
-	for res.Next() {
-		var dealUuid string
-		var provider int64
-		var sealed, failed, rejected bool
-		var startEpoch, endEpoch int64
-		var status *string
-		var sealStatus *string
-		var errMsg *string
-		var bytesRecv *int64
-		var txSize *int64
-		var pubCid *string
-		var dealID *int64
-
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
-		if err != nil {
-			return iface.GroupMeta{}, xerrors.Errorf("scanning deal: %w", err)
-		}
-
-		dealMeta = append(dealMeta, iface.DealMeta{
-			UUID:       dealUuid,
-			Provider:   provider,
-			Sealed:     sealed,
-			Failed:     failed,
-			Rejected:   rejected,
-			StartEpoch: startEpoch,
-			EndEpoch:   endEpoch,
-			Status:     DerefOr(status, ""),
-			SealStatus: DerefOr(sealStatus, ""),
-			Error:      DerefOr(errMsg, ""),
-			DealID:     DerefOr(dealID, 0),
-			BytesRecv:  DerefOr(bytesRecv, 0),
-			TxSize:     DerefOr(txSize, 0),
-			PubCid:     DerefOr(pubCid, ""),
-		})
-	}
-
-	sort.SliceStable(dealMeta, func(i, j int) bool {
-		return (dealMeta[i].Sealed && !dealMeta[j].Sealed) || (!dealMeta[i].Failed && dealMeta[j].Failed)
-	})
-
-	if err := res.Err(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("iterating deals: %w", err)
-	}
-
-	if err := res.Close(); err != nil {
-		return iface.GroupMeta{}, xerrors.Errorf("closing deals iterator: %w", err)
-	}*/
-
 	return iface.GroupMeta{
 		State: state,
 
@@ -358,7 +303,5 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 		Blocks: blocks,
 		Bytes:  bytes,
-
-		//Deals: dealMeta,
 	}, nil
 }

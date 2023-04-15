@@ -145,7 +145,20 @@ function Groups() {
                     return { ...deal, GroupKey: groupKey }
                 })
             );
-            setGroups(groupMetas);
+
+            // GroupDeals
+            let groupDeals = await Promise.all(
+                groupKeys.map(async (groupKey) => {
+                    let deals = await RibsRPC.call("GroupDeals", [groupKey])
+                    return { GroupKey: groupKey, Deals: deals }
+                })
+            );
+
+            let groupData = groupMetas.map((groupMeta) => {
+                return { ...groupMeta, Deals: groupDeals.find((groupDeal) => groupDeal.GroupKey === groupMeta.GroupKey).Deals }
+            });
+
+            setGroups(groupData);
 
             const head = await RibsRPC.callFil("ChainHead");
             setHeadHeight(head.Height);

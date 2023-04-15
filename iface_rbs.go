@@ -144,8 +144,6 @@ type GroupMeta struct {
 
 	ReadBlocks, ReadBytes   int64
 	WriteBlocks, WriteBytes int64
-
-	//Deals []DealMeta
 }
 
 type RBSDiag interface {
@@ -160,6 +158,7 @@ type RBSDiag interface {
 type RIBSDiag interface {
 	CarUploadStats() map[GroupKey]*UploadStats
 	DealSummary() (DealSummary, error)
+	GroupDeals(gk GroupKey) ([]DealMeta, error)
 
 	ProviderInfo(id int64) (ProviderInfo, error)
 	CrawlState() CrawlState

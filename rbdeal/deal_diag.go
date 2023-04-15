@@ -29,6 +29,10 @@ func (r *ribs) DealSummary() (iface.DealSummary, error) {
 	return r.db.DealSummary()
 }
 
+func (r *ribs) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
+	return r.db.GroupDeals(gk)
+}
+
 func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
