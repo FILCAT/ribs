@@ -109,8 +109,6 @@ type Storage interface {
 	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
 	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
 
-	// todo offload
-
 	Subscribe(GroupSub)
 }
 

@@ -48,7 +48,7 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 	opts := info.FXOptions
 	opts = append(opts,
 		fx.Provide(makeRibs),
-		fx.Provide(ribsBlockstores),
+		fx.Provide(ribsBlockstore),
 
 		fx.Decorate(func(rbs *ribsbstore.Blockstore) node.BaseBlocks {
 			return rbs
@@ -111,8 +111,11 @@ func makeRibs(ri ribsIn) (ribs.RIBS, error) {
 	return r, nil
 }
 
-func ribsBlockstores(r ribs.RIBS, lc fx.Lifecycle) *ribsbstore.Blockstore {
+func ribsBlockstore(r ribs.RIBS, lc fx.Lifecycle) *ribsbstore.Blockstore {
 	rbs := ribsbstore.New(context.TODO(), r)
+
+	// assert interface
+	var _ blockstore.Blockstore = rbs
 
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

@@ -34,6 +34,8 @@ type Blockstore struct {
 	stop, stopped chan struct{}
 }
 
+var _ blockstore.Blockstore = &Blockstore{}
+
 func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 	b := &Blockstore{
 		r:    r,
@@ -252,5 +254,3 @@ func (b *Blockstore) Close() error {
 	<-b.stopped
 	return nil
 }
-
-var _ blockstore.Blockstore = &Blockstore{}
