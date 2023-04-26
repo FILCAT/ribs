@@ -550,7 +550,6 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 	}
 
 	entBuf := pool.Get(1 << 20)
-	defer pool.Put(entBuf)
 
 	for i := range c {
 		if locs[i] == -1 {
@@ -581,10 +580,13 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 			return xerrors.Errorf("parsing cid: %w", err)
 		}
 
+		// NOTE: THIS callback MAY UNLOCK THE LOG LOCK
 		if err := cb(i, true, entBuf[n:entLen]); err != nil {
 			return err
 		}
 	}
+
+	pool.Put(entBuf)
 
 	return nil
 }
@@ -734,6 +736,9 @@ func (j *CarLog) genTopCar() error {
 			break
 		}
 	}
+	if err != nil {
+		return xerrors.Errorf("flushing buffered data: %w", err)
+	}
 	if err := j.data.Sync(); err != nil {
 		return xerrors.Errorf("sync data: %w", err)
 	}
@@ -815,6 +820,9 @@ func (j *CarLog) genTopCar() error {
 		if err != io.ErrShortWrite {
 			break
 		}
+	}
+	if err != nil {
+		return xerrors.Errorf("flushing buffered data: %w", err)
 	}
 	if err := j.data.Sync(); err != nil {
 		return xerrors.Errorf("sync data: %w", err)

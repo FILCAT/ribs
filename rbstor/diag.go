@@ -55,15 +55,20 @@ func (r *rbs) GroupIOStats() iface.GroupIOStats {
 
 	// first update global counters
 	for _, group := range r.openGroups {
-		r.grpReadBlocks += group.readBlocks - group.readBlocksSnap
-		r.grpReadSize += group.readSize - group.readSizeSnap
-		r.grpWriteBlocks += group.writeBlocks - group.writeBlocksSnap
-		r.grpWriteSize += group.writeSize - group.writeSizeSnap
+		readBlocks := atomic.LoadInt64(&group.readBlocks)
+		readSize := atomic.LoadInt64(&group.readSize)
+		writeBlocks := atomic.LoadInt64(&group.writeBlocks)
+		writeSize := atomic.LoadInt64(&group.writeSize)
 
-		group.readBlocksSnap = group.readBlocks
-		group.readSizeSnap = group.readSize
-		group.writeBlocksSnap = group.writeBlocks
-		group.writeSizeSnap = group.writeSize
+		r.grpReadBlocks += readBlocks - group.readBlocksSnap
+		r.grpReadSize += readSize - group.readSizeSnap
+		r.grpWriteBlocks += writeBlocks - group.writeBlocksSnap
+		r.grpWriteSize += writeSize - group.writeSizeSnap
+
+		group.readBlocksSnap = readBlocks
+		group.readSizeSnap = readSize
+		group.writeBlocksSnap = writeBlocks
+		group.writeSizeSnap = writeSize
 	}
 
 	// then return the global counters
