@@ -35,19 +35,6 @@ func (m *Group) Finalize(ctx context.Context) error {
 		return xerrors.Errorf("removing leveldb index: %w", err)
 	}
 
-	if err := m.advanceState(ctx, iface.GroupStateLevelIndexDropped); err != nil {
-		return xerrors.Errorf("mark level index dropped: %w", err)
-	}
-
-	return nil
-}
-
-func (m *Group) GenTopCar(ctx context.Context) error {
-	m.jblk.RLock()
-	defer m.jblk.RUnlock()
-
-	panic("nope")
-
 	if err := m.advanceState(ctx, iface.GroupStateVRCARDone); err != nil {
 		return xerrors.Errorf("mark level index dropped: %w", err)
 	}

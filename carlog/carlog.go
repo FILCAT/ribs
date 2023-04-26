@@ -6,13 +6,13 @@ import (
 	"encoding/binary"
 	"errors"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	carutil "github.com/ipld/go-car/util"
+	"golang.org/x/xerrors"
 	"io"
 	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/xerrors"
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -72,8 +72,9 @@ type CarLog struct {
 	// current data file length
 	dataLen int64
 
-	dataStart int64 // length of the carv1 header
-	dataEnd   int64 // byte offset of the end of the last layer
+	dataStart    int64 // length of the carv1 header
+	dataEnd      int64 // byte offset of the end of the last layer
+	layerOffsets []int64
 
 	// index
 
@@ -233,8 +234,9 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 		dataBuffered: bufio.NewWriterSize(dataFile, jbobBufSize),
 		dataLen:      dataInfo.Size(),
 
-		dataStart: h.DataStart,
-		dataEnd:   h.DataEnd,
+		dataStart:    h.DataStart,
+		dataEnd:      h.DataEnd,
+		layerOffsets: h.LayerOffsets,
 	}
 
 	// open index
@@ -864,6 +866,8 @@ func (j *CarLog) genTopCar() error {
 		}
 	}
 
+	j.layerOffsets = layerOffsets
+
 	return j.mutHead(func(h *Head) error {
 		h.LayerOffsets = layerOffsets
 		h.DataEnd = layerOffsets[1]
@@ -871,6 +875,116 @@ func (j *CarLog) genTopCar() error {
 
 		return nil
 	})
+}
+
+/* CANONICAL CAR OUTPUT */
+
+// returns car size and root cid
+func (j *CarLog) WriteCar(w io.Writer) (int64, cid.Cid, error) {
+	if len(j.layerOffsets) == 0 {
+		return 0, cid.Undef, xerrors.Errorf("no layers, finalize first")
+	}
+
+	var layers []*cardata
+
+	for _, offset := range j.layerOffsets {
+		rs := &readSeekerFromReaderAt{
+			readerAt: j.data,
+			base:     offset,
+		}
+
+		layers = append(layers, &cardata{
+			rs: rs,
+			br: bufio.NewReader(rs),
+		})
+	}
+	if len(layers) == 0 {
+		// this can't happen, but without this check lint complains
+		return 0, cid.Undef, xerrors.Errorf("somehow ended up with no layers")
+	}
+
+	// read root block, which is the only block in the last layer
+	rcid, node, err := carutil.ReadNode(layers[len(layers)-1].br)
+	if err != nil {
+		return 0, cid.Undef, xerrors.Errorf("reading root block: %w", err)
+	}
+
+	// todo consider buffering the writes
+
+	sw := &sizerWriter{w: w}
+	w = sw
+
+	if err := car.WriteHeader(&car.CarHeader{
+		Roots:   []cid.Cid{rcid},
+		Version: 1,
+	}, w); err != nil {
+		return 0, cid.Undef, xerrors.Errorf("write car header: %w", err)
+	}
+	_, err = layers[len(layers)-1].rs.Seek(0, io.SeekStart)
+	if err != nil {
+		return 0, cid.Undef, xerrors.Errorf("seeking to start of last layer: %w", err)
+	}
+	layers[len(layers)-1].br.Reset(layers[len(layers)-1].rs)
+
+	// write depth first, starting from top layer
+	atLayer := len(layers) - 1
+	var writeNode func(c cid.Cid, data []byte, atLayer int) error
+	writeNode = func(c cid.Cid, data []byte, atLayer int) error {
+		// write block
+		if err := carutil.LdWrite(w, c.Bytes(), data); err != nil {
+			return xerrors.Errorf("writing node from layer %d: %w", atLayer, err)
+		}
+
+		// if it's a leaf, we're done
+		if c.Type() == cid.Raw {
+			return nil
+		}
+
+		// otherwise, read the blocks from the next layer down recursively
+		var links []cid.Cid
+		if err := cbor.DecodeInto(data, &links); err != nil {
+			return xerrors.Errorf("decoding layer links: %w", err)
+		}
+
+		for _, ci := range links {
+			c, data, err := carutil.ReadNode(layers[atLayer-1].br)
+			if err != nil {
+				return xerrors.Errorf("reading node from layer %d: %w", atLayer, err)
+			}
+			if c != ci {
+				return xerrors.Errorf("expected cid %s, got %s, layer %d", ci, c, atLayer)
+			}
+
+			// write block
+			if err := writeNode(c, data, atLayer-1); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	if err := writeNode(rcid, node, atLayer); err != nil {
+		return 0, cid.Undef, xerrors.Errorf("writing canonical tree: %w", err)
+	}
+
+	return sw.s, rcid, nil
+}
+
+type cardata struct {
+	rs io.ReadSeeker
+	br *bufio.Reader
+}
+
+type sizerWriter struct {
+	w io.Writer
+	s int64
+}
+
+func (s *sizerWriter) Write(p []byte) (int, error) {
+	w, err := s.w.Write(p)
+	s.s += int64(w)
+	return w, err
 }
 
 /* MISC */
@@ -903,4 +1017,32 @@ func (j *CarLog) Close() (int64, error) {
 	}
 
 	return at, nil
+}
+
+// probably a milionth time this helper was created
+type readSeekerFromReaderAt struct {
+	readerAt io.ReaderAt
+	base     int64
+	pos      int64
+}
+
+func (rs *readSeekerFromReaderAt) Read(p []byte) (n int, err error) {
+	n, err = rs.readerAt.ReadAt(p, rs.pos+rs.base)
+	rs.pos += int64(n)
+	return n, err
+}
+
+func (rs *readSeekerFromReaderAt) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		rs.pos = offset
+	case io.SeekCurrent:
+		rs.pos += offset
+	case io.SeekEnd:
+		return 0, io.ErrUnexpectedEOF
+	default:
+		return 0, os.ErrInvalid
+	}
+
+	return rs.pos, nil
 }
