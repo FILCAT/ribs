@@ -505,10 +505,6 @@ func (j *CarLog) Commit() (int64, error) {
 	// puts, just update head
 
 	err = j.mutHead(func(h *Head) error {
-		if h.Finalized || len(h.LayerOffsets) > 0 {
-			return xerrors.Errorf("can't commit finalized (read only) car log")
-		}
-
 		if h.RetiredAt == j.dataLen {
 			return errNothingToCommit
 		}
@@ -824,7 +820,7 @@ func (j *CarLog) genTopCar() error {
 
 	// read current car header, and update it
 	{
-		var headerBuf [256]byte
+		var headerBuf [128]byte
 		_, err = j.data.ReadAt(headerBuf[:], 0)
 		if err != nil {
 			return xerrors.Errorf("reading data car header: %w", err)

@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	err := gen.WriteTupleEncodersToFile("./carlog/cbor_gen.go", "jbob", carlog.Head{})
+	err := gen.WriteTupleEncodersToFile("./carlog/cbor_gen.go", "carlog", carlog.Head{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
