@@ -56,12 +56,6 @@ bktHead: [bloom: [64]byte]
 
 ent: [hash: [32]byte, off: le64]
 
-STATUS:
-* Untested
-* Can't do levels
-* Can't get
-* Big In-memory buffer
-
 */
 
 type BSSTHeader struct {
