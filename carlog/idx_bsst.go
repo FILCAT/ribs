@@ -1,4 +1,4 @@
-package jbob
+package carlog
 
 import (
 	"github.com/lotus-web3/ribs/bsst"

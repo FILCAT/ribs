@@ -6,12 +6,10 @@ import (
 	"os"
 
 	gen "github.com/whyrusleeping/cbor-gen"
-
-	"github.com/lotus-web3/ribs/jbob"
 )
 
 func main() {
-	err := gen.WriteTupleEncodersToFile("./ribs/jbob/cbor_gen.go", "jbob", jbob.Head{})
+	err := gen.WriteTupleEncodersToFile("./ribs/jbob/cbor_gen.go", "jbob", carlog.Head{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

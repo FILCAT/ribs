@@ -9,7 +9,7 @@ import (
 	"github.com/ipld/go-car"
 	carutil "github.com/ipld/go-car/util"
 	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/jbob"
+	"github.com/lotus-web3/ribs/carlog"
 	mh "github.com/multiformats/go-multihash"
 	"io"
 	"path/filepath"
@@ -68,7 +68,7 @@ type Group struct {
 	writeBlocksSnap int64
 	writeSizeSnap   int64
 
-	jb *jbob.JBOB
+	jb *carlog.CarLog
 }
 
 func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
@@ -80,12 +80,12 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 
 	// open jbob
 
-	jbOpenFunc := jbob.Open
+	jbOpenFunc := carlog.Open
 	if create {
-		jbOpenFunc = jbob.Create
+		jbOpenFunc = carlog.Create
 	}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"), func(to int64, h []mh.Multihash) error {
+	jb, err := jbOpenFunc(filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
 		if to < recordedHead {
 			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
 		}
@@ -365,7 +365,7 @@ func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
 
 	layerWrote := make([]int, layerCount+1)
 
-	err = m.jb.Iterate(func(c mh.Multihash, data []byte) error {
+	err = m.jb.Iterate(func(c cid.Cid, data []byte) error {
 		// get down to layer 0 (jbob)
 		for atLayer > 0 {
 			// read next block from current layer
@@ -384,7 +384,7 @@ func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
 		}
 
 		// write block
-		if err := carutil.LdWrite(w, mhToRawCid(c).Bytes(), data); err != nil {
+		if err := carutil.LdWrite(w, mhToRawCid(c.Hash()).Bytes(), data); err != nil {
 			return xerrors.Errorf("writing jbob block: %w", err)
 		}
 

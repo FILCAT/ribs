@@ -1,6 +1,7 @@
-package jbob
+package carlog
 
 import (
+	"github.com/ipfs/go-cid"
 	"io/fs"
 	"path/filepath"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestJbobBasic(t *testing.T) {
+func TestCarLogBasic(t *testing.T) {
 	td := t.TempDir()
 	t.Cleanup(func() {
 		if err := filepath.Walk(td, func(path string, info fs.FileInfo, err error) error {
@@ -21,7 +22,7 @@ func TestJbobBasic(t *testing.T) {
 		}
 	})
 
-	jb, err := Create(filepath.Join(td, "index"), filepath.Join(td, "data"))
+	jb, err := Create(filepath.Join(td, "index"), filepath.Join(td, "data"), nil)
 	require.NoError(t, err)
 
 	b := blocks.NewBlock([]byte("hello world"))
@@ -43,7 +44,7 @@ func TestJbobBasic(t *testing.T) {
 	_, err = jb.Close()
 	require.NoError(t, err)
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data"))
+	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data"), nil)
 	require.NoError(t, err)
 
 	// test that we can read the data back out again
@@ -68,7 +69,7 @@ func TestJbobBasic(t *testing.T) {
 	_, err = jb.Close()
 	require.NoError(t, err)
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data"))
+	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data"), nil)
 	require.NoError(t, err)
 
 	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
@@ -79,9 +80,9 @@ func TestJbobBasic(t *testing.T) {
 	require.NoError(t, err)
 
 	// test interate
-	err = jb.Iterate(func(hs multihash.Multihash, b []byte) error {
+	err = jb.Iterate(func(hs cid.Cid, b []byte) error {
 		require.Equal(t, b, []byte("hello world"))
-		require.Equal(t, h, hs)
+		require.Equal(t, h, hs.Hash())
 		return nil
 	})
 }

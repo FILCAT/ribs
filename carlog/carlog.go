@@ -1,25 +1,30 @@
-package jbob
+package carlog
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
-	blocks "github.com/ipfs/go-block-format"
-	logging "github.com/ipfs/go-log"
-	pool "github.com/libp2p/go-buffer-pool"
-	"github.com/lotus-web3/ribs/bsst"
+	cbor "github.com/ipfs/go-ipld-cbor"
 	"io"
+	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
 
 	"golang.org/x/xerrors"
 
+	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	logging "github.com/ipfs/go-log"
+	"github.com/ipld/go-car"
+	pool "github.com/libp2p/go-buffer-pool"
+
+	"github.com/lotus-web3/ribs/bsst"
 	mh "github.com/multiformats/go-multihash"
 )
 
-var log = logging.Logger("jbob")
+var log = logging.Logger("carlog")
 
 const (
 	HeadName = "head"
@@ -32,11 +37,25 @@ const (
 
 const jbobBufSize = 16 << 20
 
-// JBOB stands for "Just A Bunch Of Blocks"
+// placeholderCid is a placeholder CID which has the same length as dag-cbor-sha256 CID
+var placeholderCid = func() cid.Cid {
+	data := make([]byte, 32)
+	multihash, err := mh.Sum(data, mh.IDENTITY, len(data))
+	if err != nil {
+		panic("Error creating multihash: " + err.Error())
+	}
+	return cid.NewCidV1(cid.Raw, multihash)
+}()
+
+// CarLog is a .car file which is storing a flat layer of blocks, with a wide
+// top tree and a single root
+// * Before the CarLog is finalized, the root CID is a placeholher Identity hash
+// * Blocks are stored layer-by-layer, from the bottom, left to right
+// * Transforming into depth-first .car is very cheap with the head file
 // * NOT THREAD SAFE FOR WRITING!!
 // * One tx at a time
 // * Not considered written until committed
-type JBOB struct {
+type CarLog struct {
 	// index = dir, data = file
 	IndexPath, DataPath string
 
@@ -45,13 +64,16 @@ type JBOB struct {
 	head *os.File
 
 	// data contains a log of all written data
-	// [[len: u4][logEntryType: u8][data]]..
+	// [carv1 header][carv1 block...]
 	data *os.File
 
 	dataBuffered *bufio.Writer
 
 	// current data file length
 	dataLen int64
+
+	dataStart int64 // length of the carv1 header
+	dataEnd   int64 // byte offset of the end of the last layer
 
 	// index
 
@@ -66,30 +88,28 @@ type JBOB struct {
 //
 //	HeadSize bytes. Null-Padded to exactly HeadSize
 type Head struct {
-	// todo version
+	Version int64
 
 	// something that's not zero
 	Valid bool
 
-	// byte offset just after the last retired op
+	// byte offset just after the last retired op. If finalized, but layers aren't set
+	// this points to the end of first (bottom) layer
 	RetiredAt int64
+
+	DataStart int64
+
+	// byte offset of the start of the second layer
+	DataEnd int64
 
 	ReadOnly  bool // if true, no more writes are allowed
 	Finalized bool // if true, no more writes are allowed, and the bsst index is finalized
 
-	// todo entry count
+	// Layer stats, set after Finalized (Finalized can be true and layers may still not be set)
+	LayerOffsets []int64 // byte offsets of the start of each layer
 }
 
-type logEntryType byte
-
-const (
-	entInvalid logEntryType = iota
-
-	// entBlock data is encoded as \0[mhlen: u2][data][multihash]
-	entBlock
-)
-
-func Create(indexPath, dataPath string, _ TruncCleanup) (*JBOB, error) {
+func Create(indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
 	if err := os.Mkdir(indexPath, 0755); err != nil {
 		return nil, xerrors.Errorf("mkdir index path (%s): %w", indexPath, err)
 	}
@@ -104,9 +124,28 @@ func Create(indexPath, dataPath string, _ TruncCleanup) (*JBOB, error) {
 		return nil, xerrors.Errorf("opening head: %w", err)
 	}
 
+	// setup carv1 header
+	carHead := &car.CarHeader{
+		Roots:   []cid.Cid{placeholderCid},
+		Version: 1,
+	}
+	if err := car.WriteHeader(carHead, dataFile); err != nil {
+		return nil, xerrors.Errorf("writing placeholder header: %w", err)
+	}
+	if err := dataFile.Sync(); err != nil {
+		return nil, xerrors.Errorf("sync new data file: %w", err)
+	}
+
+	at, err := car.HeaderSize(carHead)
+	if err != nil {
+		return nil, xerrors.Errorf("getting car header length: %w", err)
+	}
+
+	// write head file
 	h := &Head{
 		Valid:     true,
-		RetiredAt: 0,
+		RetiredAt: int64(at),
+		DataStart: int64(at),
 	}
 	var headBuf [HeadSize]byte
 
@@ -133,20 +172,21 @@ func Create(indexPath, dataPath string, _ TruncCleanup) (*JBOB, error) {
 		return nil, xerrors.Errorf("creating leveldb index: %w", err)
 	}
 
-	return &JBOB{
+	return &CarLog{
 		IndexPath:    indexPath,
 		DataPath:     dataPath,
 		head:         headFile,
 		data:         dataFile,
 		dataBuffered: bufio.NewWriterSize(dataFile, jbobBufSize),
-		dataLen:      0,
+		dataLen:      int64(at),
+		dataStart:    int64(at),
 
 		wIdx: idx,
 		rIdx: idx,
 	}, nil
 }
 
-func Open(indexPath, dataPath string, tc TruncCleanup) (*JBOB, error) {
+func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 	headFile, err := os.OpenFile(filepath.Join(indexPath, HeadName), os.O_RDWR|os.O_SYNC, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening head: %w", err)
@@ -185,13 +225,16 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*JBOB, error) {
 		return nil, xerrors.Errorf("data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
 	}
 
-	jb := &JBOB{
+	jb := &CarLog{
 		IndexPath:    indexPath,
 		DataPath:     dataPath,
 		head:         headFile,
 		data:         dataFile,
 		dataBuffered: bufio.NewWriterSize(dataFile, jbobBufSize),
 		dataLen:      dataInfo.Size(),
+
+		dataStart: h.DataStart,
+		dataEnd:   h.DataEnd,
 	}
 
 	// open index
@@ -244,7 +287,7 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*JBOB, error) {
 
 type TruncCleanup func(to int64, h []mh.Multihash) error
 
-func (j *JBOB) truncate(offset, size int64, onRemove TruncCleanup) error {
+func (j *CarLog) truncate(offset, size int64, onRemove TruncCleanup) error {
 	if j.wIdx == nil {
 		return xerrors.Errorf("cannot truncate a read-only jbob")
 	}
@@ -321,7 +364,7 @@ type ReadableIndex interface {
 	Close() error
 }
 
-func (j *JBOB) mutHead(mut func(h *Head) error) error {
+func (j *CarLog) mutHead(mut func(h *Head) error) error {
 	// todo cache current
 	n, err := j.head.ReadAt(j.headBuf[:], 0)
 	if err != nil {
@@ -367,7 +410,7 @@ func (j *JBOB) mutHead(mut func(h *Head) error) error {
 	return nil
 }
 
-func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
+func (j *CarLog) Put(c []mh.Multihash, b []blocks.Block) error {
 	if j.wIdx == nil {
 		return xerrors.Errorf("cannot write to read-only jbob")
 	}
@@ -377,14 +420,10 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 	}
 	offsets := make([]int64, len(b))
 
-	entHead := []byte{0, 0, 0, 0, byte(entBlock), 0, 0, 0}
-
 	hasList, err := j.rIdx.Has(c)
 	if err != nil {
 		return err
 	}
-
-	// todo optimize (at least buffer) writes
 
 	// first append to log
 	for i, blk := range b {
@@ -394,24 +433,15 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 		}
 
 		offsets[i] = j.dataLen
-		data := blk.RawData()
 
-		binary.LittleEndian.PutUint32(entHead, 1+2+uint32(len(data))+uint32(len(c[i])))
-		binary.LittleEndian.PutUint16(entHead[6:], uint16(len(c[i])))
-		if _, err := j.dataBuffered.Write(entHead); err != nil {
-			return xerrors.Errorf("writing entry header: %w", err)
+		// todo use a buffer with fixed cid prefix to avoid allocs
+		bcid := cid.NewCidV1(cid.Raw, c[i])
+
+		n, err := j.ldWrite(bcid.Bytes(), blk.RawData())
+		if err != nil {
+			return xerrors.Errorf("writing block: %w", err)
 		}
-
-		if _, err := j.dataBuffered.Write(data); err != nil {
-			return xerrors.Errorf("writing entry header: %w", err)
-		}
-
-		// todo separate 'unhashed' block type for small blocks
-		if _, err := j.dataBuffered.Write(c[i]); err != nil {
-			return xerrors.Errorf("writing entry header: %w", err)
-		}
-
-		j.dataLen += int64(len(data)) + int64(len(entHead)) + int64(len(c[i]))
+		j.dataLen += n
 	}
 
 	// log the write
@@ -424,9 +454,34 @@ func (j *JBOB) Put(c []mh.Multihash, b []blocks.Block) error {
 	return nil
 }
 
+func (j *CarLog) ldWrite(d ...[]byte) (int64, error) {
+	var sum uint64
+	for _, s := range d {
+		sum += uint64(len(s))
+	}
+
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(buf, sum)
+	_, err := j.dataBuffered.Write(buf[:n])
+	if err != nil {
+		// todo flag as corrupt
+		return 0, err
+	}
+
+	for _, s := range d {
+		_, err = j.dataBuffered.Write(s)
+		if err != nil {
+			// todo flag as corrupt
+			return 0, err
+		}
+	}
+
+	return int64(sum) + int64(n), nil
+}
+
 var errNothingToCommit = errors.New("nothing to commit")
 
-func (j *JBOB) Commit() (int64, error) {
+func (j *CarLog) Commit() (int64, error) {
 	// todo log commit?
 
 	var err error
@@ -441,6 +496,7 @@ func (j *JBOB) Commit() (int64, error) {
 		return 0, xerrors.Errorf("flushing buffered data: %w", err)
 	}
 
+	// todo call this on directory fd?
 	if err := j.data.Sync(); err != nil {
 		return 0, xerrors.Errorf("sync data: %w", err)
 	}
@@ -449,6 +505,10 @@ func (j *JBOB) Commit() (int64, error) {
 	// puts, just update head
 
 	err = j.mutHead(func(h *Head) error {
+		if h.Finalized || len(h.LayerOffsets) > 0 {
+			return xerrors.Errorf("can't commit finalized (read only) car log")
+		}
+
 		if h.RetiredAt == j.dataLen {
 			return errNothingToCommit
 		}
@@ -468,7 +528,7 @@ func (j *JBOB) Commit() (int64, error) {
 
 /* READ SIDE */
 
-func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {
+func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {
 	locs, err := j.rIdx.Get(c)
 	if err != nil {
 		return xerrors.Errorf("getting value locations: %w", err)
@@ -499,28 +559,31 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 		}
 
 		// todo: optimization: keep len in index
-		var entHead [8]byte
+		var entHead [binary.MaxVarintLen64]byte
 		if _, err := j.data.ReadAt(entHead[:], locs[i]); err != nil {
 			return xerrors.Errorf("reading entry header: %w", err)
 		}
-		entType := entHead[4]
-		if entType != byte(entBlock) {
-			return xerrors.Errorf("unexpected entry type %d, expected block (1) off:%d", entType, locs[i])
-		}
-		mhLen := uint32(binary.LittleEndian.Uint16(entHead[6:]))
 
-		entLen := binary.LittleEndian.Uint32(entHead[:4]) - 1 - 2 - mhLen
-		if entLen > uint32(len(entBuf)) {
+		entLen, lenlen := binary.Uvarint(entHead[:])
+		if entLen > math.MaxInt {
+			return xerrors.Errorf("entry too large: %d", entLen)
+		}
+		if entLen > uint64(len(entBuf)) {
 			// expand buffer to next power of two if needed
 			pool.Put(entBuf)
-			entBuf = pool.Get(1 << bits.Len32(entLen))
+			entBuf = pool.Get(1 << bits.Len32(uint32(entLen)))
 		}
 
-		if _, err := j.data.ReadAt(entBuf[:entLen], locs[i]+int64(len(entHead))); err != nil {
+		if _, err := j.data.ReadAt(entBuf[:entLen], locs[i]+int64(lenlen)); err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
-		if err := cb(i, true, entBuf[:entLen]); err != nil {
+		n, _, err := cid.CidFromBytes(entBuf[:entLen])
+		if err != nil {
+			return xerrors.Errorf("parsing cid: %w", err)
+		}
+
+		if err := cb(i, true, entBuf[n:entLen]); err != nil {
 			return err
 		}
 	}
@@ -530,51 +593,56 @@ func (j *JBOB) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte)
 
 var ErrNotReadOnly = errors.New("not yet read-only")
 
-func (j *JBOB) Iterate(cb func(c mh.Multihash, data []byte) error) error {
+func (j *CarLog) Iterate(cb func(c cid.Cid, data []byte) error) error {
 	if j.wIdx != nil {
 		return ErrNotReadOnly
 	}
+	if j.dataEnd == 0 {
+		return xerrors.New("can't iterate yet - data end not marked")
+	}
 
-	var entHeadBuf [8]byte
+	var entHeadBuf [binary.MaxVarintLen64]byte
 	entBuf := make([]byte, 1<<20)
 
-	for at := int64(0); at < j.dataLen; {
+	at := j.dataStart
+	for at < j.dataEnd {
 		if _, err := j.data.ReadAt(entHeadBuf[:], at); err != nil {
 			return xerrors.Errorf("reading entry header: %w", err)
 		}
 
-		entLen := binary.LittleEndian.Uint32(entHeadBuf[:4]) - 1 - 2
-		entType := entHeadBuf[4]
-		mhLen := uint32(binary.LittleEndian.Uint16(entHeadBuf[6:]))
-
-		if entType != byte(entBlock) {
-			return xerrors.Errorf("unexpected entry type %d, expected block (1)", entType)
+		entLen, lenlen := binary.Uvarint(entHeadBuf[:])
+		if entLen > math.MaxInt {
+			return xerrors.Errorf("entry too large: %d", entLen)
 		}
-
-		if entLen > uint32(len(entBuf)) {
+		if entLen > uint64(len(entBuf)) {
 			// expand buffer to next power of two if needed
-			entBuf = make([]byte, 1<<bits.Len32(entLen))
+			entBuf = make([]byte, 1<<bits.Len32(uint32(entLen)))
 		}
 
-		if _, err := j.data.ReadAt(entBuf[:entLen], at+int64(len(entHeadBuf))); err != nil {
+		if _, err := j.data.ReadAt(entBuf[:entLen], at+int64(lenlen)); err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
-		if err := cb(entBuf[entLen-mhLen:entLen], entBuf[:entLen-mhLen]); err != nil {
+		n, c, err := cid.CidFromBytes(entBuf[:entLen])
+		if err != nil {
+			return xerrors.Errorf("parsing cid: %w", err)
+		}
+
+		if err := cb(c, entBuf[n:entLen]); err != nil {
 			return err
 		}
 
-		at += int64(len(entHeadBuf)) + int64(entLen)
+		at += int64(lenlen) + int64(entLen)
 	}
 
 	return nil
 }
 
-/* Finalization */
+/* Finalization (marking bottom layer read only, generating fast index) */
 
 var ErrReadOnly = errors.New("already read-only")
 
-func (j *JBOB) MarkReadOnly() error {
+func (j *CarLog) MarkReadOnly() error {
 	if j.wIdx == nil {
 		return ErrReadOnly
 	}
@@ -594,52 +662,56 @@ func (j *JBOB) MarkReadOnly() error {
 	return nil
 }
 
-func (j *JBOB) Finalize() error {
+func (j *CarLog) Finalize() error {
 	if j.wIdx != nil {
 		return xerrors.Errorf("cannot finalize read-write jbob")
 	}
 
-	var fin bool
+	var fin, hasTop bool
 	err := j.mutHead(func(h *Head) error {
 		fin = h.Finalized
+		hasTop = len(h.LayerOffsets) > 0
 		return nil
 	})
 	if err != nil {
 		return xerrors.Errorf("checking if finalized: %w", err)
 	}
 
-	if fin {
-		// edge case: already finalized, nothing to do
-		return nil
+	if !fin {
+		bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
+		if err != nil {
+			return xerrors.Errorf("creating bsst index: %w", err)
+		}
+
+		if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
+			return xerrors.Errorf("saving hash sample: %w", err)
+		}
+
+		err = j.mutHead(func(h *Head) error {
+			h.Finalized = true
+			return nil
+		})
+		if err != nil {
+			return xerrors.Errorf("marking as finalized: %w", err)
+		}
+
+		err = j.rIdx.Close()
+		j.rIdx = bss
+		if err != nil {
+			return err
+		}
 	}
 
-	bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
-	if err != nil {
-		return xerrors.Errorf("creating bsst index: %w", err)
-	}
-
-	if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
-		return xerrors.Errorf("saving hash sample: %w", err)
-	}
-
-	err = j.mutHead(func(h *Head) error {
-		h.Finalized = true
-		return nil
-	})
-	if err != nil {
-		return xerrors.Errorf("marking as finalized: %w", err)
-	}
-
-	err = j.rIdx.Close()
-	j.rIdx = bss
-	if err != nil {
-		return err
+	if !hasTop {
+		if err := j.genTopCar(); err != nil {
+			return xerrors.Errorf("generating top car: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func (j *JBOB) DropLevel() error {
+func (j *CarLog) DropLevel() error {
 	if j.wIdx != nil {
 		return xerrors.Errorf("cannot drop level on read-write jbob")
 	}
@@ -651,9 +723,163 @@ func (j *JBOB) DropLevel() error {
 	return nil
 }
 
+/* TOP TREE GENERATION */
+
+func (j *CarLog) genTopCar() error {
+	if j.wIdx != nil {
+		return xerrors.Errorf("cannot generate top car on writable carlog")
+	}
+	var err error
+	for {
+		err = j.dataBuffered.Flush()
+		if err != io.ErrShortWrite {
+			break
+		}
+	}
+	if err := j.data.Sync(); err != nil {
+		return xerrors.Errorf("sync data: %w", err)
+	}
+
+	const arity = 2048
+
+	if j.dataEnd != 0 {
+		return xerrors.Errorf("cannot generate top car - already generated")
+	}
+	j.dataEnd = j.dataLen
+
+	var layerOffsets = []int64{0, j.dataLen}
+
+	var curLinks, nextLinks []cid.Cid
+
+	writeLinkBlock := func(links []cid.Cid) error {
+		nd, err := cbor.WrapObject(links, mh.SHA2_256, -1)
+		if err != nil {
+			return xerrors.Errorf("wrap links: %w", err)
+		}
+
+		nextLinks = append(nextLinks, nd.Cid())
+
+		n, err := j.ldWrite(nd.Cid().Bytes(), nd.RawData())
+		if err != nil {
+			return xerrors.Errorf("writing block: %w", err)
+		}
+		j.dataLen += n
+
+		return nil
+	}
+
+	err = j.Iterate(func(c cid.Cid, data []byte) error {
+		curLinks = append(curLinks, c)
+
+		if len(curLinks) == arity {
+			if err := writeLinkBlock(curLinks); err != nil {
+				return xerrors.Errorf("writing link block: %w", err)
+			}
+			curLinks = curLinks[:0]
+		}
+
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("iterate jbob: %w", err)
+	}
+
+	if len(curLinks) > 0 {
+		if err := writeLinkBlock(curLinks); err != nil {
+			return xerrors.Errorf("writing link block: %w", err)
+		}
+		curLinks = curLinks[:0]
+	}
+
+	for len(nextLinks) > 1 {
+		curLinks, nextLinks = nextLinks, curLinks[:0]
+
+		layerOffsets = append(layerOffsets, j.dataLen)
+
+		for i := 0; i < len(curLinks); i += arity {
+			end := i + arity
+			if end > len(curLinks) {
+				end = len(curLinks)
+			}
+
+			if err := writeLinkBlock(curLinks[i:end]); err != nil {
+				return xerrors.Errorf("writing link block: %w", err)
+			}
+		}
+	}
+
+	if len(nextLinks) != 1 {
+		return xerrors.Errorf("expected 1 link to top layer, got %d", len(nextLinks))
+	}
+
+	for {
+		err = j.dataBuffered.Flush()
+		if err != io.ErrShortWrite {
+			break
+		}
+	}
+	if err := j.data.Sync(); err != nil {
+		return xerrors.Errorf("sync data: %w", err)
+	}
+
+	// read current car header, and update it
+	{
+		var headerBuf [256]byte
+		_, err = j.data.ReadAt(headerBuf[:], 0)
+		if err != nil {
+			return xerrors.Errorf("reading data car header: %w", err)
+		}
+
+		hlen, n := binary.Uvarint(headerBuf[:])
+		if n <= 0 {
+			return xerrors.Errorf("reading data car header invalid length: %d", n)
+		}
+
+		layerOffsets[0] = int64(n) + int64(hlen)
+
+		var header car.CarHeader
+		if err := cbor.DecodeInto(headerBuf[n:n+int(hlen)], &header); err != nil {
+			return xerrors.Errorf("invalid header: %v", err)
+		}
+		if header.Version != 1 {
+			return xerrors.Errorf("invalid header version: %d", header.Version)
+		}
+		if len(header.Roots) != 1 {
+			return xerrors.Errorf("expected 1 root, got %d", len(header.Roots))
+		}
+		header.Roots[0] = nextLinks[0]
+
+		headerBytes, err := cbor.DumpObject(header)
+		if err != nil {
+			return xerrors.Errorf("dumping header: %w", err)
+		}
+		if uint64(len(headerBytes)) != hlen {
+			return xerrors.Errorf("invalid header length, expected %d, got %d", hlen, len(headerBytes))
+		}
+
+		copy(headerBuf[n:], headerBytes)
+
+		if _, err := j.data.WriteAt(headerBuf[:n+int(hlen)], 0); err != nil {
+			return xerrors.Errorf("writing updated header: %w", err)
+		}
+
+		if err := j.data.Sync(); err != nil {
+			return xerrors.Errorf("sync data with final header: %w", err)
+		}
+	}
+
+	return j.mutHead(func(h *Head) error {
+		h.LayerOffsets = layerOffsets
+		h.DataEnd = layerOffsets[1]
+		h.RetiredAt = j.dataLen
+
+		return nil
+	})
+}
+
 /* MISC */
 
-func (j *JBOB) Close() (int64, error) {
+func (j *CarLog) Close() (int64, error) {
 	// then log
 	at, err := j.Commit()
 	if err != nil {
