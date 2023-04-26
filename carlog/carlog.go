@@ -434,12 +434,16 @@ func (j *CarLog) Put(c []mh.Multihash, b []blocks.Block) error {
 			continue
 		}
 
-		offsets[i] = j.dataLen
+		if MaxEntryLen < len(blk.RawData()) {
+			return xerrors.Errorf("block too large (%d bytes, max %d)", len(blk.RawData()), MaxEntryLen)
+		}
 
 		// todo use a buffer with fixed cid prefix to avoid allocs
-		bcid := cid.NewCidV1(cid.Raw, c[i])
+		bcid := cid.NewCidV1(cid.Raw, c[i]).Bytes()
 
-		n, err := j.ldWrite(bcid.Bytes(), blk.RawData())
+		offsets[i] = makeOffsetLen(j.dataLen, len(bcid)+len(blk.RawData()))
+
+		n, err := j.ldWrite(bcid, blk.RawData())
 		if err != nil {
 			return xerrors.Errorf("writing block: %w", err)
 		}
@@ -556,23 +560,19 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 			continue
 		}
 
-		// todo: optimization: keep len in index
-		var entHead [binary.MaxVarintLen64]byte
-		if _, err := j.data.ReadAt(entHead[:], locs[i]); err != nil {
-			return xerrors.Errorf("reading entry header: %w", err)
-		}
+		off, entLen := fromOffsetLen(locs[i])
 
-		entLen, lenlen := binary.Uvarint(entHead[:])
-		if entLen > math.MaxInt {
-			return xerrors.Errorf("entry too large: %d", entLen)
-		}
-		if entLen > uint64(len(entBuf)) {
+		if entLen > len(entBuf) {
 			// expand buffer to next power of two if needed
 			pool.Put(entBuf)
 			entBuf = pool.Get(1 << bits.Len32(uint32(entLen)))
 		}
 
-		if _, err := j.data.ReadAt(entBuf[:entLen], locs[i]+int64(lenlen)); err != nil {
+		// calculate length of length prefix
+		// note this uses entBuf as a buffer, but we don't need the content
+		lenlen := binary.PutUvarint(entBuf, uint64(entLen))
+
+		if _, err := j.data.ReadAt(entBuf[:entLen], off+int64(lenlen)); err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
@@ -1045,4 +1045,14 @@ func (rs *readSeekerFromReaderAt) Seek(offset int64, whence int) (int64, error) 
 	}
 
 	return rs.pos, nil
+}
+
+const MaxEntryLen = 1 << (64 - 40)
+
+func makeOffsetLen(off int64, length int) int64 {
+	return (int64(length) << 40) | (off & 0xFFFF_FFFF_FF)
+}
+
+func fromOffsetLen(offlen int64) (int64, int) {
+	return offlen & 0xFFFF_FFFF_FF, int(offlen >> 40)
 }
