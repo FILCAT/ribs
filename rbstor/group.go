@@ -20,7 +20,7 @@ import (
 
 var (
 	// TODO: make this configurable
-	maxGroupSize int64 = 2500 << 20
+	maxGroupSize int64 = 31000 << 20
 
 	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
