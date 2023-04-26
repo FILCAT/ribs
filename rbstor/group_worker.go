@@ -37,26 +37,10 @@ func (r *rbs) workerExecTask(toExec task) {
 			log.Errorf("finalizing group: %s", err)
 		}
 
-		r.sendSub(toExec.group, iface.GroupStateFull, iface.GroupStateLevelIndexDropped)
+		r.sendSub(toExec.group, iface.GroupStateFull, iface.GroupStateVRCARDone)
 
 		fallthrough
-	case taskTypeMakeVCAR:
-		r.lk.Lock()
-		g, ok := r.openGroups[toExec.group]
-		r.lk.Unlock()
-		if !ok {
-			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
-			return
-		}
 
-		err := g.GenTopCar(context.TODO())
-		if err != nil {
-			log.Errorf("generating top car: %s", err)
-		}
-
-		r.sendSub(toExec.group, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone)
-
-		fallthrough
 	case taskTypeGenCommP:
 		r.lk.Lock()
 		g, ok := r.openGroups[toExec.group]
@@ -90,7 +74,7 @@ func (r *rbs) resumeGroups(ctx context.Context) {
 
 	for g, st := range gs {
 		switch st {
-		case iface.GroupStateFull, iface.GroupStateBSSTExists, iface.GroupStateLevelIndexDropped, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals:
+		case iface.GroupStateFull, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals:
 			if err := r.withReadableGroup(ctx, g, func(g *Group) error {
 				return nil
 			}); err != nil {
@@ -117,10 +101,6 @@ func (r *rbs) resumeGroup(group iface.GroupKey) {
 	case iface.GroupStateWritable: // nothing to do
 	case iface.GroupStateFull:
 		sendTask(taskTypeFinalize)
-	case iface.GroupStateBSSTExists:
-		sendTask(taskTypeMakeVCAR)
-	case iface.GroupStateLevelIndexDropped:
-		sendTask(taskTypeMakeVCAR)
 	case iface.GroupStateVRCARDone:
 		sendTask(taskTypeGenCommP)
 	case iface.GroupStateLocalReadyForDeals:

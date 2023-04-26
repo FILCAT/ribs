@@ -33,7 +33,6 @@ type GroupState int
 const (
 	GroupStateWritable GroupState = iota
 	GroupStateFull
-	GroupStateBSSTExists
 	GroupStateVRCARDone
 
 	GroupStateLocalReadyForDeals

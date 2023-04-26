@@ -27,10 +27,6 @@ func (m *Group) Finalize(ctx context.Context) error {
 		return xerrors.Errorf("finalize jbob: %w", err)
 	}
 
-	if err := m.advanceState(ctx, iface.GroupStateBSSTExists); err != nil {
-		return xerrors.Errorf("mark bsst exists: %w", err)
-	}
-
 	if err := m.jb.DropLevel(); err != nil {
 		return xerrors.Errorf("removing leveldb index: %w", err)
 	}

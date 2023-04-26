@@ -278,7 +278,10 @@ func (m *Group) Close() error {
 
 // returns car size and root cid
 func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
+	m.jblk.Lock()
+	defer m.jblk.Unlock()
 
+	return m.jb.WriteCar(w)
 }
 
 var _ iface.Group = &Group{}

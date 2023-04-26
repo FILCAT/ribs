@@ -5,6 +5,7 @@ import (
 	"github.com/ipfs/go-cid"
 	u "github.com/ipfs/go-ipfs-util"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -153,4 +154,12 @@ func TestCarLog3K(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	f, err := os.Create(filepath.Join(td, "canon.car"))
+	require.NoError(t, err)
+
+	_, _, err = jb.WriteCar(f)
+	require.NoError(t, err)
+
+	_, err = jb.Close()
 }
