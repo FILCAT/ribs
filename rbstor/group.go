@@ -278,8 +278,8 @@ func (m *Group) Close() error {
 
 // returns car size and root cid
 func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
+	m.jblk.RLock()
+	defer m.jblk.RUnlock()
 
 	return m.jb.WriteCar(w)
 }
