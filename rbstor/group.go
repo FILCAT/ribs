@@ -1,15 +1,12 @@
 package rbstor
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
-	"github.com/ipld/go-car"
-	carutil "github.com/ipld/go-car/util"
 	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/jbob"
+	"github.com/lotus-web3/ribs/carlog"
 	mh "github.com/multiformats/go-multihash"
 	"io"
 	"path/filepath"
@@ -68,7 +65,7 @@ type Group struct {
 	writeBlocksSnap int64
 	writeSizeSnap   int64
 
-	jb *jbob.JBOB
+	jb *carlog.CarLog
 }
 
 func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
@@ -80,12 +77,12 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 
 	// open jbob
 
-	jbOpenFunc := jbob.Open
+	jbOpenFunc := carlog.Open
 	if create {
-		jbOpenFunc = jbob.Create
+		jbOpenFunc = carlog.Create
 	}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "blk.jbmeta"), filepath.Join(groupPath, "blk.jblog"), func(to int64, h []mh.Multihash) error {
+	jb, err := jbOpenFunc(filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
 		if to < recordedHead {
 			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
 		}
@@ -279,144 +276,12 @@ func (m *Group) Close() error {
 	return err
 }
 
-type sizerWriter struct {
-	w io.Writer
-	s int64
-}
-
-func (s *sizerWriter) Write(p []byte) (int, error) {
-	w, err := s.w.Write(p)
-	s.s += int64(w)
-	return w, err
-}
-
 // returns car size and root cid
 func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
-	// read layers file
-	ls, err := os.ReadFile(filepath.Join(m.path, "vcar", "layers"))
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("read layers file: %w", err)
-	}
+	m.jblk.RLock()
+	defer m.jblk.RUnlock()
 
-	layerCount, err := strconv.Atoi(string(ls))
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("parse layers file: %w", err)
-	}
-
-	// read arity file
-	as, err := os.ReadFile(filepath.Join(m.path, "vcar", "arity"))
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("read arity file: %w", err)
-	}
-
-	arity, err := strconv.Atoi(string(as))
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("parse arity file: %w", err)
-	}
-
-	var layers []*cardata
-
-	for i := 1; i <= layerCount; i++ {
-		fname := filepath.Join(m.path, "vcar", fmt.Sprintf("layer%d.cardata", i))
-		f, err := os.OpenFile(fname, os.O_RDONLY, 0644)
-		if err != nil {
-			return 0, cid.Undef, xerrors.Errorf("open cardata file: %w", err)
-		}
-
-		layers = append(layers, &cardata{
-			f:  f,
-			br: bufio.NewReader(f),
-		})
-	}
-
-	defer func() {
-		for n, l := range layers {
-			if err := l.f.Close(); err != nil {
-				log.Warnf("closing cardata layer %d file: %s", n+1, err)
-			}
-		}
-	}()
-
-	// read root block, which is the only block in the last layer
-	rcid, _, err := carutil.ReadNode(layers[len(layers)-1].br)
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("reading root block: %w", err)
-	}
-
-	// todo consider buffering the writes
-
-	sw := &sizerWriter{w: w}
-	w = sw
-
-	if err := car.WriteHeader(&car.CarHeader{
-		Roots:   []cid.Cid{rcid},
-		Version: 1,
-	}, w); err != nil {
-		return 0, cid.Undef, xerrors.Errorf("write car header: %w", err)
-	}
-	_, err = layers[len(layers)-1].f.Seek(0, io.SeekStart)
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("seeking to start of last layer: %w", err)
-	}
-	layers[len(layers)-1].br.Reset(layers[len(layers)-1].f)
-
-	// write depth first, starting from top layer
-	atLayer := layerCount
-
-	layerWrote := make([]int, layerCount+1)
-
-	err = m.jb.Iterate(func(c mh.Multihash, data []byte) error {
-		// get down to layer 0 (jbob)
-		for atLayer > 0 {
-			// read next block from current layer
-			c, data, err := carutil.ReadNode(layers[atLayer-1].br)
-			if err != nil {
-				return xerrors.Errorf("reading node from layer %d (wrote %d at that layer): %w", atLayer, layerWrote[atLayer], err)
-			}
-
-			// write block
-			if err := carutil.LdWrite(w, c.Bytes(), data); err != nil {
-				return xerrors.Errorf("writing node from layer %d: %w", atLayer, err)
-			}
-
-			layerWrote[atLayer]++
-			atLayer--
-		}
-
-		// write block
-		if err := carutil.LdWrite(w, mhToRawCid(c).Bytes(), data); err != nil {
-			return xerrors.Errorf("writing jbob block: %w", err)
-		}
-
-		layerWrote[atLayer]++
-
-		// propagate layers up if at arity
-		for layerWrote[atLayer] == arity {
-			layerWrote[atLayer] = 0
-			atLayer++
-		}
-
-		return nil
-	})
-	if err != nil {
-		return 0, cid.Undef, xerrors.Errorf("iterate jbob: %w", err)
-	}
-
-	return sw.s, rcid, nil
-}
-
-type cardata struct {
-	f *os.File
-
-	br *bufio.Reader
-}
-
-func (c *cardata) writeBlock(ci cid.Cid, data []byte) error {
-	return carutil.LdWrite(c.f, ci.Bytes(), data)
-}
-
-func mhToRawCid(mh mh.Multihash) cid.Cid {
-	return cid.NewCidV1(cid.Raw, mh)
+	return m.jb.WriteCar(w)
 }
 
 var _ iface.Group = &Group{}

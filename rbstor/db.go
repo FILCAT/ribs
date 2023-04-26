@@ -34,11 +34,9 @@ create table if not exists groups
     /* States
 	 * 0 - writable
      * 1 - full
-     * 2 - bsst exists
-     * 3 - level index dropped
-     * 4 - vrcar done
-     * 5 - has commp
-     * 6 - offloaded
+     * 2 - vrcar done
+     * 3 - has commp
+     * 4 - offloaded
      */
     g_state     integer not null,
     
@@ -62,8 +60,8 @@ CREATE VIEW IF NOT EXISTS group_stats_view AS
 SELECT 
     COUNT(*) AS group_count,
     SUM(bytes) AS total_data_size,
-    SUM(CASE WHEN g_state < 6 THEN bytes ELSE 0 END) AS non_offloaded_data_size,
-    SUM(CASE WHEN g_state = 6 THEN bytes ELSE 0 END) AS offloaded_data_size
+    SUM(CASE WHEN g_state < 4 THEN bytes ELSE 0 END) AS non_offloaded_data_size,
+    SUM(CASE WHEN g_state = 4 THEN bytes ELSE 0 END) AS offloaded_data_size
 FROM 
     groups;
 `

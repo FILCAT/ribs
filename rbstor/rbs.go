@@ -86,7 +86,6 @@ type taskType int
 
 const (
 	taskTypeFinalize taskType = iota
-	taskTypeMakeVCAR
 	taskTypeGenCommP
 )
 

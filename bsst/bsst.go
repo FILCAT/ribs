@@ -374,7 +374,7 @@ func (h *BSSTHeader) makeMHKey(c multihash.Multihash, i int64) [32]byte {
 func (h *BSST) Has(c []multihash.Multihash) ([]bool, error) {
 	keys := make([][32]byte, len(c))
 	for i, k := range c {
-		keys[i] = h.h.makeMHKey(k, int64(i))
+		keys[i] = h.h.makeMHKey(k, 0) // todo support multiple results
 	}
 
 	out := make([]bool, len(c))
@@ -467,7 +467,7 @@ func (h *BSST) Get(c []multihash.Multihash) ([]int64, error) {
 
 	keys := make([][32]byte, len(c))
 	for i, k := range c {
-		keys[i] = h.h.makeMHKey(k, int64(i))
+		keys[i] = h.h.makeMHKey(k, 0) // todo support multiple results
 	}
 
 	out := make([]int64, len(c))
