@@ -30,72 +30,6 @@ func (t *BSSTHeader) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.L0Buckets (int64) (int64)
-	if len("L0Buckets") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"L0Buckets\" was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("L0Buckets"))); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, string("L0Buckets")); err != nil {
-		return err
-	}
-
-	if t.L0Buckets >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.L0Buckets)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.L0Buckets-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.BucketSize (int64) (int64)
-	if len("BucketSize") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"BucketSize\" was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("BucketSize"))); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, string("BucketSize")); err != nil {
-		return err
-	}
-
-	if t.BucketSize >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.BucketSize)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.BucketSize-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.Entries (int64) (int64)
-	if len("Entries") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"Entries\" was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Entries"))); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, string("Entries")); err != nil {
-		return err
-	}
-
-	if t.Entries >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Entries)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Entries-1)); err != nil {
-			return err
-		}
-	}
-
 	// t.Salt ([32]uint8) (array)
 	if len("Salt") > cbg.MaxLength {
 		return xerrors.Errorf("Value in field \"Salt\" was too long")
@@ -142,6 +76,88 @@ func (t *BSSTHeader) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.Entries (int64) (int64)
+	if len("Entries") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Entries\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Entries"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Entries")); err != nil {
+		return err
+	}
+
+	if t.Entries >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Entries)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Entries-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.Finalized (bool) (bool)
+	if len("Finalized") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Finalized\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Finalized"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Finalized")); err != nil {
+		return err
+	}
+
+	if err := cbg.WriteBool(w, t.Finalized); err != nil {
+		return err
+	}
+
+	// t.L0Buckets (int64) (int64)
+	if len("L0Buckets") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"L0Buckets\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("L0Buckets"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("L0Buckets")); err != nil {
+		return err
+	}
+
+	if t.L0Buckets >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.L0Buckets)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.L0Buckets-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.BucketSize (int64) (int64)
+	if len("BucketSize") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"BucketSize\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("BucketSize"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("BucketSize")); err != nil {
+		return err
+	}
+
+	if t.BucketSize >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.BucketSize)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.BucketSize-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.LevelFactor (int64) (int64)
 	if len("LevelFactor") > cbg.MaxLength {
 		return xerrors.Errorf("Value in field \"LevelFactor\" was too long")
@@ -162,22 +178,6 @@ func (t *BSSTHeader) MarshalCBOR(w io.Writer) error {
 		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.LevelFactor-1)); err != nil {
 			return err
 		}
-	}
-
-	// t.Finalized (bool) (bool)
-	if len("Finalized") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"Finalized\" was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Finalized"))); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, string("Finalized")); err != nil {
-		return err
-	}
-
-	if err := cbg.WriteBool(w, t.Finalized); err != nil {
-		return err
 	}
 	return nil
 }
@@ -220,85 +220,7 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 		}
 
 		switch name {
-		// t.L0Buckets (int64) (int64)
-		case "L0Buckets":
-			{
-				maj, extra, err := cr.ReadHeader()
-				var extraI int64
-				if err != nil {
-					return err
-				}
-				switch maj {
-				case cbg.MajUnsignedInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 positive overflow")
-					}
-				case cbg.MajNegativeInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 negative oveflow")
-					}
-					extraI = -1 - extraI
-				default:
-					return fmt.Errorf("wrong type for int64 field: %d", maj)
-				}
-
-				t.L0Buckets = int64(extraI)
-			}
-			// t.BucketSize (int64) (int64)
-		case "BucketSize":
-			{
-				maj, extra, err := cr.ReadHeader()
-				var extraI int64
-				if err != nil {
-					return err
-				}
-				switch maj {
-				case cbg.MajUnsignedInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 positive overflow")
-					}
-				case cbg.MajNegativeInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 negative oveflow")
-					}
-					extraI = -1 - extraI
-				default:
-					return fmt.Errorf("wrong type for int64 field: %d", maj)
-				}
-
-				t.BucketSize = int64(extraI)
-			}
-			// t.Entries (int64) (int64)
-		case "Entries":
-			{
-				maj, extra, err := cr.ReadHeader()
-				var extraI int64
-				if err != nil {
-					return err
-				}
-				switch maj {
-				case cbg.MajUnsignedInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 positive overflow")
-					}
-				case cbg.MajNegativeInt:
-					extraI = int64(extra)
-					if extraI < 0 {
-						return fmt.Errorf("int64 negative oveflow")
-					}
-					extraI = -1 - extraI
-				default:
-					return fmt.Errorf("wrong type for int64 field: %d", maj)
-				}
-
-				t.Entries = int64(extraI)
-			}
-			// t.Salt ([32]uint8) (array)
+		// t.Salt ([32]uint8) (array)
 		case "Salt":
 
 			maj, extra, err = cr.ReadHeader()
@@ -339,7 +261,7 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 				case cbg.MajNegativeInt:
 					extraI = int64(extra)
 					if extraI < 0 {
-						return fmt.Errorf("int64 negative oveflow")
+						return fmt.Errorf("int64 negative overflow")
 					}
 					extraI = -1 - extraI
 				default:
@@ -348,8 +270,8 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 
 				t.Levels = int64(extraI)
 			}
-			// t.LevelFactor (int64) (int64)
-		case "LevelFactor":
+			// t.Entries (int64) (int64)
+		case "Entries":
 			{
 				maj, extra, err := cr.ReadHeader()
 				var extraI int64
@@ -365,14 +287,14 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 				case cbg.MajNegativeInt:
 					extraI = int64(extra)
 					if extraI < 0 {
-						return fmt.Errorf("int64 negative oveflow")
+						return fmt.Errorf("int64 negative overflow")
 					}
 					extraI = -1 - extraI
 				default:
 					return fmt.Errorf("wrong type for int64 field: %d", maj)
 				}
 
-				t.LevelFactor = int64(extraI)
+				t.Entries = int64(extraI)
 			}
 			// t.Finalized (bool) (bool)
 		case "Finalized":
@@ -391,6 +313,84 @@ func (t *BSSTHeader) UnmarshalCBOR(r io.Reader) (err error) {
 				t.Finalized = true
 			default:
 				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.L0Buckets (int64) (int64)
+		case "L0Buckets":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.L0Buckets = int64(extraI)
+			}
+			// t.BucketSize (int64) (int64)
+		case "BucketSize":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.BucketSize = int64(extraI)
+			}
+			// t.LevelFactor (int64) (int64)
+		case "LevelFactor":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.LevelFactor = int64(extraI)
 			}
 
 		default:
