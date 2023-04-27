@@ -5,11 +5,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"github.com/filecoin-project/lotus/lib/must"
+	lru "github.com/hashicorp/golang-lru/v2"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	carutil "github.com/ipld/go-car/util"
 	"golang.org/x/xerrors"
 	"io"
-	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -38,6 +39,10 @@ const (
 )
 
 const jbobBufSize = 16 << 20
+
+// entries is not the perfect metric, but, roughly we want jbobBufSize at 256k blocks
+// less would actually be fine too, but would make that buffer very large with big blocks
+const writeLRUEntries = 128
 
 // placeholderCid is a placeholder CID which has the same length as dag-cbor-sha256 CID
 var placeholderCid = func() cid.Cid {
@@ -93,6 +98,10 @@ type CarLog struct {
 
 	// buffers
 	headBuf [HeadSize]byte
+
+	// todo benchmark this LRU, make sure it actually makes things faster
+	// todo drop in Finalize?
+	writeLru *lru.Cache[int64, []byte] // offset -> data
 
 	// readStateLk is used for checking / accessing state which needs to be
 	// checked before doing reads (layerOffsets.len)
@@ -201,6 +210,8 @@ func Create(indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
 
 		wIdx: idx,
 		rIdx: idx,
+
+		writeLru: must.One(lru.New[int64, []byte](writeLRUEntries)),
 	}, nil
 }
 
@@ -253,6 +264,8 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 		dataStart:    h.DataStart,
 		dataEnd:      h.DataEnd,
 		layerOffsets: h.LayerOffsets,
+
+		writeLru: must.One(lru.New[int64, []byte](writeLRUEntries)),
 	}
 
 	// open index
@@ -469,6 +482,9 @@ func (j *CarLog) Put(c []mh.Multihash, b []blocks.Block) error {
 		if err != nil {
 			return xerrors.Errorf("writing block: %w", err)
 		}
+
+		j.writeLru.Add(offsets[i], blk.RawData())
+
 		j.dataLen += n
 	}
 
@@ -584,6 +600,13 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 			continue
 		}
 
+		if v, ok := j.writeLru.Get(locs[i]); ok {
+			if err := cb(i, true, v); err != nil {
+				return err
+			}
+			continue
+		}
+
 		off, entLen := fromOffsetLen(locs[i])
 
 		if entLen > len(entBuf) {
@@ -608,7 +631,7 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 					return xerrors.Errorf("flushing buffered data: %w", err)
 				}
 
-				log.Errorw("flush is read path", "toFlush", dataAt-(off+int64(lenlen)+int64(entLen)), "dataAt", dataAt)
+				//log.Errorw("flush in read path", "toFlush", dataAt-(off+int64(lenlen)+int64(entLen)), "dataAt", dataAt)
 
 				dataAt = j.dataPos.Pos()
 				if dataAt < off+int64(lenlen)+int64(entLen) {
@@ -649,25 +672,40 @@ func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
 		return xerrors.New("can't iterate yet - data end not marked")
 	}
 
-	var entHeadBuf [binary.MaxVarintLen64]byte
 	entBuf := make([]byte, 1<<20)
 
-	at := j.dataStart
-	for at < j.dataEnd {
-		if _, err := j.data.ReadAt(entHeadBuf[:], at); err != nil {
-			return xerrors.Errorf("reading entry header: %w", err)
+	rs := &readSeekerFromReaderAt{
+		readerAt: j.data,
+		pos:      j.dataStart,
+	}
+
+	br := bufio.NewReaderSize(io.LimitReader(rs, j.dataEnd-j.dataStart), 4<<20)
+
+	for {
+		if _, err := br.Peek(1); err != nil { // no more blocks, likely clean io.EOF
+			if err == io.EOF {
+				return nil
+			}
+			return err
 		}
 
-		entLen, lenlen := binary.Uvarint(entHeadBuf[:])
-		if entLen > math.MaxInt {
-			return xerrors.Errorf("entry too large: %d", entLen)
+		entLen, err := binary.ReadUvarint(br)
+		if err != nil {
+			if err == io.EOF {
+				return io.ErrUnexpectedEOF // don't silently pretend this is a clean EOF
+			}
+			return err
+		}
+
+		if entLen > uint64(carutil.MaxAllowedSectionSize) { // Don't OOM
+			return errors.New("malformed car; header is bigger than util.MaxAllowedSectionSize")
 		}
 		if entLen > uint64(len(entBuf)) {
 			// expand buffer to next power of two if needed
 			entBuf = make([]byte, 1<<bits.Len32(uint32(entLen)))
 		}
 
-		if _, err := j.data.ReadAt(entBuf[:entLen], at+int64(lenlen)); err != nil {
+		if _, err := io.ReadFull(br, entBuf[:entLen]); err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
@@ -680,10 +718,7 @@ func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
 			return err
 		}
 
-		at += int64(lenlen) + int64(entLen)
 	}
-
-	return nil
 }
 
 /* Finalization (marking bottom layer read only, generating fast index) */
