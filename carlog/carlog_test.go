@@ -83,7 +83,7 @@ func TestCarLogBasic(t *testing.T) {
 	require.NoError(t, err)
 
 	// test interate
-	err = jb.Iterate(func(hs cid.Cid, b []byte) error {
+	err = jb.iterate(func(hs cid.Cid, b []byte) error {
 		require.Equal(t, b, []byte("hello world"))
 		require.Equal(t, h, hs.Hash())
 		return nil

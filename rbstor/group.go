@@ -242,18 +242,12 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
 	// right now we just read from jbob
 
-	// todo: Technically we only need this lock when jbob is writable
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
-
+	// View is thread safe
 	return m.jb.View(c, func(cidx int, found bool, data []byte) error {
 		// TODO: handle not found better?
 		if !found {
 			return xerrors.Errorf("group: block not found")
 		}
-
-		m.jblk.Unlock()
-		defer m.jblk.Lock()
 
 		atomic.AddInt64(&m.readBlocks, 1)
 		atomic.AddInt64(&m.readSize, int64(len(data)))
@@ -278,9 +272,7 @@ func (m *Group) Close() error {
 
 // returns car size and root cid
 func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
-	m.jblk.RLock()
-	defer m.jblk.RUnlock()
-
+	// writeCar is thread safe
 	return m.jb.WriteCar(w)
 }
 

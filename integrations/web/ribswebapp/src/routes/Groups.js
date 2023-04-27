@@ -54,12 +54,8 @@ function Deal({ deal, headHeight }) {
 const groupStateText = [
     "Writable",
     "Full",
-    "BSST Exists",
-    "Level Index Dropped",
     "VRCAR Done",
-    "Has Commp",
     "Deals in Progress",
-    "Deals Done",
     "Offloaded"
 ];
 
