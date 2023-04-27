@@ -162,4 +162,65 @@ func TestCarLog3K(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = jb.Close()
+
+	//require.NoError(t, VerifyCar(filepath.Join(td, "canon.car")))
+	//require.NoError(t, VerifyCar(filepath.Join(td, "data.car")))
 }
+
+/*
+// borrowed from go-car
+func VerifyCar(file string) error {
+	// header
+	rx, err := carv2.OpenReader(file)
+	if err != nil {
+		return err
+	}
+	defer rx.Close()
+	roots, err := rx.Roots()
+	if err != nil {
+		return err
+	}
+	if len(roots) == 0 {
+		return fmt.Errorf("no roots listed in car header")
+	}
+	rootMap := make(map[cid.Cid]struct{})
+	for _, r := range roots {
+		rootMap[r] = struct{}{}
+	}
+
+	fmt.Println("roots", roots)
+
+	if rx.Version != 1 {
+		return xerrors.New("expected carv1")
+	}
+
+	// blocks
+	fd, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	rd, err := carv2.NewBlockReader(fd)
+	if err != nil {
+		return err
+	}
+
+	cidList := make([]cid.Cid, 0)
+	for {
+		blk, err := rd.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		delete(rootMap, blk.Cid())
+		cidList = append(cidList, blk.Cid())
+	}
+
+	if len(rootMap) > 0 {
+		return fmt.Errorf("header lists root(s) not present as a block: %v", rootMap)
+	}
+
+	return nil
+}
+*/

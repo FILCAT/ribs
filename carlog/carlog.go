@@ -717,7 +717,6 @@ func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
 		if err := cb(c, entBuf[n:entLen]); err != nil {
 			return err
 		}
-
 	}
 }
 
