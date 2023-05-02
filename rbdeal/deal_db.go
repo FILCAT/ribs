@@ -59,6 +59,7 @@ create table if not exists deals (
     sector_start_epoch integer,
 
     /* deal state */
+    proposed integer not null default 0, /* 1 when the deal is successfully proposed */
     published integer not null default 0, /* publish cid is set, and we have validated the message is landed on chain with some finality */
     sealed integer not null default 0, /* deal state SectorStartEpoch set */
 
@@ -382,7 +383,7 @@ type dbDealInfo struct {
 	SignedProposalBytes []byte
 }
 
-func (r *ribsDB) StoreProposedDeal(d dbDealInfo) error {
+func (r *ribsDB) StoreDealProposal(d dbDealInfo) error {
 	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, signed_proposal_bytes) values
                                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, d.SignedProposalBytes)
 	if err != nil {
@@ -392,14 +393,26 @@ func (r *ribsDB) StoreProposedDeal(d dbDealInfo) error {
 	return nil
 }
 
-func (r *ribsDB) StoreRejectedDeal(d dbDealInfo, emsg string) error {
+func (r *ribsDB) StoreSuccessfullyProposedDeal(d dbDealInfo) error {
+	proposed := 1
+
+	_, err := r.db.Exec(`update deals set proposed = ? where uuid = ?`,
+		proposed, d.DealUUID)
+	if err != nil {
+		return xerrors.Errorf("updating deal: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) StoreRejectedDeal(d dbDealInfo, emsg string, proposed int) error {
 	failed, rejected := 1, 1
 	state := "Rejected"
 
-	_, err := r.db.Exec(`insert into deals (uuid, client_addr, provider_addr, group_id, price_afil_gib_epoch, verified, keep_unsealed, start_epoch, end_epoch, signed_proposal_bytes, failed, rejected, sp_status, error_msg) values
-                                   (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.DealUUID, d.ClientAddr, d.ProviderAddr, d.GroupID, d.PricePerEpoch, d.Verified, d.KeepUnsealed, d.StartEpoch, d.EndEpoch, d.SignedProposalBytes, failed, rejected, state, emsg)
+	_, err := r.db.Exec(`update deals set failed = ?, rejected = ?, sp_status = ?, error_msg = ?, proposed = ? where uuid = ?`,
+		failed, rejected, state, emsg, proposed, d.DealUUID)
 	if err != nil {
-		return xerrors.Errorf("inserting deal: %w", err)
+		return xerrors.Errorf("updating deal: %w", err)
 	}
 
 	return nil

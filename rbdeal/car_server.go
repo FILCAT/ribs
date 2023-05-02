@@ -121,7 +121,7 @@ type carRequestToken struct {
 	Timeout int64
 	CarSize int64
 
-	// todo SP
+	DealUUID uuid.UUID
 }
 
 func (r *ribs) verify(ctx context.Context, token string) (carRequestToken, error) {
@@ -137,11 +137,12 @@ func (r *ribs) verify(ctx context.Context, token string) (carRequestToken, error
 	return payload, nil
 }
 
-func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout time.Duration, carSize int64) ([]byte, error) {
+func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout time.Duration, carSize int64, deal uuid.UUID) ([]byte, error) {
 	p := carRequestToken{
-		Group:   group,
-		Timeout: time.Now().Add(timeout).Unix(),
-		CarSize: carSize,
+		Group:    group,
+		Timeout:  time.Now().Add(timeout).Unix(),
+		CarSize:  carSize,
+		DealUUID: deal,
 	}
 
 	return jwt.Sign(&p, jwtKey)

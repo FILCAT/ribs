@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/filecoin-project/boost/storagemarket/types"
 	types2 "github.com/filecoin-project/boost/transport/types"
@@ -43,7 +44,7 @@ func (e ErrRejected) Error() string {
 	return fmt.Sprintf("deal proposal rejected: %s", e.Reason)
 }
 
-func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host, w *ributil.LocalWallet, reqToken []byte) error {
+func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host, w *ributil.LocalWallet) error {
 	provs, err := r.db.SelectDealProviders(id)
 	if err != nil {
 		return xerrors.Errorf("select deal providers: %w", err)
@@ -71,28 +72,13 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		return xerrors.Errorf("get deal params: %w", err)
 	}
 
-	transferParams := &types2.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
-	transferParams.Headers = map[string]string{
-		"Authorization": string(reqToken),
-	}
-
-	paramsBytes, err := json.Marshal(transferParams)
-	if err != nil {
-		return fmt.Errorf("marshalling request parameters: %w", err)
-	}
-
-	transfer := types.Transfer{
-		Type:   "libp2p",
-		Params: paramsBytes,
-		Size:   uint64(dealInfo.CarSize),
-	}
-
 	pieceCid, err := commcid.PieceCommitmentV1ToCID(dealInfo.CommP)
 	if err != nil {
 		return fmt.Errorf("failed to convert commP to cid: %w", err)
 	}
 
 	makeDealWith := func(prov dealProvider) error {
+		// check proposal params
 		maddr, err := address.NewIDAddress(uint64(prov.id))
 		if err != nil {
 			return xerrors.Errorf("new id address: %w", err)
@@ -118,6 +104,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		startEpoch := head.Height() + abi.ChainEpoch(5760) // head + 2 days
 
+		// generate proposal
 		dealUuid := uuid.New()
 
 		duration := 400 * builtin.EpochsInDay
@@ -142,6 +129,28 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return fmt.Errorf("failed to marshal deal proposal: %w", err)
 		}
 
+		// generate transfer token
+		reqToken, err := r.makeCarRequestToken(context.TODO(), id, time.Hour*36, dealInfo.CarSize, dealUuid)
+		if err != nil {
+			return xerrors.Errorf("make car request token: %w", err)
+		}
+
+		transferParams := &types2.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
+		transferParams.Headers = map[string]string{
+			"Authorization": string(reqToken),
+		}
+
+		paramsBytes, err := json.Marshal(transferParams)
+		if err != nil {
+			return fmt.Errorf("marshalling request parameters: %w", err)
+		}
+
+		transfer := types.Transfer{
+			Type:   "libp2p",
+			Params: paramsBytes,
+			Size:   uint64(dealInfo.CarSize),
+		}
+
 		dealParams := types.DealParams{
 			DealUUID:           dealUuid,
 			ClientDealProposal: *dealProposal,
@@ -163,8 +172,13 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			SignedProposalBytes: proposalBuf.Bytes(),
 		}
 
+		err = r.db.StoreDealProposal(di)
+		if err != nil {
+			return fmt.Errorf("saving deal info: %w", err)
+		}
+
 		if err := h.Connect(ctx, *addrInfo); err != nil {
-			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err))
+			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -174,28 +188,49 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
 		if err != nil {
+			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err), 0)
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
 			return fmt.Errorf("getting protocols for peer %s: %w", addrInfo.ID, err)
 		}
 
 		if len(x) == 0 {
-			return fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
+			err := fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
+
+			if err := r.db.StoreRejectedDeal(di, err.Error(), 0); err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
+			return err
 		}
 
 		// MAKE THE DEAL
 
 		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
 		if err != nil {
+			err = r.db.StoreRejectedDeal(di, xerrors.Errorf("opening deal proposal stream: %w", err).Error(), 0)
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
 			return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
 		}
 		defer s.Close()
 
 		var resp types.DealResponse
 		if err := doRpc(ctx, s, &dealParams, &resp); err != nil {
+			err = r.db.StoreRejectedDeal(di, xerrors.Errorf("sending deal proposal rpc: %w", err).Error(), 0)
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
 			return fmt.Errorf("send proposal rpc: %w", err)
 		}
 
 		if !resp.Accepted {
-			err = r.db.StoreRejectedDeal(di, resp.Message)
+			err = r.db.StoreRejectedDeal(di, resp.Message, 1)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -203,11 +238,8 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return ErrRejected{Reason: resp.Message}
 		}
 
-		// SAVE DETAILS
-
-		err = r.db.StoreProposedDeal(di)
-		if err != nil {
-			return fmt.Errorf("saving deal info: %w", err)
+		if err := r.db.StoreSuccessfullyProposedDeal(di); err != nil {
+			return xerrors.Errorf("marking deal as successfully proposed: %w", err)
 		}
 
 		log.Warnf("Deal %s with %s accepted for group %d!!!", dealUuid, maddr, id)

@@ -193,19 +193,7 @@ func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
 			return
 		}
 
-		dealInfo, err := r.db.GetDealParams(context.TODO(), group)
-		if err != nil {
-			log.Errorf("getting deal params: %s", err)
-			return
-		}
-
-		reqToken, err := r.makeCarRequestToken(context.TODO(), group, time.Hour*36, dealInfo.CarSize)
-		if err != nil {
-			log.Errorf("making car request token: %s", err)
-			return
-		}
-
-		err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet, reqToken)
+		err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet)
 		if err != nil {
 			log.Errorf("starting new deals: %s", err)
 		}
