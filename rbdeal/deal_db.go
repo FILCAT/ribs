@@ -16,21 +16,6 @@ import (
 	"sort"
 )
 
-const mFil = 1_000_000_000_000_000
-
-var (
-	maxVerifPrice float64 = 0
-
-	// 2 mFil/gib/mo is roughly cloud cost currently
-	maxPrice float64 = (1 * mFil) / 2 / 60 / 24 / 30.436875
-
-	// piece size range ribs is aiming for
-	minPieceSize = 4 << 30
-	maxPieceSize = 8 << 30
-
-	dealPublishFinality abi.ChainEpoch = 60
-)
-
 type ribsDB struct {
 	db *sql.DB
 }

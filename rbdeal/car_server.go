@@ -210,6 +210,13 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// todo check that:
+	//  * deal exists
+	//  * retries aren't above limit
+	//  * transfer speed so far was good enough
+
+	// reqToken.DealUUID
+
 	r.uploadStatsLk.Lock()
 	if r.uploadStats[reqToken.Group] == nil {
 		r.uploadStats[reqToken.Group] = &iface.UploadStats{}

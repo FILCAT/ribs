@@ -23,11 +23,6 @@ import (
 )
 
 const DealStatusV12ProtocolID = "/fil/storage/status/1.2.0"
-const clientReadDeadline = 10 * time.Second
-const clientWriteDeadline = 10 * time.Second
-
-var DealCheckInterval = 10 * time.Second
-var ParallelDealChecks = 10
 
 func (r *ribs) dealTracker(ctx context.Context) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)

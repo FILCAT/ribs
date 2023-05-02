@@ -29,13 +29,6 @@ import (
 
 const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 
-var verified = true
-
-var (
-	minimumReplicaCount = 5
-	targetReplicaCount  = 7
-)
-
 type ErrRejected struct {
 	Reason string
 }

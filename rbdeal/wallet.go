@@ -19,11 +19,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 )
 
-var walletUpgradeInterval = time.Minute
-
-var minMarketBalance = types.NewInt(100_000_000_000_000_000)    // 100 mFIL
-var autoMarketBalance = types.NewInt(1_000_000_000_000_000_000) // 1 FIL
-
 func (r *ribs) MarketAdd(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error) {
 	r.marketFundsLk.Lock()
 	defer r.marketFundsLk.Unlock()
