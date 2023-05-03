@@ -61,7 +61,6 @@ func (rew *RateEnforcingWriter) Write(p []byte) (int, error) {
 
 	n, err := rew.w.Write(p)
 	rew.bytesTransferred += int64(n)
-	rew.writeError = err
 	return n, err
 }
 
