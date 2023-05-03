@@ -188,7 +188,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 				err := r.runDealCheckQuery(ctx, gw, walletAddr, deal)
 				cancel()
 				if err != nil {
-					log.Errorw("deal check failed", "deal", deal.DealUUID, "provider", fmt.Sprintf("f0%d", deal.ProviderAddr), "error", err)
+					log.Warnw("deal check failed", "deal", deal.DealUUID, "provider", fmt.Sprintf("f0%d", deal.ProviderAddr), "error", err)
 				}
 			}(deal)
 		}

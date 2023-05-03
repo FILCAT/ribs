@@ -109,6 +109,9 @@ create table if not exists providers (
     ask_max_piece_size integer not null default 0
 );
 
+drop view if exists good_providers_view;
+drop view if exists sp_deal_stats_view;
+
 CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
     SELECT
         d.provider_addr AS sp_id,
@@ -118,17 +121,17 @@ CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
         COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS failed_deals,
         COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) AS rejected_deals,
         CASE
-            WHEN COUNT(*) >= 4 AND COUNT(*) = COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) THEN 1
+            WHEN COUNT(*) >= 4 AND COUNT(*) * 4 < COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) * 5 THEN 1
             ELSE 0
-        END AS rejected_all
+            END AS failed_all
     FROM
         deals d
+            JOIN
+        groups g ON d.group_id = g.id
     WHERE
         d.start_time >= strftime('%%s', 'now', '-3 days')
     GROUP BY
         d.provider_addr;
-
-drop view if exists good_providers_view;
 
 CREATE VIEW IF NOT EXISTS good_providers_view AS
     SELECT 
@@ -147,7 +150,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         AND p.ask_price <= %f 
         AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
-        AND (ds.rejected_all IS NULL OR ds.rejected_all = 0)
+        AND (ds.failed_all IS NULL OR ds.failed_all = 0)
     ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
@@ -159,7 +162,7 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
-	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice, maxPrice, minPieceSize, maxPieceSize))
+	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice, maxPrice, maxPieceSize, minPieceSize))
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
