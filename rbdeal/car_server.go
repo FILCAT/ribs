@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+var bootTime = time.Now()
+
 func (r *ribs) setupCarServer(ctx context.Context, host host.Host) error {
 	// todo protect incoming streams
 
@@ -284,17 +286,17 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 
 	startTime := DerefOr(transferInfo.CarTransferStartTime, 0)
 
-	if startTime > 0 && time.Since(time.Unix(DerefOr(transferInfo.CarTransferLastEndTime, 0), 0)) > transferIdleTimeout {
-		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, xerrors.Errorf("transfer not restarted for too long")); err != nil {
-			log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
+	if time.Since(bootTime) > transferIdleTimeout && startTime > 0 {
+		if time.Since(time.Unix(DerefOr(transferInfo.CarTransferLastEndTime, 0), 0)) > transferIdleTimeout {
+			if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, xerrors.Errorf("transfer not restarted for too long")); err != nil {
+				log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
+				return
+			}
+
+			http.Error(w, "transfer not restarted for too long", http.StatusGone)
 			return
 		}
 
-		http.Error(w, "transfer not restarted for too long", http.StatusGone)
-		return
-	}
-
-	if startTime > 0 {
 		// if the transfer was started already, and going on for a while, check the speed
 		elapsedTime := time.Since(time.Unix(startTime, 0))
 		transferredBytes := DerefOr(transferInfo.CarTransferLastBytes, 0)
@@ -308,6 +310,8 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	rateWriter := ributil.NewRateEnforcingWriter(sw, float64(minTransferMbps), transferIdleTimeout)
+
+	// todo set content-length header
 
 	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, rateWriter)
 

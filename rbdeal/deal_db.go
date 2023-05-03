@@ -56,6 +56,10 @@ create table if not exists deals (
 
     error_msg text,
 
+    /* status queries */
+    last_state_query integer default 0 not null,
+    last_state_query_error text,
+
     /* data transfer */
     car_transfer_start_time integer,
     car_transfer_attempts integer not null default 0,
@@ -415,29 +419,66 @@ func (r *ribsDB) StoreRejectedDeal(d dbDealInfo, emsg string, proposed int) erro
 	return nil
 }
 
-func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp types.DealStatusResponse) error {
-	var pubCid *string
-	if stresp.DealStatus.PublishCid != nil {
-		s := stresp.DealStatus.PublishCid.String()
-		pubCid = &s
-	}
+func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp *types.DealStatusResponse, qerr error) error {
+	now := time.Now().Unix()
+	var lastError *string
 
-	failed := stresp.DealStatus.Error != ""
+	if qerr != nil || stresp == nil {
+		if qerr != nil {
+			errStr := qerr.Error()
+			lastError = &errStr
+		} else {
+			errMsg := "DealStatusResponse is nil"
+			lastError = &errMsg
+		}
 
-	_, err := r.db.Exec(`update deals set
-	failed = ?,
-	sp_status = ?,
-	error_msg = ?,
-	sp_sealing_status = ?,
-	sp_sig_proposal = ?,
-	sp_pub_msg_cid = ?,
-	sp_recv_bytes = ?,
-	sp_txsize = ?
-	where uuid = ?`, failed, stresp.DealStatus.Status, stresp.DealStatus.Error, stresp.DealStatus.SealingStatus,
-		stresp.DealStatus.SignedProposalCid.String(), pubCid,
-		stresp.NBytesReceived, stresp.TransferSize, id)
-	if err != nil {
-		return xerrors.Errorf("update sp tracker: %w", err)
+		_, err := r.db.Exec(`update deals set
+        last_state_query_error = ?
+        where uuid = ?`, lastError, id)
+		if err != nil {
+			return xerrors.Errorf("update sp tracker: %w", err)
+		}
+	} else if stresp.DealStatus == nil {
+		errMsg := fmt.Sprintf("DealStatus is nil (resp err: '%s')", stresp.Error)
+
+		failed := true
+
+		_, err := r.db.Exec(`update deals set
+                 failed = ?,
+                 sp_status = ?,
+                 error_msg = ?,
+                 last_state_query_error = ?,
+                 last_state_query = ?
+             where uuid = ?`, failed, "Aborted", errMsg, errMsg, now, id)
+		if err != nil {
+			return xerrors.Errorf("update sp tracker: %w", err)
+		}
+	} else {
+		var pubCid *string
+		if stresp.DealStatus.PublishCid != nil {
+			s := stresp.DealStatus.PublishCid.String()
+			pubCid = &s
+		}
+
+		failed := stresp.DealStatus.Error != ""
+
+		_, err := r.db.Exec(`update deals set
+        failed = ?,
+        sp_status = ?,
+        error_msg = ?,
+        sp_sealing_status = ?,
+        sp_sig_proposal = ?,
+        sp_pub_msg_cid = ?,
+        sp_recv_bytes = ?,
+        sp_txsize = ?,
+        last_state_query = ?,
+        last_state_query_error = ?
+        where uuid = ?`, failed, stresp.DealStatus.Status, stresp.DealStatus.Error, stresp.DealStatus.SealingStatus,
+			stresp.DealStatus.SignedProposalCid.String(), pubCid,
+			stresp.NBytesReceived, stresp.TransferSize, now, lastError, id)
+		if err != nil {
+			return xerrors.Errorf("update sp tracker: %w", err)
+		}
 	}
 
 	return nil

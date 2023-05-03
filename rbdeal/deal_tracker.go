@@ -237,18 +237,16 @@ func (r *ribs) runDealCheckQuery(ctx context.Context, gw api.Gateway, walletAddr
 	}
 
 	if err := r.host.Connect(ctx, *addrInfo); err != nil {
+		if err := r.db.UpdateSPDealState(dealUUID, nil, xerrors.Errorf("connect to miner: %w", err)); err != nil {
+			return xerrors.Errorf("storing deal state response: %w", err)
+		}
+
 		return xerrors.Errorf("connect to miner: %w", err)
 	}
 
 	resp, err := r.sendDealStatusRequest(ctx, addrInfo.ID, dealUUID, walletAddr)
-	if err != nil {
-		return fmt.Errorf("send deal status request failed: %w", err)
-	}
-
-	if resp.DealStatus != nil {
-		if err := r.db.UpdateSPDealState(dealUUID, *resp); err != nil {
-			return xerrors.Errorf("storing deal state response: %w", err)
-		}
+	if err := r.db.UpdateSPDealState(dealUUID, resp, err); err != nil {
+		return xerrors.Errorf("storing deal state response: %w", err)
 	}
 
 	return nil
