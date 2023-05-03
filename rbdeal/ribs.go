@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -59,7 +60,9 @@ type ribs struct {
 	/* car uploads */
 	uploadStats     map[iface.GroupKey]*iface.UploadStats
 	uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
-	uploadStatsLk   sync.Mutex
+
+	activeUploads map[uuid.UUID]struct{}
+	uploadStatsLk sync.Mutex
 }
 
 func (r *ribs) Wallet() iface.Wallet {
@@ -97,6 +100,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
 		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
+		activeUploads:   map[uuid.UUID]struct{}{},
 
 		close: make(chan struct{}),
 		//workerClosed: make(chan struct{}),

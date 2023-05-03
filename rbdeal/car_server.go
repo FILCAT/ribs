@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/lotus-web3/ribs"
+	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"io"
 	"net"
@@ -90,12 +91,18 @@ func (r *ribs) CarUploadStats() map[iface.GroupKey]*iface.UploadStats {
 }
 
 type carStatWriter struct {
-	ctr       *int64
+	groupCtr *int64
+	wrote    int64
+
 	w         io.Writer
 	toDiscard int64
 }
 
 func (c *carStatWriter) Write(p []byte) (n int, err error) {
+	defer func() {
+		c.wrote += int64(n)
+	}()
+
 	var discarded int64
 	if c.toDiscard > 0 {
 		if int64(len(p)) <= c.toDiscard {
@@ -107,7 +114,7 @@ func (c *carStatWriter) Write(p []byte) (n int, err error) {
 		c.toDiscard = 0
 	}
 	n, err = c.w.Write(p)
-	atomic.AddInt64(c.ctr, int64(n))
+	atomic.AddInt64(c.groupCtr, int64(n))
 	n += int(discarded)
 	return
 }
@@ -211,13 +218,27 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// todo check that:
-	//  * deal exists
-	//  * retries aren't above limit
-	//  * transfer speed so far was good enough
+	//  * only one transfer per deal is active ++
+	//  * deal exists ++
+	//  * retries aren't above limit ++
+	//  * transfer wasn't aborted (speed so far was good enough)
+	//    * check speed based on start time and range request
+	//  * IF ok, set start time
 
-	// reqToken.DealUUID
+	// db needs:
+	// * tx attempts ++
+	// * tx start time ++
+	// * tx bytes so far ++
 
 	r.uploadStatsLk.Lock()
+	if _, found := r.activeUploads[reqToken.DealUUID]; found {
+		http.Error(w, "transfer for deal already ongoing", http.StatusTooManyRequests)
+		r.uploadStatsLk.Unlock()
+		return
+	}
+
+	r.activeUploads[reqToken.DealUUID] = struct{}{}
+
 	if r.uploadStats[reqToken.Group] == nil {
 		r.uploadStats[reqToken.Group] = &iface.UploadStats{}
 	}
@@ -225,7 +246,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.uploadStats[reqToken.Group].ActiveRequests++
 
 	sw := &carStatWriter{
-		ctr:       &r.uploadStats[reqToken.Group].UploadBytes,
+		groupCtr:  &r.uploadStats[reqToken.Group].UploadBytes,
 		w:         w,
 		toDiscard: toDiscard,
 	}
@@ -234,11 +255,67 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 
 	defer func() {
 		r.uploadStatsLk.Lock()
+		delete(r.activeUploads, reqToken.DealUUID)
 		r.uploadStats[reqToken.Group].ActiveRequests--
 		r.uploadStatsLk.Unlock()
 	}()
 
-	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, sw)
+	transferInfo, err := r.db.GetTransferStatusByDealUUID(reqToken.DealUUID)
+	if err != nil {
+		log.Errorw("car request: get transfer status by deal uuid", "error", err, "url", req.URL)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if transferInfo.Failed == 1 {
+		http.Error(w, "deal is failed", http.StatusGone)
+		return
+	}
+
+	if transferInfo.CarTransferAttempts >= maxTransferRetries {
+		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, xerrors.Errorf("transfer has been retried too much")); err != nil {
+			log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
+			return
+		}
+
+		http.Error(w, "transfer has been retried too much", http.StatusTooManyRequests)
+		return
+	}
+
+	if transferInfo.CarTransferStartTime > 0 && time.Since(time.Unix(transferInfo.CarTransferLastEndTime, 0)) > transferIdleTimeout {
+		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, xerrors.Errorf("transfer not restarted for too long")); err != nil {
+			log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
+			return
+		}
+
+		http.Error(w, "transfer not restarted for too long", http.StatusGone)
+		return
+	}
+
+	if transferInfo.CarTransferStartTime > 0 {
+		// if the transfer was started already, and going on for a while, check the speed
+		elapsedTime := time.Since(time.Unix(transferInfo.CarTransferStartTime, 0))
+		transferredBytes := transferInfo.CarTransferLastBytes
+		transferSpeedMbps := float64(transferredBytes*8) / 1e6 / elapsedTime.Seconds()
+
+		if transferSpeedMbps < float64(minTransferMbps) {
+			log.Infow("car request: transfer speed too slow", "url", req.URL, "speed", transferSpeedMbps, "deal", reqToken.DealUUID, "group", reqToken.Group)
+			http.Error(w, "transfer speed too slow", http.StatusGone)
+			return
+		}
+	}
+
+	rateWriter := ributil.NewRateEnforcingWriter(sw, float64(minTransferMbps), transferIdleTimeout)
+
+	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, rateWriter)
+
+	defer func() {
+		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, rateWriter.WriteError()); err != nil {
+			log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
+			return
+		}
+	}()
+
 	if err != nil {
 		log.Errorw("car request: write car", "error", err, "url", req.URL)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

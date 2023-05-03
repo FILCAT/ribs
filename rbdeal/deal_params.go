@@ -45,6 +45,12 @@ var autoMarketBalance = types.NewInt(1_000_000_000_000_000_000) // 1 FIL
 // deal transfers
 
 // todo this definitely needs to be configurable by the user
-var minTransferMbps = 20 // at 20 Mbps, a 32 GiB piece takes ~3 hours to transfer
-var linkSpeedMbps = 1000 // 1 Gbps
-var maxTransfers = linkSpeedMbps / minTransferMbps * 8 / 10
+var minTransferMbps = 20                                    // at 20 Mbps, a 32 GiB piece takes ~3 hours to transfer
+var linkSpeedMbps = 1000                                    // 1 Gbps
+var maxTransfers = linkSpeedMbps / minTransferMbps * 8 / 10 // 80% for safety margin
+
+// time the sp has to start the first transfer, and for data to not be flowing
+// also transfer rate check interval
+var transferIdleTimeout = 5 * time.Minute
+
+var maxTransferRetries = 10

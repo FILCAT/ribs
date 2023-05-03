@@ -14,6 +14,7 @@ import (
 	"golang.org/x/xerrors"
 	"path/filepath"
 	"sort"
+	"time"
 )
 
 type ribsDB struct {
@@ -53,15 +54,23 @@ create table if not exists deals (
 
     failed_expired integer not null default 0, /* 1 when the deal is failed AND the proposal start has passed TODO */
 
+    error_msg text,
+
+    /* data transfer */
+    car_transfer_start_time integer,
+    car_transfer_attempts integer not null default 0,
+
+    car_transfer_last_end_time integer,
+    car_transfer_last_bytes integer,
+
     /* sp deal state */
     sp_status text, /* boost checkpoint name */
-    error_msg text,
     sp_sealing_status text,
     sp_sig_proposal text,
     sp_pub_msg_cid text,
 
     sp_recv_bytes integer,
-    sp_txsize integer,
+    sp_txsize integer, /* todo swap for car_size in group? */
 
     /* market deal state checks */
     last_deal_state_check integer not null default 0,
@@ -867,4 +876,47 @@ func DerefOr[T any](v *T, def T) T {
 		return def
 	}
 	return *v
+}
+
+type TransferInfo struct {
+	Failed                 int
+	CarTransferAttempts    int
+	CarTransferStartTime   int64
+	CarTransferLastBytes   int64
+	CarTransferLastEndTime int64
+}
+
+func (r *ribsDB) GetTransferStatusByDealUUID(dealUUID uuid.UUID) (*TransferInfo, error) {
+	var transferInfo TransferInfo
+
+	err := r.db.QueryRow(`select failed, car_transfer_attempts, car_transfer_start_time, car_transfer_last_bytes, car_transfer_last_end_time from deals where uuid = ?`, dealUUID).Scan(&transferInfo.Failed, &transferInfo.CarTransferAttempts, &transferInfo.CarTransferStartTime, &transferInfo.CarTransferLastBytes, &transferInfo.CarTransferLastEndTime)
+	if err != nil {
+		return nil, xerrors.Errorf("getting transfer status: %w", err)
+	}
+
+	if transferInfo.CarTransferAttempts == 0 {
+		_, err := r.db.Exec(`update deals set car_transfer_start_time = ? where uuid = ?`, time.Now().Unix(), dealUUID)
+		if err != nil {
+			return nil, xerrors.Errorf("setting transfer start time: %w", err)
+		}
+	}
+
+	return &transferInfo, nil
+}
+
+func (r *ribsDB) UpdateTransferStats(dealUUID uuid.UUID, lastBytes int64, abortError error) error {
+	failed := 0
+	errorMsg := ""
+
+	if abortError != nil {
+		failed = 1
+		errorMsg = abortError.Error()
+	}
+
+	_, err := r.db.Exec(`update deals set car_transfer_last_end_time = ?, car_transfer_last_bytes = ?, car_transfer_attempts = car_transfer_attempts + 1, failed = ?, error_msg = CASE WHEN error_msg = '' THEN ? ELSE error_msg END where uuid = ?`, time.Now().Unix(), lastBytes, failed, errorMsg, dealUUID)
+	if err != nil {
+		return xerrors.Errorf("updating transfer stats: %w", err)
+	}
+
+	return nil
 }
