@@ -881,9 +881,9 @@ func DerefOr[T any](v *T, def T) T {
 type TransferInfo struct {
 	Failed                 int
 	CarTransferAttempts    int
-	CarTransferStartTime   int64
-	CarTransferLastBytes   int64
-	CarTransferLastEndTime int64
+	CarTransferStartTime   *int64
+	CarTransferLastBytes   *int64
+	CarTransferLastEndTime *int64
 }
 
 func (r *ribsDB) GetTransferStatusByDealUUID(dealUUID uuid.UUID) (*TransferInfo, error) {

@@ -282,7 +282,9 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if transferInfo.CarTransferStartTime > 0 && time.Since(time.Unix(transferInfo.CarTransferLastEndTime, 0)) > transferIdleTimeout {
+	startTime := DerefOr(transferInfo.CarTransferStartTime, 0)
+
+	if startTime > 0 && time.Since(time.Unix(DerefOr(transferInfo.CarTransferLastEndTime, 0), 0)) > transferIdleTimeout {
 		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, xerrors.Errorf("transfer not restarted for too long")); err != nil {
 			log.Errorw("car request: update transfer stats", "error", err, "url", req.URL)
 			return
@@ -292,14 +294,14 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if transferInfo.CarTransferStartTime > 0 {
+	if startTime > 0 {
 		// if the transfer was started already, and going on for a while, check the speed
-		elapsedTime := time.Since(time.Unix(transferInfo.CarTransferStartTime, 0))
-		transferredBytes := transferInfo.CarTransferLastBytes
+		elapsedTime := time.Since(time.Unix(startTime, 0))
+		transferredBytes := DerefOr(transferInfo.CarTransferLastBytes, 0)
 		transferSpeedMbps := float64(transferredBytes*8) / 1e6 / elapsedTime.Seconds()
 
 		if transferSpeedMbps < float64(minTransferMbps) {
-			log.Infow("car request: transfer speed too slow", "url", req.URL, "speed", transferSpeedMbps, "deal", reqToken.DealUUID, "group", reqToken.Group)
+			log.Errorw("car request: transfer speed too slow", "url", req.URL, "speed", transferSpeedMbps, "deal", reqToken.DealUUID, "group", reqToken.Group)
 			http.Error(w, "transfer speed too slow", http.StatusGone)
 			return
 		}
@@ -317,7 +319,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	if err != nil {
-		log.Errorw("car request: write car", "error", err, "url", req.URL)
+		log.Errorw("car request: write car", "error", err, "url", req.URL, "group", reqToken.Group, "deal", reqToken.DealUUID, "remote", req.RemoteAddr)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
