@@ -591,7 +591,9 @@ func (r *ribsDB) MarkExpiredDeals(currentEpoch int64) error {
 	query := `
 		UPDATE deals
 		SET failed = 1,
-			failed_expired = 1
+			failed_expired = 1,
+			published = 0,
+			sp_pub_msg_cid = null
 		WHERE failed = 0 AND sealed = 0
 			AND start_epoch < ?;
 	`
