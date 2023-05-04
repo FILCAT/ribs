@@ -101,7 +101,7 @@ func (mgr *CurrentDealInfoManager) FindCloseMsgTipset(ctx context.Context, tsk t
 			return headTs.Key(), nil
 		}
 
-		// load 15 tipsets back to curTs
+		// load /step/ tipsets back to curTs
 		headTs = curTs
 		toLoad := curTs.Height() - step
 		curTs, err = mgr.CDAPI.ChainGetTipSetByHeight(ctx, toLoad, curTs.Key())

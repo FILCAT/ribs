@@ -32,6 +32,12 @@ func (r *ribs) dealTracker(ctx context.Context) {
 	}
 	defer closer()
 
+	fcdu, err := ributil.NewFullCDU(ctx, gw)
+	if err != nil {
+		log.Errorw("failed to create full CDU", "error", err)
+		return
+	}
+
 	for {
 		checkStart := time.Now()
 		select {
@@ -40,7 +46,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 		default:
 		}
 
-		err := r.runDealCheckLoop(ctx, gw)
+		err := r.runDealCheckLoop(ctx, gw, fcdu)
 		if err != nil {
 			log.Errorw("deal check loop failed", "error", err)
 		}
@@ -59,13 +65,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 	}
 }
 
-func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
-	if err != nil {
-		return xerrors.Errorf("creating gateway rpc client: %w", err)
-	}
-	defer closer()
-
+func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway, fcdu *ributil.FullCDU) error {
 	/* PUBLISHED DEAL CHECKS */
 	/* Wait for published deals to become active (or expire) */
 
@@ -111,7 +111,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 	/* Wait for publish at "good-enough" finality */
 
 	{
-		cdm := ributil.CurrentDealInfoManager{CDAPI: gw}
+		cdm := ributil.CurrentDealInfoManager{CDAPI: fcdu}
 
 		toCheck, err := r.db.PublishingDeals()
 		if err != nil {
@@ -205,7 +205,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 	// check market deal state
 
-	// Inactive, expired deal cleanup
+	// Inactive, unpublished, expired deal cleanup
 	{
 		head, err := gw.ChainHead(ctx) // todo lookback
 		if err != nil {
