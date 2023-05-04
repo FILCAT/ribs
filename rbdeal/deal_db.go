@@ -915,6 +915,56 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	return dealMeta, nil
 }
 
+type GroupDealStats struct {
+	GroupID        int64
+	State          iface.GroupState
+	TotalDeals     int64
+	PublishedDeals int64
+	SealedDeals    int64
+	FailedDeals    int64
+	RejectedDeals  int64
+}
+
+func (r *ribsDB) GetGroupDealStats() (map[int64]GroupDealStats, error) {
+	query := `
+        SELECT
+            g.id AS group_id,
+            g.g_state AS group_state,
+            COUNT(d.group_id) AS total_deals,
+            COUNT(CASE WHEN d.published = 1 THEN 1 ELSE NULL END) AS published_deals,
+            COUNT(CASE WHEN d.sealed = 1 THEN 1 ELSE NULL END) AS sealed_deals,
+            COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS failed_deals,
+            COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) AS rejected_deals
+        FROM
+            groups g
+            LEFT JOIN
+            deals d ON g.id = d.group_id
+        GROUP BY
+            g.id;`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, xerrors.Errorf("fetch group deal stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := make(map[int64]GroupDealStats)
+	for rows.Next() {
+		var s GroupDealStats
+		err := rows.Scan(&s.GroupID, &s.State, &s.TotalDeals, &s.PublishedDeals, &s.SealedDeals, &s.FailedDeals, &s.RejectedDeals)
+		if err != nil {
+			return nil, xerrors.Errorf("scan group deal stats: %w", err)
+		}
+		stats[s.GroupID] = s
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterate group deal stats: %w", err)
+	}
+
+	return stats, nil
+}
+
 func DerefOr[T any](v *T, def T) T {
 	if v == nil {
 		return def

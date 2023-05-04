@@ -38,6 +38,22 @@ func (e ErrRejected) Error() string {
 }
 
 func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host, w *ributil.LocalWallet) error {
+	r.dealsLk.Lock()
+	if _, ok := r.moreDealsLocks[id]; ok {
+		r.dealsLk.Unlock()
+
+		// another goroutine is already making deals for this group
+		return nil
+	}
+	r.moreDealsLocks[id] = struct{}{}
+	r.dealsLk.Unlock()
+
+	defer func() {
+		r.dealsLk.Lock()
+		delete(r.moreDealsLocks, id)
+		r.dealsLk.Unlock()
+	}()
+
 	provs, err := r.db.SelectDealProviders(id)
 	if err != nil {
 		return xerrors.Errorf("select deal providers: %w", err)
@@ -47,6 +63,11 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 	if err != nil {
 		log.Errorf("getting non-failed deal count: %s", err)
 		return xerrors.Errorf("getting non-failed deal count: %w", err)
+	}
+
+	if notFailed >= targetReplicaCount {
+		// occasionally in some racy cases we can end up here
+		return nil
 	}
 
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)

@@ -219,19 +219,6 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// todo check that:
-	//  * only one transfer per deal is active ++
-	//  * deal exists ++
-	//  * retries aren't above limit ++
-	//  * transfer wasn't aborted (speed so far was good enough)
-	//    * check speed based on start time and range request
-	//  * IF ok, set start time
-
-	// db needs:
-	// * tx attempts ++
-	// * tx start time ++
-	// * tx bytes so far ++
-
 	r.uploadStatsLk.Lock()
 	if _, found := r.activeUploads[reqToken.DealUUID]; found {
 		http.Error(w, "transfer for deal already ongoing", http.StatusTooManyRequests)

@@ -63,6 +63,10 @@ type ribs struct {
 
 	activeUploads map[uuid.UUID]struct{}
 	uploadStatsLk sync.Mutex
+
+	/* dealmaking */
+	dealsLk        sync.Mutex
+	moreDealsLocks map[iface.GroupKey]struct{}
 }
 
 func (r *ribs) Wallet() iface.Wallet {
@@ -106,6 +110,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		//workerClosed: make(chan struct{}),
 		spCrawlClosed:     make(chan struct{}),
 		marketWatchClosed: make(chan struct{}),
+
+		moreDealsLocks: map[iface.GroupKey]struct{}{},
 	}
 
 	{
@@ -197,10 +203,12 @@ func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
 			return
 		}
 
-		err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet)
-		if err != nil {
-			log.Errorf("starting new deals: %s", err)
-		}
+		go func() {
+			err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet)
+			if err != nil {
+				log.Errorf("starting new deals: %s", err)
+			}
+		}()
 	}
 }
 

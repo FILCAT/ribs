@@ -16,6 +16,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	ribs2 "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"sort"
@@ -214,6 +215,28 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 		// todo make configurable, 60 is 30min
 		if err := r.db.MarkExpiredDeals(int64(head.Height()) - 60); err != nil {
 			return xerrors.Errorf("marking expired deals: %w", err)
+		}
+	}
+
+	/* deal count checks */
+
+	gs, err := r.db.GetGroupDealStats()
+	if err != nil {
+		return xerrors.Errorf("getting storage groups: %w", err)
+	}
+
+	for gid, gs := range gs {
+		if gs.State != ribs2.GroupStateLocalReadyForDeals {
+			continue
+		}
+
+		if gs.TotalDeals-gs.FailedDeals < int64(minimumReplicaCount) {
+			go func(gid ribs2.GroupKey) {
+				err = r.makeMoreDeals(context.TODO(), gid, r.host, r.wallet)
+				if err != nil {
+					log.Errorf("starting new deals: %s", err)
+				}
+			}(gid)
 		}
 	}
 
