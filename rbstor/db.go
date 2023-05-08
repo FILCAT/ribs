@@ -265,7 +265,7 @@ func (r *rbsDB) Groups() ([]iface.GroupKey, error) {
 }
 
 func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
-	res, err := r.db.Query("select blocks, bytes, g_state from groups where id = ?", gk)
+	res, err := r.db.Query("select blocks, bytes, g_state, car_size from groups where id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -274,9 +274,10 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	var bytes int64
 	var state iface.GroupState
 	var found bool
+	var carSize *int64
 
 	for res.Next() {
-		err := res.Scan(&blocks, &bytes, &state)
+		err := res.Scan(&blocks, &bytes, &state, &carSize)
 		if err != nil {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
 		}
@@ -306,5 +307,7 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 		Blocks: blocks,
 		Bytes:  bytes,
+
+		DealCarSize: carSize,
 	}, nil
 }

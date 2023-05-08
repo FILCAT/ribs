@@ -151,7 +151,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         AND p.ping_ok = 1
         AND p.ask_ok = 1
         AND p.ask_verif_price <= %f
-        AND p.ask_price <= %f 
+        /*AND p.ask_price <= %%f */
         AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
         AND (ds.failed_all IS NULL OR ds.failed_all = 0)
@@ -166,7 +166,7 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
-	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice, maxPrice, maxPieceSize, minPieceSize))
+	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice /*, maxPrice*/, maxPieceSize, minPieceSize))
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}

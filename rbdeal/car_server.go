@@ -219,6 +219,18 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	gm, err := r.RBS.StorageDiag().GroupMeta(reqToken.Group)
+	if err != nil {
+		log.Errorw("car request: group meta", "error", err, "url", req.URL)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if gm.DealCarSize == nil {
+		log.Errorw("car request: no deal car size", "url", req.URL)
+		http.Error(w, "no deal car size", http.StatusInternalServerError)
+		return
+	}
+
 	r.uploadStatsLk.Lock()
 	if _, found := r.activeUploads[reqToken.DealUUID]; found {
 		http.Error(w, "transfer for deal already ongoing", http.StatusTooManyRequests)
@@ -298,7 +310,10 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 
 	rateWriter := ributil.NewRateEnforcingWriter(sw, float64(minTransferMbps), transferIdleTimeout)
 
-	// todo set content-length header
+	respLen := *gm.DealCarSize - toDiscard
+
+	w.Header().Set("Content-Length", strconv.FormatInt(respLen, 10))
+	w.Header().Set("Content-Type", "application/vnd.ipld.car")
 
 	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, rateWriter)
 

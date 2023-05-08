@@ -140,6 +140,8 @@ type GroupMeta struct {
 
 	ReadBlocks, ReadBytes   int64
 	WriteBlocks, WriteBytes int64
+
+	DealCarSize *int64
 }
 
 type RBSDiag interface {

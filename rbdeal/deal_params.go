@@ -32,8 +32,8 @@ var ParallelDealChecks = 10
 var verified = true
 
 var (
-	minimumReplicaCount = 5
-	targetReplicaCount  = 7
+	minimumReplicaCount = 7
+	targetReplicaCount  = 10
 )
 
 // market wallet management
@@ -45,7 +45,7 @@ var autoMarketBalance = types.NewInt(1_000_000_000_000_000_000) // 1 FIL
 // deal transfers
 
 // todo this definitely needs to be configurable by the user
-var minTransferMbps = 10                                    // at 10 Mbps, a 32 GiB piece takes ~7 hours to transfer
+var minTransferMbps = 8                                     // at 10 Mbps, a 32 GiB piece takes ~7 hours to transfer
 var linkSpeedMbps = 1000                                    // 1 Gbps
 var maxTransfers = linkSpeedMbps / minTransferMbps * 8 / 10 // 80% for safety margin
 
