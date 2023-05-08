@@ -34,38 +34,6 @@ function Provider() {
         };
     }, []);
 
-    /*
-    * type ProviderMeta struct {
-	ID     int64
-	PingOk bool
-
-	BoostDeals     bool
-	BoosterHttp    bool
-	BoosterBitswap bool
-
-	IndexedSuccess int64
-	IndexedFail    int64
-
-	DealStarted  int64
-	DealSuccess  int64
-	DealFail     int64
-	DealRejected int64
-
-	RetrProbeSuccess int64
-	RetrProbeFail    int64
-	RetrProbeBlocks  int64
-	RetrProbeBytes   int64
-
-	// price in fil/gib/epoch
-	AskPrice         float64
-	AskVerifiedPrice float64
-
-	AskMinPieceSize float64
-	AskMaxPieceSize float64
-}
-    *
-    * */
-
     return (
         <div className="Provider">
             {provider && (
@@ -175,7 +143,7 @@ function Provider() {
                                 <td>{epochToDate(deal.EndEpoch)}, {epochToDuration(deal.EndEpoch-headHeight)}</td>
                                 <td className="provider-deals-error-col">{deal.Error && <pre>{deal.Error}</pre>}</td>
                                 <td>{deal.DealID && <a href={`https://filfox.info/en/deal/${deal.DealID}`} target="_blank" rel="noopener noreferrer">{deal.DealID}</a> || <></>}</td>
-                                <td>{deal.BytesRecv && <>{deal.BytesRecv}/{deal.TxSize}</> || <></>}</td>
+                                <td>{deal.BytesRecv && <>{formatBytesBinary(deal.BytesRecv)}/{formatBytesBinary(deal.TxSize)}</> || <></>}</td>
                                 <td>{deal.PubCid && <a href={`https://filfox.info/en/message/${deal.PubCid}`} target="_blank" rel="noopener noreferrer">bafy..{deal.PubCid.substr(-16)}</a>}</td>
                             </tr>
                         ))}
