@@ -308,7 +308,9 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	rateWriter := ributil.NewRateEnforcingWriter(sw, float64(minTransferMbps), transferIdleTimeout)
+	rc := r.rateCounters.Get(pid)
+	rateWriter := ributil.NewRateEnforcingWriter(sw, rc, transferIdleTimeout)
+	defer rateWriter.Done()
 
 	respLen := *gm.DealCarSize - toDiscard
 

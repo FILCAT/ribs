@@ -8,6 +8,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/rbstor"
 	"github.com/lotus-web3/ribs/ributil"
@@ -64,6 +65,8 @@ type ribs struct {
 	activeUploads map[uuid.UUID]struct{}
 	uploadStatsLk sync.Mutex
 
+	rateCounters *ributil.RateCounters[peer.ID]
+
 	/* dealmaking */
 	dealsLk        sync.Mutex
 	moreDealsLocks map[iface.GroupKey]struct{}
@@ -105,6 +108,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
 		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
 		activeUploads:   map[uuid.UUID]struct{}{},
+		rateCounters:    ributil.NewRateCounters[peer.ID](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps))),
 
 		close: make(chan struct{}),
 		//workerClosed: make(chan struct{}),

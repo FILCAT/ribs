@@ -10,7 +10,10 @@ import (
 func TestRateEnforcingWriter(t *testing.T) {
 	t.Run("should write without error when rate is above minimum", func(t *testing.T) {
 		var buf bytes.Buffer
-		rew := NewRateEnforcingWriter(&buf, 0.5, 50*time.Millisecond)
+
+		rc := NewRateCounters[int](MinAvgGlobalLogPeerRate(1024, 1000)).Get(0)
+		rew := NewRateEnforcingWriter(&buf, rc, 50*time.Millisecond)
+		defer rew.Done()
 
 		data := make([]byte, 1024)
 		time.Sleep(50 * time.Millisecond)
@@ -25,7 +28,9 @@ func TestRateEnforcingWriter(t *testing.T) {
 
 	t.Run("should write with error when rate is below minimum", func(t *testing.T) {
 		var buf deadlineWriter
-		rew := NewRateEnforcingWriter(&buf, 1024, 50*time.Millisecond)
+		rc := NewRateCounters[int](MinAvgGlobalLogPeerRate(1024, 1000)).Get(0)
+		rew := NewRateEnforcingWriter(&buf, rc, 50*time.Millisecond)
+		defer rew.Done()
 
 		data := make([]byte, 1024)
 		n, err := rew.Write(data)
@@ -46,7 +51,9 @@ func TestRateEnforcingWriter(t *testing.T) {
 
 	t.Run("should set write deadline on the underlying writer", func(t *testing.T) {
 		var buf deadlineWriter
-		rew := NewRateEnforcingWriter(&buf, 1024, 50*time.Millisecond)
+		rc := NewRateCounters[int](MinAvgGlobalLogPeerRate(1024, 1000)).Get(0)
+		rew := NewRateEnforcingWriter(&buf, rc, 50*time.Millisecond)
+		defer rew.Done()
 
 		data := make([]byte, 1024)
 		_, err := rew.Write(data)
