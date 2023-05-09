@@ -4,6 +4,11 @@
     border-radius: 4px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
     margin-bottom: 1rem;
+
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    align-items: end;
+    gap: 1rem;
 }
 
 .group h3 {
@@ -33,10 +38,23 @@
     height: 100%;
 }
 
-.Group-deals {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
+.group-info {
+    grid-row: span 2;
+    height: 200px;
+
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.1);
+    align-items: center;
+    position: relative;
+    transition: all 0.3s ease;
+    line-height: 1.1;
+}
+
+.group-info p {
+    margin: 0 0;
+    line-height: 1;
 }
 
 .deal-counts {

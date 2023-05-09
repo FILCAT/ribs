@@ -91,38 +91,35 @@ function Group({ group, headHeight }) {
         : group.Deals.filter((deal) => !deal.Failed);
 
     return (
-        <div className="group">
-            <h3>
-                Group {group.GroupKey}
-                <span className="group-state">
-          {groupStateText[group.State]}
-        </span>
-            </h3>
-            <p>
-                Blocks: {formatNum(group.Blocks)} / {formatNum(group.MaxBlocks)}
-            </p>
-            {group.State === 0 && renderProgressBar(group.Blocks, group.MaxBlocks) }
-            <p>
-                Bytes: {formatBytesBinary(group.Bytes)} /{" "}
-                {formatBytesBinary(group.MaxBytes)}
-            </p>
-            {group.State === 0 && renderProgressBar(group.Bytes, group.MaxBytes) }
-            <div className="deal-counts">
-                {dealCounts.sealed > 0 && <span><span className="deal-counts-seal">{dealCounts.sealed} Sealed</span> | </span>}
-                {dealCounts.started > 0 && <span><span className="deal-counts-start">{dealCounts.started} Started</span> | </span>}
-                {dealCounts.errors > 0 && <span><span className="deal-counts-err">{dealCounts.errors} Errored</span></span>}
+        <div className="group" >
+            <div className="group-info">
+                <h3>
+                    Group {group.GroupKey}
+                    <span className="group-state">{groupStateText[group.State]}</span>
+                </h3>
+                <p>
+                    Blocks: {formatNum(group.Blocks)} / {formatNum(group.MaxBlocks)}
+                </p>
+                {group.State === 0 && renderProgressBar(group.Blocks, group.MaxBlocks) }
+                <p>
+                    Bytes: {formatBytesBinary(group.Bytes)} /{" "}
+                    {formatBytesBinary(group.MaxBytes)}
+                </p>
+                {group.State === 0 && renderProgressBar(group.Bytes, group.MaxBytes) }
+                <div className="deal-counts">
+                    {dealCounts.sealed > 0 && <span><span className="deal-counts-seal">{dealCounts.sealed} Sealed</span> | </span>}
+                    {dealCounts.started > 0 && <span><span className="deal-counts-start">{dealCounts.started} Started</span> | </span>}
+                    {dealCounts.errors > 0 && <span><span className="deal-counts-err">{dealCounts.errors} Errored</span></span>}
+                </div>
+                {group.Deals.length > 0 && (<button onClick={toggleShowFailedDeals}>{showFailedDeals ? "Hide" : "Show"} Failed Deals</button>)}
             </div>
-            {group.Deals.length > 0 && (<button onClick={toggleShowFailedDeals}>{showFailedDeals ? "Hide" : "Show"} Failed Deals</button>)}
-            {dealsToDisplay.length > 0 && (
-                <>
-                    <h4>Deals:</h4>
-                    <div className="Group-deals">
+                {dealsToDisplay.length > 0 && (
+                    <>
                         {dealsToDisplay.map((deal) => (
                             <Deal key={deal.UUID} deal={deal} headHeight={headHeight} />
                         ))}
-                    </div>
-                </>
-            )}
+                    </>
+                )}
         </div>
     );
 }
