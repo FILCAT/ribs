@@ -811,6 +811,9 @@ func (j *CarLog) DropLevel() error {
 	return nil
 }
 
+// ARITY IS A FUNDAMENTAL PARAMETER, IT CANNOT BE CHANGED without rewriting all data
+const arity = 2048
+
 /* TOP TREE GENERATION */
 
 func (j *CarLog) genTopCar() error {
@@ -823,8 +826,6 @@ func (j *CarLog) genTopCar() error {
 	if err := j.data.Sync(); err != nil {
 		return xerrors.Errorf("sync data: %w", err)
 	}
-
-	const arity = 2048
 
 	if j.dataEnd != 0 {
 		return xerrors.Errorf("cannot generate top car - already generated")
@@ -1032,12 +1033,18 @@ func (j *CarLog) WriteCar(w io.Writer) (int64, cid.Cid, error) {
 		}
 
 		// otherwise, read the blocks from the next layer down recursively
+
+		// TODO: (optimization) Instead of decoding all blocks, just assume that
+		//  there are up to /arity/ blocks in each node, and just output the next
+		//  layer ountil layerOffsets tell us we're at the end of the layer
 		var links []cid.Cid
 		if err := cbor.DecodeInto(data, &links); err != nil {
 			return xerrors.Errorf("decoding layer links: %w", err)
 		}
 
 		for _, ci := range links {
+			// TODO: Optimization: instead of reading the whole node, just read
+			//  the varint at the start, and copy the whole node (avoids CID decoding)
 			c, data, err := carutil.ReadNode(layers[atLayer-1].br)
 			if err != nil {
 				return xerrors.Errorf("reading node from layer %d: %w", atLayer, err)
