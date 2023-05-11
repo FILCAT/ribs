@@ -1079,7 +1079,7 @@ func (j *CarLog) HashSample() ([]mh.Multihash, error) {
 	if len(j.layerOffsets) == 0 {
 		return nil, xerrors.Errorf("cannot read hash sample in a non-finalized car log")
 	}
-	j.readStateLk.Lock()
+	j.readStateLk.Unlock()
 
 	out, err := LoadMHList(filepath.Join(j.IndexPath, HashSample))
 	if err != nil {

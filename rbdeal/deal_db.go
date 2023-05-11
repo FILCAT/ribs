@@ -81,8 +81,14 @@ create table if not exists deals (
 
     /* retrieval checks */
     last_retrieval_check integer not null default 0,
+    last_retrieval_check_success integer,
     retrieval_probes_success integer not null default 0,
-    retrieval_probes_fail integer not null default 0
+    retrieval_probes_fail integer not null default 0,
+
+    retrieval_probe_prev_error text,
+
+    retrieval_probe_prev_ms integer,
+    retrieval_probe_prev_ttfb_ms integer
 );
 
 /* SP tracker */
@@ -1055,4 +1061,48 @@ func (r *ribsDB) GetRetrievalCheckCandidates() ([]RetrCheckCandidate, error) {
 	}
 
 	return deals, nil
+}
+
+type RetrievalResult struct {
+	Success bool
+	Error   string
+
+	Duration        time.Duration
+	TimeToFirstByte time.Duration
+}
+
+func (r *ribsDB) RecordRetrievalCheckResult(dealId string, res RetrievalResult) error {
+	// Convert durations to milliseconds for storing in the database.
+	durationMs := int(res.Duration / time.Millisecond)
+	ttfbMs := int(res.TimeToFirstByte / time.Millisecond)
+
+	// Determine success or failure count increment.
+	successIncrement := 0
+	if res.Success {
+		successIncrement = 1
+	}
+
+	// Prepare error message string.
+	var errMsg *string
+	if res.Error != "" {
+		errMsg = &res.Error
+	}
+
+	_, err := r.db.Exec(`
+        UPDATE deals SET
+            last_retrieval_check = strftime('%s', 'now'),
+            last_retrieval_check_success = CASE WHEN ? THEN strftime('%s', 'now') ELSE last_retrieval_check_success END,
+            retrieval_probe_prev_ms = ?,
+            retrieval_probe_prev_ttfb_ms = ?,
+            retrieval_probes_success = retrieval_probes_success + ?,
+            retrieval_probes_fail = retrieval_probes_fail + ?,
+            retrieval_probe_prev_error = ?
+        WHERE uuid = ?`,
+		res.Success, durationMs, ttfbMs, successIncrement, 1-successIncrement, errMsg, dealId)
+
+	if err != nil {
+		return xerrors.Errorf("updating retrieval check result: %w", err)
+	}
+
+	return nil
 }

@@ -127,6 +127,7 @@ require (
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/ipld/go-ipld-prime v0.20.1-0.20230329011551-5056175565b0 // indirect
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1 // indirect
+	github.com/ipni/go-libipni v0.0.4 // indirect
 	github.com/ipsn/go-secp256k1 v0.0.0-20180726113642-9d62b9f0bc52 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect

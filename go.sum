@@ -635,6 +635,8 @@ github.com/ipld/go-ipld-prime v0.20.1-0.20230329011551-5056175565b0/go.mod h1:wm
 github.com/ipld/go-ipld-prime-proto v0.0.0-20191113031812-e32bd156a1e5/go.mod h1:gcvzoEDBjwycpXt3LBE061wT9f46szXGHAmj9uoP6fU=
 github.com/ipld/go-ipld-selector-text-lite v0.0.1 h1:lNqFsQpBHc3p5xHob2KvEg/iM5dIFn6iw4L/Hh+kS1Y=
 github.com/ipld/go-ipld-selector-text-lite v0.0.1/go.mod h1:U2CQmFb+uWzfIEF3I1arrDa5rwtj00PrpiwwCO+k1RM=
+github.com/ipni/go-libipni v0.0.4 h1:wWpt59uwpXEaJzjuCtfAYxG8Lsl2Ykjp67TsoL8Dm80=
+github.com/ipni/go-libipni v0.0.4/go.mod h1:SuUNOKOjqPSA1w3dPopNOzDxDCUndwa8jPCDsG8W/yQ=
 github.com/ipni/index-provider v0.11.0 h1:q2PdK6JpYB9bzlntfkRYNBjhg4Qtko5+iXRonO88TAg=
 github.com/ipni/storetheindex v0.5.10 h1:r97jIZsXPuwQvePJQuStu2a/kn+Zn8X4MAdA0rU2Pu4=
 github.com/ipsn/go-secp256k1 v0.0.0-20180726113642-9d62b9f0bc52 h1:QG4CGBqCeuBo6aZlGAamSkxWdgWfZGeE49eUOWJPA4c=
