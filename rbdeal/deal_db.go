@@ -182,7 +182,7 @@ type dealProvider struct {
 	ask_verif_price int64
 }
 
-func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, error) {
+func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64) ([]dealProvider, error) {
 	// only reachable, with boost_deals, only ones that don't have deals for this group
 	// 6 at random
 	// 2 of them with booster_http
@@ -192,7 +192,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 	var withBitswap []dealProvider
 	var random []dealProvider
 
-	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) order by random() limit 12`, group)
+	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 15`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
@@ -215,7 +215,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 order by random() limit 5`, group)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
@@ -238,7 +238,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey) ([]dealProvider, erro
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 order by random() limit 5`, group)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}

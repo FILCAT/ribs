@@ -54,7 +54,12 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		r.dealsLk.Unlock()
 	}()
 
-	provs, err := r.db.SelectDealProviders(id)
+	dealInfo, err := r.db.GetDealParams(ctx, id)
+	if err != nil {
+		return xerrors.Errorf("get deal params: %w", err)
+	}
+
+	provs, err := r.db.SelectDealProviders(id, dealInfo.PieceSize)
 	if err != nil {
 		return xerrors.Errorf("select deal providers: %w", err)
 	}
@@ -79,11 +84,6 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 	walletAddr, err := w.GetDefault()
 	if err != nil {
 		return xerrors.Errorf("get wallet address: %w", err)
-	}
-
-	dealInfo, err := r.db.GetDealParams(ctx, id)
-	if err != nil {
-		return xerrors.Errorf("get deal params: %w", err)
 	}
 
 	pieceCid, err := commcid.PieceCommitmentV1ToCID(dealInfo.CommP)

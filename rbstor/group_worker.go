@@ -52,7 +52,7 @@ func (r *rbs) workerExecTask(toExec task) {
 
 		err := g.GenCommP()
 		if err != nil {
-			log.Errorf("generating commP: %s", err)
+			log.Errorw("generating commP", "group", toExec.group, "err", err)
 		}
 
 		r.sendSub(toExec.group, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals)

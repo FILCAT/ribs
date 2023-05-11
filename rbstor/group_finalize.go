@@ -54,7 +54,7 @@ func (m *Group) GenCommP() error {
 
 	sum, err := cc.Sum()
 	if err != nil {
-		panic(err)
+		return xerrors.Errorf("sum car (size: %d): %w", carSize, err)
 	}
 
 	log.Infow("generated commP", "duration", time.Since(start), "commP", sum.PieceCID, "pps", sum.PieceSize, "mbps", float64(carSize)/time.Since(start).Seconds()/1024/1024)
