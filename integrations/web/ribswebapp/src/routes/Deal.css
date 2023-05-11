@@ -26,6 +26,11 @@
     background: #ddffdd;
 }
 
+.deal-sealed-retr {
+    background: #99ff99;
+}
+
+
 .Deal a {
     color: #333;
     text-decoration: none;

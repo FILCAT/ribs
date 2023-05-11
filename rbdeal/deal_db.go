@@ -866,7 +866,10 @@ func (r *ribsDB) UpdateProviderStorageAsk(provider int64, ask *storagemarket.Sto
 func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	dealMeta := make([]iface.DealMeta, 0)
 
-	res, err := r.db.Query("select uuid, provider_addr, sealed, failed, rejected, deal_id, sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch from deals where group_id = ?", gk)
+	res, err := r.db.Query(`select uuid, provider_addr, sealed, failed, rejected, deal_id,
+										sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch,
+										retrieval_probes_success, retrieval_probes_fail, retrieval_probe_prev_ttfb_ms
+										from deals where group_id = ?`, gk)
 	if err != nil {
 		return nil, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -883,8 +886,11 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 		var txSize *int64
 		var pubCid *string
 		var dealID *int64
+		var retrievalProbesSuccess *int64
+		var retrievalProbesFail *int64
+		var retrievalProbeTTFBMS *int64
 
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch)
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch, &retrievalProbesSuccess, &retrievalProbesFail, &retrievalProbeTTFBMS)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning deal: %w", err)
 		}
@@ -904,6 +910,10 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 			BytesRecv:  DerefOr(bytesRecv, 0),
 			TxSize:     DerefOr(txSize, 0),
 			PubCid:     DerefOr(pubCid, ""),
+
+			RetrTTFBMs:  DerefOr(retrievalProbeTTFBMS, 0),
+			RetrSuccess: DerefOr(retrievalProbesSuccess, 0),
+			RetrFail:    DerefOr(retrievalProbesFail, 0),
 		})
 	}
 

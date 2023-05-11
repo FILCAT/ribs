@@ -2,7 +2,6 @@ package ribs
 
 import (
 	"context"
-
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
@@ -29,6 +28,9 @@ type DealMeta struct {
 	BytesRecv int64
 	TxSize    int64
 	PubCid    string
+
+	RetrTTFBMs            int64
+	RetrSuccess, RetrFail int64
 }
 
 type Wallet interface {

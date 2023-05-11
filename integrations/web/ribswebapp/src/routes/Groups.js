@@ -20,16 +20,22 @@ function Deal({ deal, headHeight }) {
         Status,
         SealStatus,
         Error,
+        RetrSuccess,
+        RetrFail,
     } = deal;
 
     const errorMessage = Error.length > 49 ? `${Error.slice(0, 24)}...${Error.slice(-24)}` : Error;
 
     return (
-        <div className={`Deal${Failed ? " deal-failed" : ""}${Sealed ? " deal-sealed" : ""}`}>
+        <div className={`Deal${Failed ? " deal-failed" : ""}${Sealed ? " deal-sealed" : ""}${RetrSuccess > 0 ? " deal-sealed-retr":""}`}>
             <span>
                 <abbr title={UUID}>{UUID.substring(0, 8)}... </abbr>
                 <Link to={`/provider/f0${Provider}`}>f0{Provider}</Link>
-                {Sealed && <strong> SEALED</strong>}
+                {Sealed && <><strong> SEALED</strong> {
+                    (RetrSuccess == 0 && RetrFail == 0) ? "" : (
+                        RetrSuccess > 0 ? <i>RETRIEVABLE</i> : <span className="deal-error">unretrievable</span>
+                    )
+                }</>}
             </span>
             <span>
                 {Sealed ? <> Ends {epochToDate(EndEpoch)} {epochToDuration(EndEpoch-headHeight)}</> :

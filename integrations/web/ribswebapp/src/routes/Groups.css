@@ -74,3 +74,7 @@
 .deal-counts-start {
     color: #2196f3;
 }
+
+.deal-error {
+    color: #f44336;
+}
