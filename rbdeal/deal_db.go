@@ -81,7 +81,6 @@ create table if not exists deals (
 
     /* retrieval checks */
     last_retrieval_check integer not null default 0,
-    retrieval_probes_started integer not null default 0,
     retrieval_probes_success integer not null default 0,
     retrieval_probes_fail integer not null default 0
 );
@@ -1015,4 +1014,45 @@ func (r *ribsDB) UpdateTransferStats(dealUUID uuid.UUID, lastBytes int64, abortE
 	}
 
 	return nil
+}
+
+type RetrCheckCandidate struct {
+	DealID   string
+	Provider int64
+	Group    int64
+	Verified bool
+	FastRetr bool
+}
+
+func (r *ribsDB) GetRetrievalCheckCandidates() ([]RetrCheckCandidate, error) {
+	const secondsIn10Minutes = 600
+	now := time.Now().Unix()
+
+	rows, err := r.db.Query(`
+		SELECT uuid, provider_addr, group_id, verified, keep_unsealed FROM deals 
+		WHERE sealed = 1 
+		AND failed = 0 
+		AND last_retrieval_check <= ?`,
+		now-secondsIn10Minutes)
+	if err != nil {
+		return nil, xerrors.Errorf("getting sealed and not failed deals: %w", err)
+	}
+	defer rows.Close()
+
+	var deals []RetrCheckCandidate
+	for rows.Next() {
+		var deal RetrCheckCandidate
+		// Assuming Deal is a struct that can scan all columns from the deals table
+		err := rows.Scan(&deal.DealID, &deal.Provider, &deal.Group, &deal.Verified, &deal.FastRetr)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+		deals = append(deals, deal)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return deals, nil
 }

@@ -3,6 +3,7 @@ package rbstor
 import (
 	"context"
 	"database/sql"
+	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
@@ -310,4 +311,47 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 
 		DealCarSize: carSize,
 	}, nil
+}
+
+func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.GroupDesc, error) {
+	var out iface.GroupDesc
+
+	res, err := r.db.QueryContext(ctx, "SELECT root, commp FROM groups WHERE id = ?", group)
+	if err != nil {
+		return iface.GroupDesc{}, xerrors.Errorf("finding group: %w", err)
+	}
+	defer res.Close()
+
+	var found bool
+
+	for res.Next() {
+		var root, commp []byte
+		err := res.Scan(&root, &commp)
+		if err != nil {
+			return iface.GroupDesc{}, xerrors.Errorf("scanning group: %w", err)
+		}
+
+		_, out.RootCid, err = cid.CidFromBytes(root)
+		if err != nil {
+			return iface.GroupDesc{}, xerrors.Errorf("converting root to cid: %w", err)
+		}
+
+		out.PieceCid, err = commcid.DataCommitmentV1ToCID(commp)
+		if err != nil {
+			return iface.GroupDesc{}, xerrors.Errorf("converting commp to cid: %w", err)
+		}
+
+		found = true
+		break
+	}
+
+	if err := res.Err(); err != nil {
+		return iface.GroupDesc{}, xerrors.Errorf("iterating groups: %w", err)
+	}
+
+	if !found {
+		return iface.GroupDesc{}, xerrors.Errorf("group %d not found", group)
+	}
+
+	return out, nil
 }

@@ -106,8 +106,8 @@ func (r *ribs) watchMarket(ctx context.Context) {
 			goto cooldown
 		}
 		{
-			avail := types.BigSub(abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketBalance)).Assert(must)),
-				abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketLocked)).Assert(must)))
+			avail := types.BigSub(abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketBalance)).Assert(_must)),
+				abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketLocked)).Assert(_must)))
 
 			if avail.GreaterThan(minMarketBalance) {
 				goto cooldown
@@ -135,7 +135,7 @@ func (r *ribs) watchMarket(ctx context.Context) {
 	}
 }
 
-func must(err error, msgAndArgs ...interface{}) {
+func _must(err error, msgAndArgs ...interface{}) {
 	if err != nil {
 		panic(xerrors.Errorf(msgAndArgs[0].(string)+": %w", err))
 	}

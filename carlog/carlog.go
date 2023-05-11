@@ -1074,18 +1074,20 @@ type cardata struct {
 	br *bufio.Reader
 }
 
-type sizerWriter struct {
-	w io.Writer
-	s int64
-}
+func (j *CarLog) HashSample() ([]mh.Multihash, error) {
+	j.readStateLk.Lock()
+	if len(j.layerOffsets) == 0 {
+		return nil, xerrors.Errorf("cannot read hash sample in a non-finalized car log")
+	}
+	j.readStateLk.Lock()
 
-func (s *sizerWriter) Write(p []byte) (int, error) {
-	w, err := s.w.Write(p)
-	s.s += int64(w)
-	return w, err
-}
+	out, err := LoadMHList(filepath.Join(j.IndexPath, HashSample))
+	if err != nil {
+		return nil, xerrors.Errorf("loading hash sample: %w", err)
+	}
 
-/* MISC */
+	return out, nil
+}
 
 func (j *CarLog) Close() (int64, error) {
 	// then log
@@ -1115,6 +1117,19 @@ func (j *CarLog) Close() (int64, error) {
 	}
 
 	return at, nil
+}
+
+/* MISC */
+
+type sizerWriter struct {
+	w io.Writer
+	s int64
+}
+
+func (s *sizerWriter) Write(p []byte) (int, error) {
+	w, err := s.w.Write(p)
+	s.s += int64(w)
+	return w, err
 }
 
 // probably a milionth time this helper was created

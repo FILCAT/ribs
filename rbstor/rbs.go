@@ -403,11 +403,26 @@ func (r *rbs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupK
 	return out, nil
 }
 
+func (r *rbs) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.GroupDesc, error) {
+	return r.db.DescibeGroup(ctx, group)
+}
+
 func (r *rbs) ReadCar(ctx context.Context, group iface.GroupKey, out io.Writer) error {
 	return r.withReadableGroup(ctx, group, func(g *Group) error {
 		_, _, err := g.writeCar(out)
 		return err
 	})
+}
+
+func (r *rbs) HashSample(ctx context.Context, group iface.GroupKey) ([]mh.Multihash, error) {
+	var out []mh.Multihash
+	err := r.withReadableGroup(ctx, group, func(g *Group) error {
+		var err error
+		out, err = g.hashSample()
+		return err
+	})
+
+	return out, err
 }
 
 func (r *rbs) Storage() iface.Storage {

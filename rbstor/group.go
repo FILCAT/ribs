@@ -276,4 +276,9 @@ func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
 	return m.jb.WriteCar(w)
 }
 
+func (m *Group) hashSample() ([]mh.Multihash, error) {
+	// hashSample is thread safe
+	return m.jb.HashSample()
+}
+
 var _ iface.Group = &Group{}

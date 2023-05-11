@@ -5,6 +5,7 @@ import (
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	"io"
 
 	"github.com/multiformats/go-multihash"
@@ -105,9 +106,19 @@ type GroupSub func(group GroupKey, from, to GroupState)
 
 type Storage interface {
 	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
+
 	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
 
+	// HashSample returns a sample of hashes from the group saved when the group was finalized
+	HashSample(ctx context.Context, group GroupKey) ([]multihash.Multihash, error)
+
+	DescibeGroup(ctx context.Context, group GroupKey) (GroupDesc, error)
+
 	Subscribe(GroupSub)
+}
+
+type GroupDesc struct {
+	RootCid, PieceCid cid.Cid
 }
 
 type RBS interface {
@@ -141,7 +152,7 @@ type GroupMeta struct {
 	ReadBlocks, ReadBytes   int64
 	WriteBlocks, WriteBytes int64
 
-	DealCarSize *int64
+	DealCarSize *int64 // todo move to DescribeGroup
 }
 
 type RBSDiag interface {
