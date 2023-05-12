@@ -81,7 +81,7 @@ create table if not exists deals (
 
     /* retrieval checks */
     last_retrieval_check integer not null default 0,
-    last_retrieval_check_success integer,
+    last_retrieval_check_success integer not null default 0,
     retrieval_probes_success integer not null default 0,
     retrieval_probes_fail integer not null default 0,
 
@@ -120,6 +120,7 @@ create table if not exists providers (
 
 drop view if exists good_providers_view;
 drop view if exists sp_deal_stats_view;
+drop view if exists sp_retr_stats_view;
 
 CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
     SELECT
@@ -142,6 +143,18 @@ CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
     GROUP BY
         d.provider_addr;
 
+CREATE VIEW IF NOT EXISTS sp_retr_stats_view AS
+SELECT
+    d.provider_addr AS sp_id,
+    COUNT(CASE WHEN d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24) THEN 1 ELSE NULL END) AS retrievable_deals,
+    COUNT(CASE WHEN d.last_retrieval_check > (d.last_retrieval_check_success + 3600*24) THEN 1 ELSE NULL END) AS unretrievable_deals
+FROM
+    deals d
+WHERE
+        d.last_retrieval_check > 0
+GROUP BY
+    d.provider_addr;
+
 CREATE VIEW IF NOT EXISTS good_providers_view AS
     SELECT 
         p.id, p.ping_ok, p.boost_deals, p.booster_http, p.booster_bitswap,
@@ -151,6 +164,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
     FROM 
         providers p
         LEFT JOIN sp_deal_stats_view ds ON p.id = ds.sp_id
+        LEFT JOIN sp_retr_stats_view rs ON p.id = rs.sp_id
     WHERE 
         p.in_market = 1
         AND p.ping_ok = 1
@@ -160,6 +174,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
         AND (ds.failed_all IS NULL OR ds.failed_all = 0)
+        AND (rs.unretrievable_deals IS NULL OR (rs.unretrievable_deals <= 1 OR rs.retrievable_deals >= 0.7 * (rs.retrievable_deals + rs.unretrievable_deals) )) /* has up to 1 unretrievable deals, or most are retrievable  */
     ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
