@@ -220,7 +220,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 	/* deal count checks */
 
-	gs, err := r.db.GetGroupDealStats()
+	gs, err := r.db.GetGroupDealStats() // todo swap for GetNonFailedDealCount?
 	if err != nil {
 		return xerrors.Errorf("getting storage groups: %w", err)
 	}
@@ -230,7 +230,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 			continue
 		}
 
-		if gs.TotalDeals-gs.FailedDeals < int64(minimumReplicaCount) {
+		if gs.TotalDeals-gs.FailedDeals-gs.Unretrievable < int64(minimumReplicaCount) {
 			go func(gid ribs2.GroupKey) {
 				err = r.makeMoreDeals(context.TODO(), gid, r.host, r.wallet)
 				if err != nil {
