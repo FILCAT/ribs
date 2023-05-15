@@ -293,8 +293,45 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 		jb.rIdx = idx
 	} else {
 		idx, err := OpenLevelDBIndex(filepath.Join(indexPath, LevelIndex), false)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return nil, xerrors.Errorf("opening leveldb index: %w", err)
+		}
+		if os.IsNotExist(err) {
+			log.Errorw("leveldb index missing, attempting to fix", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+
+			idx, err = OpenLevelDBIndex(filepath.Join(indexPath, LevelIndex+".temp"), true)
+			if err != nil {
+				return nil, xerrors.Errorf("creating (fixLevelIndex) leveldb index: %w", err)
+			}
+
+			err := jb.fixLevelIndex(h, idx)
+			if err != nil {
+				log.Errorw("fixing leveldb index failed", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+				return nil, xerrors.Errorf("fixing leveldb index: %w", err)
+			}
+
+			if err := idx.Close(); err != nil {
+				log.Errorw("closing temp level index failed", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+				return nil, xerrors.Errorf("closing temp level index: %w", err)
+			}
+
+			if err := os.RemoveAll(filepath.Join(indexPath, LevelIndex)); err != nil {
+				log.Errorw("removing old level index failed", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+				return nil, xerrors.Errorf("removing old level index: %w", err)
+			}
+
+			if err := os.Rename(filepath.Join(indexPath, LevelIndex+".temp"), filepath.Join(indexPath, LevelIndex)); err != nil {
+				log.Errorw("renaming temp level index failed", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+				return nil, xerrors.Errorf("renaming temp level index: %w", err)
+			}
+
+			idx, err = OpenLevelDBIndex(filepath.Join(indexPath, LevelIndex), false)
+			if err != nil {
+				log.Errorw("opening fixed leveldb index failed", "error", err, "path", filepath.Join(indexPath, LevelIndex))
+				return nil, xerrors.Errorf("opening fixed leveldb index: %w", err)
+			}
+
+			log.Errorw("leveldb index fixed", "path", filepath.Join(indexPath, LevelIndex))
 		}
 
 		jb.rIdx = idx
@@ -374,6 +411,43 @@ func (j *CarLog) truncate(offset, size int64, onRemove TruncCleanup) error {
 
 	if err != nil {
 		return xerrors.Errorf("updating head after truncate: %w", err)
+	}
+
+	return nil
+}
+
+func (j *CarLog) fixLevelIndex(h Head, w WritableIndex) error {
+	mhsBuf := make([]mh.Multihash, 0, 50000)
+	offsBuf := make([]int64, 0, 50000)
+
+	done := 0
+
+	err := j.iterate(h.RetiredAt, func(off int64, length uint64, c cid.Cid, data []byte) error {
+		mhsBuf = append(mhsBuf, c.Hash())
+		offsBuf = append(offsBuf, makeOffsetLen(off, int(length)))
+
+		done++
+
+		if len(mhsBuf) >= 50000 {
+			if err := w.Put(mhsBuf, offsBuf); err != nil {
+				return xerrors.Errorf("putting to index: %w", err)
+			}
+			mhsBuf = mhsBuf[:0]
+			offsBuf = offsBuf[:0]
+
+			log.Errorw("fixLevelIndex", "done", done)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("iterating over data: %w", err)
+	}
+
+	if len(mhsBuf) > 0 {
+		if err := w.Put(mhsBuf, offsBuf); err != nil {
+			return xerrors.Errorf("putting to index: %w", err)
+		}
 	}
 
 	return nil
@@ -685,15 +759,7 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 
 var ErrNotReadOnly = errors.New("not yet read-only")
 
-func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
-	if j.wIdx != nil {
-		return ErrNotReadOnly
-	}
-
-	if j.dataEnd == 0 {
-		return xerrors.New("can't iterate yet - data end not marked")
-	}
-
+func (j *CarLog) iterate(dataEnd int64, cb func(off int64, length uint64, c cid.Cid, data []byte) error) error {
 	entBuf := make([]byte, 1<<20)
 
 	rs := &readSeekerFromReaderAt{
@@ -701,7 +767,9 @@ func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
 		pos:      j.dataStart,
 	}
 
-	br := bufio.NewReaderSize(io.LimitReader(rs, j.dataEnd-j.dataStart), 4<<20)
+	br := bufio.NewReaderSize(io.LimitReader(rs, dataEnd-j.dataStart), 4<<20)
+
+	off := j.dataStart
 
 	for {
 		if _, err := br.Peek(1); err != nil { // no more blocks, likely clean io.EOF
@@ -736,9 +804,11 @@ func (j *CarLog) iterate(cb func(c cid.Cid, data []byte) error) error {
 			return xerrors.Errorf("parsing cid: %w", err)
 		}
 
-		if err := cb(c, entBuf[n:entLen]); err != nil {
+		if err := cb(off, entLen, c, entBuf[n:entLen]); err != nil {
 			return err
 		}
+
+		off += int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
 	}
 }
 
@@ -875,7 +945,7 @@ func (j *CarLog) genTopCar() error {
 		return nil
 	}
 
-	err := j.iterate(func(c cid.Cid, data []byte) error {
+	err := j.iterate(j.dataEnd, func(off int64, length uint64, c cid.Cid, data []byte) error {
 		curLinks = append(curLinks, c)
 
 		if len(curLinks) == arity {

@@ -19,6 +19,7 @@ func OpenLevelDBIndex(path string, create bool) (*LevelDBIndex, error) {
 	o := &opt.Options{
 		OpenFilesCacheCapacity: 500,
 		ErrorIfExist:           create,
+		ErrorIfMissing:         !create,
 		Compression:            opt.NoCompression, // this data is quite dense
 		Filter:                 filter.NewBloomFilter(10),
 		// todo NoSync
@@ -35,7 +36,7 @@ func OpenLevelDBIndex(path string, create bool) (*LevelDBIndex, error) {
 		}
 	}
 	if err != nil {
-		return nil, xerrors.Errorf("open leveldb: %w", err)
+		return nil, err
 	}
 
 	return &LevelDBIndex{
