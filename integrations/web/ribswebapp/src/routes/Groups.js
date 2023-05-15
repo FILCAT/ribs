@@ -49,12 +49,26 @@ function Deal({ deal, headHeight }) {
             )}
             {!Sealed && (
                 <>
-                    {BytesRecv > 0 && <span>{formatBytesBinary(BytesRecv)} / {formatBytesBinary(TxSize)}</span>}
-                    {Error === "" ? (<span>{Status} {SealStatus && ` (${SealStatus})`}</span>) : (<span>Error ({Status}) <abbr title={Error} className="deal-err">{errorMessage}</abbr></span>)}
+                    {BytesRecv > 0 && <>
+                        <span>{formatBytesBinary(BytesRecv)} / {formatBytesBinary(TxSize)}</span>
+                        <div className="progress-bar">
+                            <div
+                                className="progress-bar__fill"
+                                style={{ width: `${BytesRecv/TxSize*100}%` }}
+                            ></div>
+                        </div>
+                    </>}
+                    {Error === "" ?
+                        (<span>{Status} {isSealingStatus(Status) && SealStatus && ` (${SealStatus})`}</span>) :
+                        (<span>Error ({Status}) <abbr title={Error} className="deal-err">{errorMessage}</abbr></span>)}
                 </>
             )}
         </div>
     );
+}
+
+function isSealingStatus(status) {
+    return status != "Accepted"
 }
 
 const groupStateText = [
