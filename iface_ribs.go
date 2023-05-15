@@ -2,10 +2,35 @@ package ribs
 
 import (
 	"context"
+	"io"
+
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/ipfs/go-cid"
 )
+
+type RIBS interface {
+	RBS
+
+	Wallet() Wallet
+	DealDiag() RIBSDiag
+
+	io.Closer
+}
+
+type RIBSDiag interface {
+	CarUploadStats() map[GroupKey]*UploadStats
+	DealSummary() (DealSummary, error)
+	GroupDeals(gk GroupKey) ([]DealMeta, error)
+
+	ProviderInfo(id int64) (ProviderInfo, error)
+	CrawlState() CrawlState
+	ReachableProviders() []ProviderMeta
+
+	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
 
 type UploadStats struct {
 	ActiveRequests int

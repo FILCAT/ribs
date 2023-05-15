@@ -2,64 +2,26 @@ package ribs
 
 import (
 	"context"
-	"github.com/filecoin-project/go-jsonrpc"
-	"github.com/filecoin-project/lotus/api"
-	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-cid"
 	"io"
 
+	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multihash"
 )
-
-/* Storage internal */
 
 type GroupKey = int64
 
 const UndefGroupKey = GroupKey(-1)
 
-// Index is the top level index, thread safe
-type Index interface {
-	// GetGroups gets group ids for the multihashes
-	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
-	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
-	Sync(ctx context.Context) error
-	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
-	EstimateSize(ctx context.Context) (int64, error)
+// User
+
+type RBS interface {
+	Session(ctx context.Context) Session
+	Storage() Storage
+	StorageDiag() RBSDiag
 
 	io.Closer
 }
-
-type GroupState int
-
-const (
-	GroupStateWritable GroupState = iota
-	GroupStateFull
-	GroupStateVRCARDone
-
-	GroupStateLocalReadyForDeals
-	GroupStateOffloaded
-)
-
-// Group stores a bunch of blocks, abstracting away the storage backend.
-// All underlying storage backends contain all blocks referenced by the group in
-// the top level index.
-// Group IS thread safe
-type Group interface {
-	// Put returns the number of blocks written
-	Put(ctx context.Context, c []blocks.Block) (int, error)
-	Unlink(ctx context.Context, c []multihash.Multihash) error
-	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
-	Sync(ctx context.Context) error
-
-	// Finalize marks the group as finalized, meaning no more writes will be accepted,
-	// a more optimized index will get generated, then the gropu will be queued for
-	// replication / offloading.
-	Finalize(ctx context.Context) error
-
-	io.Closer
-}
-
-// user
 
 // Batch groups operations, NOT thread safe
 type Batch interface {
@@ -102,12 +64,6 @@ type Session interface {
 	Batch(ctx context.Context) Batch
 }
 
-type OffloadLoader interface {
-	View(ctx context.Context, g GroupKey, c []multihash.Multihash, cb func(cidx int, data []byte)) error
-}
-
-type GroupSub func(group GroupKey, from, to GroupState)
-
 type Storage interface {
 	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
 
@@ -127,21 +83,19 @@ type GroupDesc struct {
 	RootCid, PieceCid cid.Cid
 }
 
-type RBS interface {
-	Session(ctx context.Context) Session
-	Storage() Storage
-	StorageDiag() RBSDiag
-
-	io.Closer
+type OffloadLoader interface {
+	View(ctx context.Context, g GroupKey, c []multihash.Multihash, cb func(cidx int, data []byte)) error
 }
 
-type RIBS interface {
-	RBS
+type GroupSub func(group GroupKey, from, to GroupState)
 
-	Wallet() Wallet
-	DealDiag() RIBSDiag
+type RBSDiag interface {
+	Groups() ([]GroupKey, error)
+	GroupMeta(gk GroupKey) (GroupMeta, error)
 
-	io.Closer
+	TopIndexStats(context.Context) (TopIndexStats, error)
+	GetGroupStats() (*GroupStats, error)
+	GroupIOStats() GroupIOStats
 }
 
 /* Deal diag */
@@ -161,27 +115,6 @@ type GroupMeta struct {
 	DealCarSize *int64 // todo move to DescribeGroup
 }
 
-type RBSDiag interface {
-	Groups() ([]GroupKey, error)
-	GroupMeta(gk GroupKey) (GroupMeta, error)
-
-	TopIndexStats(context.Context) (TopIndexStats, error)
-	GetGroupStats() (*GroupStats, error)
-	GroupIOStats() GroupIOStats
-}
-
-type RIBSDiag interface {
-	CarUploadStats() map[GroupKey]*UploadStats
-	DealSummary() (DealSummary, error)
-	GroupDeals(gk GroupKey) ([]DealMeta, error)
-
-	ProviderInfo(id int64) (ProviderInfo, error)
-	CrawlState() CrawlState
-	ReachableProviders() []ProviderMeta
-
-	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
-}
-
 type GroupStats struct {
 	GroupCount           int64
 	TotalDataSize        int64
@@ -199,4 +132,48 @@ type GroupIOStats struct {
 type TopIndexStats struct {
 	Entries       int64
 	Writes, Reads int64
+}
+
+/* Storage internal */
+
+// Index is the top level index, thread safe
+type Index interface {
+	// GetGroups gets group ids for the multihashes
+	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
+	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
+	Sync(ctx context.Context) error
+	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
+	EstimateSize(ctx context.Context) (int64, error)
+
+	io.Closer
+}
+
+type GroupState int
+
+const (
+	GroupStateWritable GroupState = iota
+	GroupStateFull
+	GroupStateVRCARDone
+
+	GroupStateLocalReadyForDeals
+	GroupStateOffloaded
+)
+
+// Group stores a bunch of blocks, abstracting away the storage backend.
+// All underlying storage backends contain all blocks referenced by the group in
+// the top level index.
+// Group IS thread safe
+type Group interface {
+	// Put returns the number of blocks written
+	Put(ctx context.Context, c []blocks.Block) (int, error)
+	Unlink(ctx context.Context, c []multihash.Multihash) error
+	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
+	Sync(ctx context.Context) error
+
+	// Finalize marks the group as finalized, meaning no more writes will be accepted,
+	// a more optimized index will get generated, then the gropu will be queued for
+	// replication / offloading.
+	Finalize(ctx context.Context) error
+
+	io.Closer
 }
