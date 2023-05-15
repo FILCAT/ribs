@@ -380,6 +380,11 @@ func (r *ribBatch) Flush(ctx context.Context) error {
 	return nil
 }
 
+func (r *rbs) Offload(ctx context.Context, group iface.GroupKey) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (r *rbs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
 	var out []iface.GroupKey
 

@@ -102,6 +102,10 @@ type Session interface {
 	Batch(ctx context.Context) Batch
 }
 
+type OffloadLoader interface {
+	View(ctx context.Context, g GroupKey, c []multihash.Multihash, cb func(cidx int, data []byte)) error
+}
+
 type GroupSub func(group GroupKey, from, to GroupState)
 
 type Storage interface {
@@ -113,6 +117,8 @@ type Storage interface {
 	HashSample(ctx context.Context, group GroupKey) ([]multihash.Multihash, error)
 
 	DescibeGroup(ctx context.Context, group GroupKey) (GroupDesc, error)
+
+	Offload(ctx context.Context, group GroupKey) error
 
 	Subscribe(GroupSub)
 }
