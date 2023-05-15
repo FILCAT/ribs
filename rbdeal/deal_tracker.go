@@ -138,7 +138,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 			cdi, err := cdm.GetCurrentDealInfo(ctx, head.Key(), &dprop.Proposal, pcid)
 			if err != nil {
-				log.Errorw("get current deal info", "error", err)
+				log.Infow("get current deal info", "error", err)
 				continue
 			}
 
@@ -232,7 +232,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 
 		if gs.TotalDeals-gs.FailedDeals-gs.Unretrievable < int64(targetReplicaCount) {
 			go func(gid ribs2.GroupKey) {
-				err = r.makeMoreDeals(context.TODO(), gid, r.host, r.wallet)
+				err := r.makeMoreDeals(context.TODO(), gid, r.host, r.wallet)
 				if err != nil {
 					log.Errorf("starting new deals: %s", err)
 				}
