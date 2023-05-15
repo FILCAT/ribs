@@ -204,7 +204,7 @@ func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
 			return
 		}
 
-		if c >= minimumReplicaCount {
+		if c >= targetReplicaCount {
 			return
 		}
 

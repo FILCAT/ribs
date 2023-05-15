@@ -230,7 +230,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 			continue
 		}
 
-		if gs.TotalDeals-gs.FailedDeals-gs.Unretrievable < int64(minimumReplicaCount) {
+		if gs.TotalDeals-gs.FailedDeals-gs.Unretrievable < int64(targetReplicaCount) {
 			go func(gid ribs2.GroupKey) {
 				err = r.makeMoreDeals(context.TODO(), gid, r.host, r.wallet)
 				if err != nil {
