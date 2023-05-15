@@ -656,7 +656,8 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 
 				dataAt = j.dataPos.Pos()
 				if dataAt < off+int64(lenlen)+int64(entLen) {
-					return xerrors.Errorf("entry beyond range after flush, dataAt (%d) < off (%d) + lenlen (%d) + entLen (%d)", dataAt, off, lenlen, entLen)
+					diff := off + int64(lenlen) + int64(entLen) - dataAt
+					return xerrors.Errorf("entry beyond range after flush, dataAt (%d) < off (%d) + lenlen (%d) + entLen (%d) (diff: %d)", dataAt, off, lenlen, entLen, diff)
 				}
 			}
 		}

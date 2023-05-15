@@ -134,7 +134,7 @@ func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error
 		if len(it.Value()) != 8 {
 			return nil, xerrors.Errorf("invalid value length")
 		}
-		offs := int64(binary.LittleEndian.Uint64(it.Value()))
+		offs, _ := fromOffsetLen(int64(binary.LittleEndian.Uint64(it.Value())))
 		if offs >= atOrAbove {
 			mhashes = append(mhashes, it.Key())
 		}
@@ -148,7 +148,7 @@ func (l *LevelDBIndex) Del(c []multihash.Multihash) error {
 		batch.Delete(m)
 	}
 
-	return l.DB.Write(batch, nil)
+	return l.DB.Write(batch, &opt.WriteOptions{Sync: true})
 }
 
 // todo sync
