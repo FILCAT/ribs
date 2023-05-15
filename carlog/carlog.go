@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -344,7 +345,10 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 		}
 	}
 
-	if dataInfo.Size() > h.RetiredAt { // data ahead means there was an unclean shutdown during a write
+	// todo right now we're calling this on every startup when writable
+	//  a better way to do that would be to have a track that we're in a "clean"
+	//  state, or even to have two indexes, one for clean and one for dirty data
+	if dataInfo.Size() > h.RetiredAt || jb.wIdx != nil { // data ahead means there was an unclean shutdown during a write
 		if h.ReadOnly {
 			// If the file is truncated while being marked as read-only, something is terribly wrong.
 			return nil, xerrors.Errorf("read only(!) data file is shorter than head says it should be (%d < %d)", dataInfo.Size(), h.RetiredAt)
@@ -381,20 +385,28 @@ func (j *CarLog) truncate(offset, size int64, onRemove TruncCleanup) error {
 		return xerrors.Errorf("onRemove callback is nil")
 	}
 
+	listStart := time.Now()
+
 	toTruncate, err := j.wIdx.ToTruncate(offset)
 	if err != nil {
 		return xerrors.Errorf("getting multihashes to truncate: %w", err)
 	}
 
-	log.Errorw("truncate", "offset", offset, "size", size, "diff", size-offset, "idxEnts", len(toTruncate), "dataPath", j.DataPath)
+	log.Errorw("truncate", "offset", offset, "size", size, "diff", size-offset, "idxEnts", len(toTruncate), "dataPath", j.DataPath, "listTime", time.Since(listStart))
 
 	if len(toTruncate) > 0 {
+		for i, multihash := range toTruncate {
+			log.Errorw("truncate", "idx", i, "multihash", multihash)
+		}
+
 		if err := onRemove(offset, toTruncate); err != nil {
 			return xerrors.Errorf("truncate callback error: %w", err)
 		}
 		if err := j.wIdx.Del(toTruncate); err != nil {
 			return xerrors.Errorf("deleting multihashes from jbob index: %w", err)
 		}
+	} else {
+		return nil
 	}
 
 	if err := j.data.Truncate(offset); err != nil {
@@ -731,7 +743,9 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 				dataAt = j.dataPos.Pos()
 				if dataAt < off+int64(lenlen)+int64(entLen) {
 					diff := off + int64(lenlen) + int64(entLen) - dataAt
-					return xerrors.Errorf("entry beyond range after flush, dataAt (%d) < off (%d) + lenlen (%d) + entLen (%d) (diff: %d)", dataAt, off, lenlen, entLen, diff)
+					ci := cid.NewCidV1(cid.Raw, c[i])
+
+					return xerrors.Errorf("entry (%s,%s) beyond range after flush, dataAt (%d) < off (%d) + lenlen (%d) + entLen (%d) (diff: %d)", c[i], ci, dataAt, off, lenlen, entLen, diff)
 				}
 			}
 		}

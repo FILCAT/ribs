@@ -137,7 +137,10 @@ func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error
 		}
 		offs, _ := fromOffsetLen(int64(binary.LittleEndian.Uint64(it.Value())))
 		if offs >= atOrAbove {
-			mhashes = append(mhashes, it.Key())
+			keyCopy := make([]byte, len(it.Key()))
+			copy(keyCopy, it.Key())
+
+			mhashes = append(mhashes, keyCopy)
 		}
 	}
 	return mhashes, nil
