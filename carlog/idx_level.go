@@ -58,7 +58,7 @@ func (l *LevelDBIndex) Has(c []multihash.Multihash) ([]bool, error) {
 }
 
 func (l *LevelDBIndex) Put(c []multihash.Multihash, offs []int64) error {
-	batch := new(leveldb.Batch)
+	batch := leveldb.MakeBatch(len(c) * 64)
 	for i, m := range c {
 		if offs[i] == -1 {
 			continue
@@ -143,10 +143,11 @@ func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error
 }
 
 func (l *LevelDBIndex) Del(c []multihash.Multihash) error {
-	batch := new(leveldb.Batch)
+	batch := leveldb.MakeBatch(len(c) * 64) // todo this can probably be way smaller
 	for _, m := range c {
 		batch.Delete(m)
 	}
+
 	return l.DB.Write(batch, nil)
 }
 
