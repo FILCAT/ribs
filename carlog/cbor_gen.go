@@ -137,9 +137,11 @@ func (t *Head) UnmarshalCBOR(r io.Reader) (err error) {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 9 && extra != 8 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
+
+	hasOffl := extra == 9
 
 	// t.Version (int64) (int64)
 	{
@@ -294,20 +296,22 @@ func (t *Head) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 	// t.Offloaded (bool) (bool)
 
-	maj, extra, err = cr.ReadHeader()
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.Offloaded = false
-	case 21:
-		t.Offloaded = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	if hasOffl {
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajOther {
+			return fmt.Errorf("booleans must be major type 7")
+		}
+		switch extra {
+		case 20:
+			t.Offloaded = false
+		case 21:
+			t.Offloaded = true
+		default:
+			return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+		}
 	}
 	// t.LayerOffsets ([]int64) (slice)
 
