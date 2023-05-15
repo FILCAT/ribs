@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	gobig "math/big"
 	"time"
 
 	"github.com/filecoin-project/boost/storagemarket/types"
@@ -123,10 +124,13 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		duration := 400 * builtin.EpochsInDay
 
-		price := big.NewInt(prov.ask_price)
+		pricef := gobig.NewFloat(prov.ask_price)
 		if verified {
-			price = big.NewInt(prov.ask_verif_price)
+			pricef = gobig.NewFloat(prov.ask_verif_price)
 		}
+
+		price := big.Zero()
+		pricef.Int(price.Int)
 
 		if price.GreaterThan(big.NewInt(int64(maxPrice))) {
 			// this check is probably redundant, buuut..

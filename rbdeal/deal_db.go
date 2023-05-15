@@ -198,8 +198,8 @@ func openRibsDB(root string) (*ribsDB, error) {
 
 type dealProvider struct {
 	id              int64
-	ask_price       int64
-	ask_verif_price int64
+	ask_price       float64
+	ask_verif_price float64
 }
 
 func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64) ([]dealProvider, error) {
