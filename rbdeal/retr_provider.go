@@ -39,6 +39,9 @@ type retrievalProvider struct {
 
 	gw api.Gateway
 
+	addrLk sync.Mutex
+	addrs  map[address.Address]peer.AddrInfo
+
 	statLk   sync.Mutex
 	attempts map[peer.ID]int64
 	fails    map[peer.ID]int64
@@ -84,16 +87,24 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 			continue
 		}
 
-		addrInfo, err := GetAddrInfo(ctx, r.gw, maddr) // todo cache, pull from db
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
+		var addrInfo peer.AddrInfo
+		r.addrLk.Lock()
+		if _, ok := r.addrs[maddr]; !ok {
+			ai, err := GetAddrInfo(ctx, r.gw, maddr) // todo pull from db
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				continue
 			}
-			continue
+
+			r.addrs[maddr] = *ai
 		}
+		addrInfo = r.addrs[maddr]
+		r.addrLk.Unlock()
 
 		cs = append(cs, types.RetrievalCandidate{
-			MinerPeer: *addrInfo,
+			MinerPeer: addrInfo,
 			RootCid:   gm.RootCid,
 			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{ // todo bitswap (/http?)
 				PieceCID:      gm.PieceCid,
@@ -122,9 +133,9 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	})
 	r.statLk.Unlock()
 	for _, c := range cs[:3] { // only return the top 3
-		r.statLk.Lock()
-		log.Errorw("secect", "p", c.MinerPeer.ID, "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID])
-		r.statLk.Unlock()
+		/*r.statLk.Lock()
+		log.Debugw("select", "p", c.MinerPeer.ID, "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID])
+		r.statLk.Unlock()*/
 
 		f(c)
 
@@ -157,6 +168,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 
 		attempts: map[peer.ID]int64{},
 		fails:    map[peer.ID]int64{},
+
+		addrs: map[address.Address]peer.AddrInfo{},
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp), lassie.WithConcurrentSPRetrievals(10), lassie.WithGlobalTimeout(30*time.Second), lassie.WithProviderTimeout(4*time.Second))
@@ -236,7 +249,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 			return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 		}
 
-		log.Errorw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
+		log.Debugw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
 
 		b, err := wstor.BS.Get(ctx, cidToGet)
 		if err != nil {
