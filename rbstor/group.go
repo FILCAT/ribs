@@ -26,6 +26,8 @@ var (
 	maxGroupBlocks int64 = 20 << 20
 )
 
+var ErrOffloaded = fmt.Errorf("group is offloaded")
+
 type Group struct {
 	db    *rbsDB
 	index iface.Index
@@ -35,15 +37,19 @@ type Group struct {
 	path string
 	id   int64
 
+	// access with dataLk
 	state iface.GroupState
 
 	// db lock
-	// note: can be taken when jblk is held
+	// note: can be taken when dataLk is held
 	dblk sync.Mutex
 
-	// jbob (with jblk)
+	// data lock
+	dataLk sync.RWMutex
 
-	jblk sync.RWMutex
+	// reader protectors
+	readers   sync.WaitGroup
+	offloaded atomic.Int64
 
 	// inflight counters track current jbob writes which are not yet committed
 	inflightBlocks int64
@@ -54,10 +60,10 @@ type Group struct {
 	committedSize   int64
 
 	// atomic perf/diag counters
-	readBlocks  int64
-	readSize    int64
-	writeBlocks int64
-	writeSize   int64
+	readBlocks  atomic.Int64
+	readSize    atomic.Int64
+	writeBlocks atomic.Int64
+	writeSize   atomic.Int64
 
 	// perf counter snapshots, owned by group manager
 	readBlocksSnap  int64
@@ -93,7 +99,7 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 		return nil, xerrors.Errorf("open jbob (grp: %s): %w", groupPath, err)
 	}
 
-	return &Group{
+	g := &Group{
 		db:    db,
 		index: index,
 
@@ -105,7 +111,13 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 		path:  groupPath,
 		id:    id,
 		state: state,
-	}, nil
+	}
+
+	if state >= iface.GroupStateOffloaded {
+		g.offloaded.Store(1)
+	}
+
+	return g, nil
 }
 
 func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
@@ -116,8 +128,8 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	}
 
 	// jbob writes are not thread safe, take the lock to get serial access
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
 
 	if m.state != iface.GroupStateWritable {
 		return 0, nil
@@ -145,8 +157,8 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	m.inflightBlocks += int64(writeBlocks)
 	m.inflightSize += writeSize
 
-	atomic.AddInt64(&m.writeBlocks, int64(writeBlocks))
-	atomic.AddInt64(&m.writeSize, writeSize)
+	m.writeBlocks.Add(int64(writeBlocks))
+	m.writeSize.Add(writeSize)
 
 	// backend write
 
@@ -193,8 +205,8 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 }
 
 func (m *Group) Sync(ctx context.Context) error {
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
 
 	return m.sync(ctx)
 }
@@ -240,6 +252,13 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 }
 
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
+	m.readers.Add(1)
+	defer m.readers.Done()
+
+	if m.offloaded.Load() != 0 {
+		return ErrOffloaded
+	}
+
 	// right now we just read from jbob
 
 	// View is thread safe
@@ -249,8 +268,8 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 			return xerrors.Errorf("group: block not found")
 		}
 
-		atomic.AddInt64(&m.readBlocks, 1)
-		atomic.AddInt64(&m.readSize, int64(len(data)))
+		m.readBlocks.Add(1)
+		m.readSize.Add(int64(len(data)))
 
 		cb(cidx, data)
 		return nil
@@ -262,16 +281,23 @@ func (m *Group) Close() error {
 		return err
 	}
 
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
 
-	_, err := m.jb.Close()
+	err := m.jb.Close()
 	// todo mark as closed
 	return err
 }
 
 // returns car size and root cid
 func (m *Group) writeCar(w io.Writer) (int64, cid.Cid, error) {
+	m.readers.Add(1)
+	defer m.readers.Done()
+
+	if m.offloaded.Load() != 0 {
+		return 0, cid.Undef, ErrOffloaded
+	}
+
 	// writeCar is thread safe
 	return m.jb.WriteCar(w)
 }

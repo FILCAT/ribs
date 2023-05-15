@@ -20,6 +20,9 @@ type RBS interface {
 	Storage() Storage
 	StorageDiag() RBSDiag
 
+	// ExternalStorage manages offloaded data
+	ExternalStorage() RBSExternalStorage
+
 	io.Closer
 }
 
@@ -157,6 +160,8 @@ const (
 
 	GroupStateLocalReadyForDeals
 	GroupStateOffloaded
+
+	// GroupStateDownloading
 )
 
 // Group stores a bunch of blocks, abstracting away the storage backend.
@@ -176,4 +181,12 @@ type Group interface {
 	Finalize(ctx context.Context) error
 
 	io.Closer
+}
+
+type RBSExternalStorage interface {
+	InstallProvider(ExternalStorageProvider)
+}
+
+type ExternalStorageProvider interface {
+	FetchBlocks(ctx context.Context, group GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error
 }

@@ -18,7 +18,7 @@ var _ = cid.Undef
 var _ = math.E
 var _ = sort.Sort
 
-var lengthBufHead = []byte{136}
+var lengthBufHead = []byte{137}
 
 func (t *Head) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -91,6 +91,11 @@ func (t *Head) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.Offloaded (bool) (bool)
+	if err := cbg.WriteBool(w, t.Offloaded); err != nil {
+		return err
+	}
+
 	// t.LayerOffsets ([]int64) (slice)
 	if len(t.LayerOffsets) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.LayerOffsets was too long")
@@ -132,7 +137,7 @@ func (t *Head) UnmarshalCBOR(r io.Reader) (err error) {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -284,6 +289,23 @@ func (t *Head) UnmarshalCBOR(r io.Reader) (err error) {
 		t.Finalized = false
 	case 21:
 		t.Finalized = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	// t.Offloaded (bool) (bool)
+
+	maj, extra, err = cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.Offloaded = false
+	case 21:
+		t.Offloaded = true
 	default:
 		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
 	}

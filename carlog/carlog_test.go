@@ -44,7 +44,7 @@ func TestCarLogBasic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = jb.Close()
+	err = jb.Close()
 	require.NoError(t, err)
 
 	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
@@ -69,7 +69,7 @@ func TestCarLogBasic(t *testing.T) {
 	})
 
 	// test open finalized
-	_, err = jb.Close()
+	err = jb.Close()
 	require.NoError(t, err)
 
 	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
@@ -88,6 +88,33 @@ func TestCarLogBasic(t *testing.T) {
 		require.Equal(t, h, hs.Hash())
 		return nil
 	})
+
+	// test offload
+	require.NoError(t, jb.Offload())
+	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
+		require.Fail(t, "should not be here")
+		return nil
+	})
+	require.ErrorContains(t, err, "cannot read from closing or offloaded carlog")
+
+	s, err := jb.HashSample()
+	require.NoError(t, err)
+	require.Len(t, s, 1)
+
+	require.NoError(t, jb.Close())
+	// test open offloaded
+	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
+	require.NoError(t, err)
+
+	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
+		require.Fail(t, "should not be here")
+		return nil
+	})
+	require.ErrorContains(t, err, "cannot read from closing or offloaded carlog")
+
+	s, err = jb.HashSample()
+	require.NoError(t, err)
+	require.Len(t, s, 1)
 }
 
 func TestCarLog3K(t *testing.T) {
@@ -142,7 +169,7 @@ func TestCarLog3K(t *testing.T) {
 		return nil
 	})
 
-	_, err = jb.Close()
+	err = jb.Close()
 	require.NoError(t, err)
 
 	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
@@ -161,7 +188,7 @@ func TestCarLog3K(t *testing.T) {
 	_, _, err = jb.WriteCar(f)
 	require.NoError(t, err)
 
-	_, err = jb.Close()
+	err = jb.Close()
 
 	//require.NoError(t, VerifyCar(filepath.Join(td, "canon.car")))
 	//require.NoError(t, VerifyCar(filepath.Join(td, "data.car")))

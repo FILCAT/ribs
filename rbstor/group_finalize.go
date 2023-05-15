@@ -12,8 +12,8 @@ import (
 )
 
 func (m *Group) Finalize(ctx context.Context) error {
-	m.jblk.Lock()
-	defer m.jblk.Unlock()
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
 
 	if m.state != iface.GroupStateFull {
 		return xerrors.Errorf("group not in state for finalization: %d", m.state)
@@ -86,4 +86,27 @@ func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []by
 
 	// todo enter failed state on error
 	return m.db.SetCommP(ctx, m.id, state, commp, paddedPieceSize, root, carSize)
+}
+
+func (m *Group) offload() error {
+	m.offloaded.Store(1)
+	m.readers.Wait()
+
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
+
+	if m.state != iface.GroupStateLocalReadyForDeals {
+		return xerrors.Errorf("can't offload group in state %d", m.state)
+	}
+
+	if err := m.advanceState(context.Background(), iface.GroupStateOffloaded); err != nil {
+		return xerrors.Errorf("marking group as offloaded: %w", err)
+	}
+
+	err := m.jb.Offload()
+	if err != nil {
+		return xerrors.Errorf("offloading carlog: %w", err)
+	}
+
+	return nil
 }

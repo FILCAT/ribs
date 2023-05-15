@@ -304,8 +304,11 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 				cb(cidxs[cidx], data)
 			})
 		})
-		if err != nil {
-			return xerrors.Errorf("with readable group: %w", err)
+		if err == ErrOffloaded {
+			// TODO
+			return xerrors.Errorf("TODO: offloaded view")
+		} else if err != nil {
+			return xerrors.Errorf("with readable group/view: %w", err)
 		}
 	}
 
@@ -381,8 +384,10 @@ func (r *ribBatch) Flush(ctx context.Context) error {
 }
 
 func (r *rbs) Offload(ctx context.Context, group iface.GroupKey) error {
-	//TODO implement me
-	panic("implement me")
+	return r.withReadableGroup(ctx, group, func(g *Group) error {
+		err := g.offload()
+		return err
+	})
 }
 
 func (r *rbs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
@@ -432,6 +437,11 @@ func (r *rbs) HashSample(ctx context.Context, group iface.GroupKey) ([]mh.Multih
 
 func (r *rbs) Storage() iface.Storage {
 	return r
+}
+
+func (r *rbs) ExternalStorage() iface.RBSExternalStorage {
+	//TODO implement me
+	panic("implement me")
 }
 
 var _ iface.RBS = &rbs{}

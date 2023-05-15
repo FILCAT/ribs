@@ -26,10 +26,10 @@ func (r *rbs) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	r.lk.Unlock()
 
 	if ok {
-		m.ReadBlocks = atomic.LoadInt64(&g.readBlocks)
-		m.ReadBytes = atomic.LoadInt64(&g.readSize)
-		m.WriteBlocks = atomic.LoadInt64(&g.writeBlocks)
-		m.WriteBytes = atomic.LoadInt64(&g.writeSize)
+		m.ReadBlocks = g.readBlocks.Load()
+		m.ReadBytes = g.readSize.Load()
+		m.WriteBlocks = g.writeBlocks.Load()
+		m.WriteBytes = g.writeSize.Load()
 	}
 
 	return m, nil
@@ -55,10 +55,10 @@ func (r *rbs) GroupIOStats() iface.GroupIOStats {
 
 	// first update global counters
 	for _, group := range r.openGroups {
-		readBlocks := atomic.LoadInt64(&group.readBlocks)
-		readSize := atomic.LoadInt64(&group.readSize)
-		writeBlocks := atomic.LoadInt64(&group.writeBlocks)
-		writeSize := atomic.LoadInt64(&group.writeSize)
+		readBlocks := group.readBlocks.Load()
+		readSize := group.readSize.Load()
+		writeBlocks := group.writeBlocks.Load()
+		writeSize := group.writeSize.Load()
 
 		r.grpReadBlocks += readBlocks - group.readBlocksSnap
 		r.grpReadSize += readSize - group.readSizeSnap

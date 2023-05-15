@@ -80,7 +80,7 @@ type CarLog struct {
 	dataPos *appendCounter
 
 	// dataBuffered wraps dataPos, and buffers writes
-	dataBuffered *bufio.Writer
+	dataBuffered *bufio.Writer // todo free in finalize
 	dataBufLk    sync.Mutex
 
 	// current data file length
@@ -106,6 +106,10 @@ type CarLog struct {
 	// readStateLk is used for checking / accessing state which needs to be
 	// checked before doing reads (layerOffsets.len)
 	readStateLk sync.Mutex
+
+	// pendingReads is used to wait for pending reads to finish before offloading data
+	// (protects the data file)
+	pendingReads sync.WaitGroup
 }
 
 // Head is the on-disk head object. CBOR-map-serialized. Must fit in
@@ -128,6 +132,7 @@ type Head struct {
 
 	ReadOnly  bool // if true, no more writes are allowed
 	Finalized bool // if true, no more writes are allowed, and the bsst index is finalized
+	Offloaded bool // if true, the data file is offloaded to external storage, only hash samples are kept
 
 	// Layer stats, set after Finalized (Finalized can be true and layers may still not be set)
 	LayerOffsets []int64 // byte offsets of the start of each layer
@@ -234,6 +239,15 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 	var h Head
 	if err := h.UnmarshalCBOR(bytes.NewBuffer(headBuf[:])); err != nil {
 		return nil, xerrors.Errorf("unmarshal head: %w", err)
+	}
+
+	if h.Offloaded {
+		return &CarLog{
+			IndexPath: indexPath,
+			DataPath:  dataPath,
+
+			layerOffsets: h.LayerOffsets,
+		}, nil
 	}
 
 	// open data
@@ -449,7 +463,7 @@ func (j *CarLog) Put(c []mh.Multihash, b []blocks.Block) error {
 	defer j.idxLk.RUnlock()
 
 	if j.wIdx == nil {
-		return xerrors.Errorf("cannot write to read-only jbob")
+		return xerrors.Errorf("cannot write to read-only (or closing) jbob")
 	}
 
 	if len(c) != len(b) {
@@ -582,8 +596,15 @@ func (j *CarLog) flushBuffered() error {
 
 func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {
 	j.idxLk.RLock()
+	if j.rIdx == nil {
+		j.idxLk.RUnlock()
+		return xerrors.Errorf("cannot read from closing or offloaded carlog")
+	}
 	locs, err := j.rIdx.Get(c)
+
+	j.pendingReads.Add(1)
 	j.idxLk.RUnlock()
+	defer j.pendingReads.Done()
 	if err != nil {
 		return xerrors.Errorf("getting value locations: %w", err)
 	}
@@ -975,6 +996,9 @@ func (j *CarLog) WriteCar(w io.Writer) (int64, cid.Cid, error) {
 		j.readStateLk.Unlock()
 		return 0, cid.Undef, xerrors.Errorf("no layers, finalize first")
 	}
+
+	// TODO: Make sure this works on Offloaded groups as expected!!
+
 	j.readStateLk.Unlock()
 
 	var layers []*cardata
@@ -1089,34 +1113,122 @@ func (j *CarLog) HashSample() ([]mh.Multihash, error) {
 	return out, nil
 }
 
-func (j *CarLog) Close() (int64, error) {
-	// then log
-	at, err := j.Commit()
+func (j *CarLog) Offload() error {
+	j.readStateLk.Lock()
+
+	// first assert that we're finalized, and it's safe to offload
+	if len(j.layerOffsets) == 0 {
+		j.readStateLk.Unlock()
+		return xerrors.Errorf("cannot offload in a non-finalized car log")
+	}
+	defer j.readStateLk.Unlock()
+
+	j.idxLk.Lock()
+	if j.wIdx != nil {
+		j.idxLk.Unlock()
+		// this can't really happen
+		return xerrors.Errorf("group still writable")
+	}
+
+	if j.rIdx == nil {
+		j.idxLk.Unlock()
+		return xerrors.Errorf("group already offloaded")
+	}
+
+	// mark as offloaded first
+	err := j.mutHead(func(h *Head) error {
+		h.Offloaded = true
+		return nil
+	})
 	if err != nil {
-		return 0, xerrors.Errorf("committing head: %w", err)
+		j.idxLk.Unlock()
+		return xerrors.Errorf("updating head to mark as offloaded: %w", err)
+	}
+
+	if err := j.rIdx.Close(); err != nil {
+		j.idxLk.Unlock()
+		return xerrors.Errorf("closing readable index: %w", err)
+	}
+
+	j.rIdx = nil
+
+	// let reads resume (and fail)
+	j.idxLk.Unlock()
+
+	// wait for all readers to finish
+	j.pendingReads.Wait()
+
+	// close the data file
+	if err := j.data.Close(); err != nil {
+		return xerrors.Errorf("closing data file: %w", err)
+	}
+
+	// close the head
+	if err := j.head.Close(); err != nil {
+		return xerrors.Errorf("closing head: %w", err)
+	}
+
+	// mark some fields as nil to allow GC
+	j.data = nil
+	j.dataPos = nil
+	j.dataBuffered = nil
+	j.writeLru = nil
+
+	// remove index
+	if err := os.RemoveAll(filepath.Join(j.IndexPath, BsstIndex)); err != nil {
+		return xerrors.Errorf("removing bsst index: %w", err)
+	}
+
+	// remove data file
+	if err := os.RemoveAll(j.DataPath); err != nil {
+		return xerrors.Errorf("removing data file: %w", err)
+	}
+
+	return nil
+}
+
+func (j *CarLog) Close() error {
+	j.idxLk.Lock()
+	ri := j.rIdx
+	wi := j.wIdx
+	j.rIdx = nil
+	j.wIdx = nil
+	j.idxLk.Unlock()
+
+	j.pendingReads.Wait() // writes hold idxLk
+
+	if ri == nil {
+		// either already closed, or offloaded
+		return nil
+	}
+
+	// then log
+	_, err := j.Commit()
+	if err != nil {
+		return xerrors.Errorf("committing head: %w", err)
 	}
 
 	// sync / close head first
 	if err := j.data.Close(); err != nil {
-		return 0, xerrors.Errorf("closing data: %w", err)
+		return xerrors.Errorf("closing data: %w", err)
 	}
 
 	if err := j.head.Close(); err != nil {
-		return 0, xerrors.Errorf("closing head: %w", err)
+		return xerrors.Errorf("closing head: %w", err)
 	}
 
 	// then indexes
-	if j.wIdx != nil {
-		if err := j.wIdx.Close(); err != nil {
-			return 0, xerrors.Errorf("closing index: %w", err)
+	if wi != nil {
+		if err := wi.Close(); err != nil {
+			return xerrors.Errorf("closing index: %w", err)
 		}
 	} else {
-		if err := j.rIdx.Close(); err != nil {
-			return 0, xerrors.Errorf("closing index: %w", err)
+		if err := ri.Close(); err != nil {
+			return xerrors.Errorf("closing index: %w", err)
 		}
 	}
 
-	return at, nil
+	return nil
 }
 
 /* MISC */
