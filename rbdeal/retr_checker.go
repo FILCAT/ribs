@@ -83,7 +83,7 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 			log.Errorw("failed to do retrieval check", "error", err)
 		}
 
-		time.Sleep(1 * time.Minute)
+		time.Sleep(15 * time.Minute)
 	}
 }
 
