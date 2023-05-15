@@ -238,7 +238,7 @@ func (r *rbsDB) SetCommP(ctx context.Context, id iface.GroupKey, state iface.Gro
 /* DIAGNOSTICS */
 
 func (r *rbsDB) Groups() ([]iface.GroupKey, error) {
-	res, err := r.db.Query("select id from groups")
+	res, err := r.db.Query("select id from groups order by id desc")
 	if err != nil {
 		return nil, xerrors.Errorf("listing groups: %w", err)
 	}

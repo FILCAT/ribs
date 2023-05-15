@@ -71,14 +71,14 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 		lookups: map[cid.Cid]types.RetrievalCandidate{},
 	}
 
-	lassie, err := lassie.NewLassie(ctx, lassie.WithHost(r.host), lassie.WithProviderAllowList(map[peer.ID]bool{}),
+	lsi, err := lassie.NewLassie(ctx, lassie.WithProviderAllowList(map[peer.ID]bool{}),
 		lassie.WithFinder(rf))
 	if err != nil {
 		log.Fatalw("failed to create lassie", "error", err)
 	}
 
 	for {
-		err := r.doRetrievalCheck(ctx, gw, rf, lassie)
+		err := r.doRetrievalCheck(ctx, gw, rf, lsi)
 		if err != nil {
 			log.Errorw("failed to do retrieval check", "error", err)
 		}

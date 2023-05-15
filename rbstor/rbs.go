@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 )
 
 var log = logging.Logger("rbs")
@@ -116,6 +117,8 @@ type rbs struct {
 
 	openGroups     map[int64]*Group
 	writableGroups map[int64]*Group
+
+	external atomic.Pointer[iface.ExternalStorageProvider]
 
 	// diag cache
 	diagLk sync.Mutex
@@ -305,8 +308,16 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 			})
 		})
 		if err == ErrOffloaded {
-			// TODO
-			return xerrors.Errorf("TODO: offloaded view")
+			extp := r.r.external.Load()
+			if extp == nil {
+				return xerrors.Errorf("no external storage, group %d is offloaded", g)
+			}
+
+			ext := *extp
+			return ext.FetchBlocks(ctx, g, toGet, func(cidx int, data []byte) {
+				cb(cidxs[cidx], data)
+			})
+
 		} else if err != nil {
 			return xerrors.Errorf("with readable group/view: %w", err)
 		}
@@ -440,8 +451,11 @@ func (r *rbs) Storage() iface.Storage {
 }
 
 func (r *rbs) ExternalStorage() iface.RBSExternalStorage {
-	//TODO implement me
-	panic("implement me")
+	return r
+}
+
+func (r *rbs) InstallProvider(provider iface.ExternalStorageProvider) {
+	r.external.Store(&provider)
 }
 
 var _ iface.RBS = &rbs{}

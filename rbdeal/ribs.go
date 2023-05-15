@@ -118,6 +118,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		moreDealsLocks: map[iface.GroupKey]struct{}{},
 	}
 
+	rp := newRetrievalProvider(context.TODO(), r)
+
 	{
 		walletPath := "~/.ribswallet"
 
@@ -176,6 +178,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 			return nil, xerrors.Errorf("creating host: %w", err)
 		}
 	}
+
+	r.RBS.ExternalStorage().InstallProvider(rp)
 
 	go r.spCrawler()
 	go r.dealTracker(context.TODO())

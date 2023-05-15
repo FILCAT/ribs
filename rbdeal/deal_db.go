@@ -1070,7 +1070,7 @@ func (r *ribsDB) GetRetrievalCheckCandidates() ([]RetrCheckCandidate, error) {
 		AND last_retrieval_check <= ?`,
 		now-secondsIn10Minutes)
 	if err != nil {
-		return nil, xerrors.Errorf("getting sealed and not failed deals: %w", err)
+		return nil, xerrors.Errorf("getting retrieval check candidates: %w", err)
 	}
 	defer rows.Close()
 
@@ -1134,4 +1134,40 @@ func (r *ribsDB) RecordRetrievalCheckResult(dealId string, res RetrievalResult) 
 	}
 
 	return nil
+}
+
+type RetrCandidate struct {
+	DealID                    string
+	Provider                  int64
+	Verified                  bool
+	FastRetr                  bool
+	LastRetrievalCheckSuccess int64
+}
+
+func (r *ribsDB) GetRetrievalCandidates(group iface.GroupKey) ([]RetrCandidate, error) {
+	rows, err := r.db.Query(`
+		SELECT uuid, provider_addr, verified, keep_unsealed, last_retrieval_check_success FROM deals 
+		WHERE group_id = ? AND sealed = 1 AND failed = 0 order by last_retrieval_check_success desc, keep_unsealed desc`,
+		group)
+	if err != nil {
+		return nil, xerrors.Errorf("getting retrieval candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var deals []RetrCandidate
+	for rows.Next() {
+		var deal RetrCandidate
+		// Assuming Deal is a struct that can scan all columns from the deals table
+		err := rows.Scan(&deal.DealID, &deal.Provider, &deal.Verified, &deal.FastRetr, &deal.LastRetrievalCheckSuccess)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+		deals = append(deals, deal)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return deals, nil
 }
