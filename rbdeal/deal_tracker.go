@@ -237,6 +237,18 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 					log.Errorf("starting new deals: %s", err)
 				}
 			}(gid)
+		} else if gs.Retrievable >= int64(minimumReplicaCount) {
+			upStat := r.CarUploadStats()
+			if upStat[gid] == nil {
+				log.Errorw("OFFLOAD GROUP", "group", gid)
+
+				if err := r.Storage().Offload(ctx, gid); err != nil {
+					log.Errorw("offloading group", "group", gid, "error", err)
+					return xerrors.Errorf("offloading group %d: %w", gid, err)
+				}
+			} else {
+				log.Errorw("NOT OFFLOADING GROUP yet", "group", gid, "retrievable", gs.Retrievable, "uploads", upStat[gid].ActiveRequests)
+			}
 		}
 	}
 
