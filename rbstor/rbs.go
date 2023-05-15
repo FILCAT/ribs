@@ -317,9 +317,8 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 			return ext.FetchBlocks(ctx, g, toGet, func(cidx int, data []byte) {
 				cb(cidxs[cidx], data)
 			})
-
 		} else if err != nil {
-			return xerrors.Errorf("with readable group/view: %w", err)
+			return xerrors.Errorf("with readable group(%d)/view: %w", g, err)
 		}
 	}
 
