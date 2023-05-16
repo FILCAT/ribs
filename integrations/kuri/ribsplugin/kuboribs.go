@@ -43,8 +43,6 @@ func (p *ribsPlugin) Init(env *plugin.Environment) error {
 }
 
 func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
-	fmt.Println("RIBS OPTIONS PLUGIN")
-
 	opts := info.FXOptions
 	opts = append(opts,
 		fx.Provide(makeRibs),

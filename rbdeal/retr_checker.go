@@ -184,7 +184,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 		var res RetrievalResult
 		if err == nil {
-			log.Errorw("retrieval stat", "stat", stat)
+			log.Debugw("retrieval stat", "stat", stat)
 			res.Success = true
 			res.Duration = time.Since(start)
 			res.TimeToFirstByte = stat.TimeToFirstByte

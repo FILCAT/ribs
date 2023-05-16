@@ -304,8 +304,6 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64) ([]d
 		}
 	}
 
-	fmt.Printf("SELECTED PROVIDERS: %#v\n", out)
-
 	return out, nil
 }
 
