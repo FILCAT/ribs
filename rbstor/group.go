@@ -165,8 +165,10 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	// 1. (buffer) writes to jbob
 
 	c := make([]mh.Multihash, len(b))
+	sz := make([]int32, len(b))
 	for i, blk := range b {
 		c[i] = blk.Cid().Hash()
+		sz[i] = int32(len(blk.RawData()))
 	}
 
 	err := m.jb.Put(c[:writeBlocks], b[:writeBlocks])
@@ -180,7 +182,7 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	//    missed, uncommitted jbob writes should be ignored.
 	// ^ TODO: Test this commit edge case
 	// TODO: Async index queue
-	err = m.index.AddGroup(ctx, c[:writeBlocks], m.id)
+	err = m.index.AddGroup(ctx, c[:writeBlocks], sz[:writeBlocks], m.id)
 	if err != nil {
 		// todo handle properly (abort, close, check disk space / resources, repopen)
 		return 0, xerrors.Errorf("writing index: %w", err)

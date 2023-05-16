@@ -78,17 +78,52 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 	return nil
 }
 
-func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
+func (i *PebbleIndex) GetSizes(ctx context.Context, mh []multihash.Multihash, cb func([]int32) error) error {
+	sizes := make([]int32, len(mh))
+
+	for id, m := range mh {
+		sizeKey := append([]byte("s:"), m...)
+		val, closer, err := i.db.Get(sizeKey)
+		if err == pebble.ErrNotFound {
+			sizes[id] = -1
+			continue
+		}
+		if err != nil {
+			return xerrors.Errorf("getsizes get: %w", err)
+		}
+
+		sizes[id] = int32(binary.BigEndian.Uint32(val))
+
+		if err := closer.Close(); err != nil {
+			return xerrors.Errorf("getsizes close: %w", err)
+		}
+	}
+
+	return cb(sizes)
+}
+
+func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, sizes []int32, group iface.GroupKey) error {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(group))
 
 	batch := i.db.NewBatch()
 	defer batch.Close()
 
-	for _, m := range mh {
-		key := append(append([]byte("i:"), m...), b...)
-		if err := batch.Set(key, nil, pebble.NoSync); err != nil {
-			return xerrors.Errorf("addgroup set: %w", err)
+	for i, m := range mh {
+		{
+			// group key
+			key := append(append([]byte("i:"), m...), b...)
+			if err := batch.Set(key, nil, pebble.NoSync); err != nil {
+				return xerrors.Errorf("addgroup set (gk): %w", err)
+			}
+		}
+		{
+			// size key
+			binary.BigEndian.PutUint32(b, uint32(sizes[i]))
+			key := append(append([]byte("s:"), m...))
+			if err := batch.Set(key, b[:4], pebble.NoSync); err != nil {
+				return xerrors.Errorf("addgroup set (sk): %w", err)
+			}
 		}
 	}
 
@@ -124,7 +159,7 @@ const averageEntrySize = 35 + 8 // multihash is ~35 bytes, groupkey is 8 bytes
 
 func (i *PebbleIndex) EstimateSize(ctx context.Context) (int64, error) {
 	lowerBound := []byte("i:")
-	upperBound := []byte("i;")
+	upperBound := []byte("s;")
 	estimatedSize, err := i.db.EstimateDiskUsage(lowerBound, upperBound)
 
 	if err != nil {

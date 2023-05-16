@@ -143,7 +143,10 @@ type TopIndexStats struct {
 type Index interface {
 	// GetGroups gets group ids for the multihashes
 	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
-	AddGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
+	GetSizes(ctx context.Context, mh []multihash.Multihash, cb func([]int32) error) error
+
+	AddGroup(ctx context.Context, mh []multihash.Multihash, sizes []int32, group GroupKey) error
+
 	Sync(ctx context.Context) error
 	DropGroup(ctx context.Context, mh []multihash.Multihash, group GroupKey) error
 	EstimateSize(ctx context.Context) (int64, error)
