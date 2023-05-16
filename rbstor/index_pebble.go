@@ -103,8 +103,10 @@ func (i *PebbleIndex) GetSizes(ctx context.Context, mh []multihash.Multihash, cb
 }
 
 func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, sizes []int32, group iface.GroupKey) error {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(group))
+	groupBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(groupBytes, uint64(group))
+
+	sizeBytes := make([]byte, 4)
 
 	batch := i.db.NewBatch()
 	defer batch.Close()
@@ -112,16 +114,16 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, si
 	for i, m := range mh {
 		{
 			// group key
-			key := append(append([]byte("i:"), m...), b...)
+			key := append(append([]byte("i:"), m...), groupBytes...)
 			if err := batch.Set(key, nil, pebble.NoSync); err != nil {
 				return xerrors.Errorf("addgroup set (gk): %w", err)
 			}
 		}
 		{
 			// size key
-			binary.BigEndian.PutUint32(b, uint32(sizes[i]))
+			binary.BigEndian.PutUint32(sizeBytes, uint32(sizes[i]))
 			key := append(append([]byte("s:"), m...))
-			if err := batch.Set(key, b[:4], pebble.NoSync); err != nil {
+			if err := batch.Set(key, sizeBytes[:4], pebble.NoSync); err != nil {
 				return xerrors.Errorf("addgroup set (sk): %w", err)
 			}
 		}
