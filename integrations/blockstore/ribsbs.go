@@ -3,6 +3,7 @@ package ribsbstore
 import (
 	"context"
 	"fmt"
+	lotusbstore "github.com/filecoin-project/lotus/blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -10,6 +11,8 @@ import (
 	"github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
+	"sync/atomic"
+	"time"
 )
 
 type Request[P, R any] struct {
@@ -31,16 +34,26 @@ type Blockstore struct {
 
 	puts chan Request[[]blocks.Block, error]
 
+	flushReq atomic.Int64
+	flushPos atomic.Int64
+
+	flush chan struct{}
+
+	lastFlush atomic.Int64
+
 	stop, stopped chan struct{}
 }
 
 var _ blockstore.Blockstore = &Blockstore{}
+var _ lotusbstore.Flusher = &Blockstore{}
 
 func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 	b := &Blockstore{
 		r:    r,
 		sess: r.Session(ctx),
 		puts: make(chan Request[[]blocks.Block, error], 64), // todo make this configurable
+
+		flush: make(chan struct{}, 1),
 
 		stop:    make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -64,11 +77,38 @@ func (b *Blockstore) start(ctx context.Context) {
 			err := bt.Flush(ctx)
 			if err != nil {
 				fmt.Println("failed to flush batch", "error", err) // todo log
+			} else {
+				fmt.Println("flushed batch on close") // todo log
 			}
 		}
 
 		close(b.stopped)
 	}()
+
+	flushBatch := func() error {
+		select { // if any requests are queued, consume them
+		case <-b.flush:
+		default:
+		}
+
+		newPos := b.flushReq.Load()
+		defer b.flushPos.Store(newPos)
+
+		if bt == nil {
+			return nil
+		}
+
+		err := bt.Flush(ctx)
+		if err != nil {
+			fmt.Println("failed to flush batch", "error", err) // todo log
+			// todo PANIK (make all subsequent calls to this blockstore fail)
+			return err
+		}
+		unflushed = 0
+		bt = nil
+
+		return nil
+	}
 
 	for {
 		select {
@@ -112,16 +152,21 @@ func (b *Blockstore) start(ctx context.Context) {
 
 			unflushed += len(toPut)
 			if unflushed > BlockstoreMaxUnflushedBlocks { // todo make this configurable
-				err = bt.Flush(ctx)
+				err = flushBatch()
 				if err != nil {
 					respondAll(err) // todo: not perfect but better than blocking all writes (?)
 					continue
 				}
-				unflushed = 0
-				bt = nil
 			}
 
 			respondAll(nil)
+		case <-b.flush:
+			err := flushBatch()
+			if err != nil {
+				fmt.Println("failed to flush batch", "error", err) // todo log
+				// todo PANIK (make all subsequent calls to this blockstore fail)
+				return
+			}
 		case <-b.stop:
 			return
 		}
@@ -247,6 +292,34 @@ func (b *Blockstore) AllKeysChan(ctx context.Context) (<-chan cid.Cid, error) {
 
 func (b *Blockstore) HashOnRead(enabled bool) {
 	return
+}
+
+func (b *Blockstore) Flush(ctx context.Context) error {
+	// note "now"
+	now := b.flushReq.Add(1)
+
+	// tell the flusher to flush
+	select {
+	case b.flush <- struct{}{}:
+	default:
+		// the channel is buffered, so just merge flushes
+	}
+
+	// wait for the flush to complete
+	// todo: use a cancellable cond-like thing here
+	for {
+		if b.flushPos.Load() >= now {
+			return nil
+		}
+
+		select {
+		case <-b.stop:
+			return xerrors.Errorf("flush interrupted")
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond * 10):
+		}
+	}
 }
 
 func (b *Blockstore) Close() error {

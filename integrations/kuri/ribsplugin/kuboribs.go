@@ -3,6 +3,7 @@ package kuboribs
 import (
 	"context"
 	"fmt"
+	lotusbstore "github.com/filecoin-project/lotus/blockstore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/kubo/core"
@@ -50,6 +51,16 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 
 		fx.Decorate(func(rbs *ribsbstore.Blockstore) node.BaseBlocks {
 			return rbs
+		}),
+
+		fx.Decorate(func(bb node.BaseBlocks, rbs *ribsbstore.Blockstore) (gclocker blockstore.GCLocker, gcbs blockstore.GCBlockstore, bs blockstore.Blockstore) {
+			gclocker = &flushingGCLocker{
+				flusher: rbs,
+			}
+			gcbs = blockstore.NewGCBlockstore(bb, gclocker)
+
+			bs = gcbs
+			return
 		}),
 
 		fx.Invoke(StartMfsDav),
@@ -126,22 +137,37 @@ func ribsBlockstore(r ribs.RIBS, lc fx.Lifecycle) *ribsbstore.Blockstore {
 	return rbs
 }
 
-type dummyGCLocker struct{}
+type flushingGCLocker struct {
+	flusher lotusbstore.Flusher
+}
 
-func (d *dummyGCLocker) Unlock(ctx context.Context) {
+func (d *flushingGCLocker) Unlock(ctx context.Context) {
+	// This is a potentially disturbing hack, used to gain a lot of performance
+	// while still maintaining reasonable durability guarantees.
+	// Normally unixfs Add will call PutMany with ~4-10 blocks, and expect the
+	// blockstore to sync that - which is horrendously slow, and not really
+	// needed.
+	// Here we exploit the fact that the adder takes a GC lock once for the whole
+	// add operation, so we just flush the blockstore here, which still guarantees
+	// that the data is durable after the adder returns.
+	err := d.flusher.Flush(ctx)
+	if err != nil {
+		log.Errorw("flushing blockstore through GCLocker", "error", err)
+	}
+
 	return
 }
 
-func (d *dummyGCLocker) GCLock(ctx context.Context) blockstore.Unlocker {
+func (d *flushingGCLocker) GCLock(ctx context.Context) blockstore.Unlocker {
 	panic("no gc")
 }
 
-func (d *dummyGCLocker) PinLock(ctx context.Context) blockstore.Unlocker {
+func (d *flushingGCLocker) PinLock(ctx context.Context) blockstore.Unlocker {
 	return d
 }
 
-func (d *dummyGCLocker) GCRequested(ctx context.Context) bool {
+func (d *flushingGCLocker) GCRequested(ctx context.Context) bool {
 	return false
 }
 
-var _ blockstore.GCLocker = (*dummyGCLocker)(nil)
+var _ blockstore.GCLocker = (*flushingGCLocker)(nil)
