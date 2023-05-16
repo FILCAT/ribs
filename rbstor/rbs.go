@@ -325,14 +325,8 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 	return nil
 }
 
-func (r *ribSession) Has(ctx context.Context, c []mh.Multihash) ([]bool, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *ribSession) GetSize(ctx context.Context, c []mh.Multihash) ([]int64, error) {
-	//TODO implement me
-	panic("implement me")
+func (r *ribSession) GetSize(ctx context.Context, c []mh.Multihash, cb func(i []int32) error) error {
+	return r.r.index.GetSizes(ctx, c, cb)
 }
 
 func (r *ribSession) Batch(ctx context.Context) iface.Batch {

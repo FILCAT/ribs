@@ -59,10 +59,8 @@ type Session interface {
 	//   If the data is to be used after returning from the callback, it MUST be copied.
 	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
 
-	Has(ctx context.Context, c []multihash.Multihash) ([]bool, error)
-
 	// -1 means not found
-	GetSize(ctx context.Context, c []multihash.Multihash) ([]int64, error)
+	GetSize(ctx context.Context, c []multihash.Multihash, cb func([]int32) error) error
 
 	Batch(ctx context.Context) Batch
 }

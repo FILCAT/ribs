@@ -190,15 +190,6 @@ func (b *Blockstore) DeleteBlock(ctx context.Context, c cid.Cid) error {
 }
 
 func (b *Blockstore) Has(ctx context.Context, c cid.Cid) (bool, error) {
-	/*r, err := b.sess.Has(ctx, cidsToMhs([]cid.Cid{c}))
-	if err != nil {
-		return false, err
-	}
-	if len(r) == 0 {
-		return false, xerrors.Errorf("no result")
-	}
-	return r[0], nil*/
-
 	_, err := b.GetSize(ctx, c)
 	if ipld.IsNotFound(err) {
 		return false, nil
@@ -231,27 +222,26 @@ func (b *Blockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 }
 
 func (b *Blockstore) GetSize(ctx context.Context, c cid.Cid) (int, error) {
-	/*r, err := b.sess.GetSize(ctx, cidsToMhs([]cid.Cid{c}))
+	var r int32
+
+	err := b.sess.GetSize(ctx, cidsToMhs([]cid.Cid{c}), func(sz []int32) error {
+		if len(sz) != 1 {
+			return xerrors.Errorf("expected 1 result")
+		}
+
+		r = sz[0]
+
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
 
-	if len(r) == 0 {
-		return 0, xerrors.Errorf("no result")
-	}
-
-	if r[0] == -1 {
+	if r == -1 {
 		return 0, ipld.ErrNotFound{Cid: c}
 	}
 
-	return int(r[0]), nil
-	*/
-
-	bk, err := b.Get(ctx, c)
-	if err != nil {
-		return 0, err
-	}
-	return len(bk.RawData()), nil
+	return int(r), nil
 }
 
 func (b *Blockstore) Put(ctx context.Context, block blocks.Block) error {
