@@ -325,6 +325,16 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 	return nil
 }
 
+func (r *ribSession) Has(ctx context.Context, c []mh.Multihash) ([]bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *ribSession) GetSize(ctx context.Context, c []mh.Multihash) ([]int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (r *ribSession) Batch(ctx context.Context) iface.Batch {
 	return &ribBatch{
 		r:                  r.r,
@@ -356,16 +366,6 @@ func (r *ribBatch) Put(ctx context.Context, b []blocks.Block) error {
 	return nil
 }
 
-func (r *ribSession) Has(ctx context.Context, c []mh.Multihash) ([]bool, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *ribSession) GetSize(ctx context.Context, c []mh.Multihash) ([]int64, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (r *ribBatch) Unlink(ctx context.Context, c []mh.Multihash) error {
 	//TODO implement me
 	panic("implement me")
@@ -386,6 +386,10 @@ func (r *ribBatch) Flush(ctx context.Context) error {
 		if err != nil {
 			return xerrors.Errorf("sync group %d: %w", key, err)
 		}
+	}
+
+	if err := r.r.index.Sync(ctx); err != nil {
+		return xerrors.Errorf("flush top index: %w", err)
 	}
 
 	r.toFlush = map[iface.GroupKey]struct{}{}
