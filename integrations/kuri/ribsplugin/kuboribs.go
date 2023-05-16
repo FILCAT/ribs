@@ -4,11 +4,19 @@ import (
 	"context"
 	"fmt"
 	lotusbstore "github.com/filecoin-project/lotus/blockstore"
+	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	format "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
+	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-mfs"
+	"github.com/ipfs/go-unixfs"
 	"github.com/ipfs/kubo/core"
 	"github.com/ipfs/kubo/core/node"
+	"github.com/ipfs/kubo/core/node/helpers"
 	"github.com/ipfs/kubo/plugin"
+	"github.com/ipfs/kubo/repo"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/lotus-web3/ribs"
@@ -62,6 +70,8 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 			bs = gcbs
 			return
 		}),
+
+		fx.Decorate(RibsFiles),
 
 		fx.Invoke(StartMfsDav),
 	)
@@ -137,6 +147,8 @@ func ribsBlockstore(r ribs.RIBS, lc fx.Lifecycle) *ribsbstore.Blockstore {
 	return rbs
 }
 
+// Adder Durability
+
 type flushingGCLocker struct {
 	flusher lotusbstore.Flusher
 }
@@ -171,3 +183,75 @@ func (d *flushingGCLocker) GCRequested(ctx context.Context) bool {
 }
 
 var _ blockstore.GCLocker = (*flushingGCLocker)(nil)
+
+// MFS Durability
+
+func RibsFiles(mctx helpers.MetricsCtx, lc fx.Lifecycle, repo repo.Repo, dag format.DAGService, rbs *ribsbstore.Blockstore) (*mfs.Root, error) {
+	dsk := datastore.NewKey("/local/filesroot")
+	pf := func(ctx context.Context, c cid.Cid) error {
+		rootDS := repo.Datastore()
+		/*if err := rootDS.Sync(ctx, blockstore.BlockPrefix); err != nil {
+			return err
+		}
+		if err := rootDS.Sync(ctx, filestore.FilestorePrefix); err != nil {
+			return err
+		}*/
+
+		if err := rbs.Flush(ctx); err != nil {
+			return xerrors.Errorf("ribs flush: %w", err)
+		}
+
+		log.Errorw("new files root", "cid", c.String())
+
+		if err := rootDS.Put(ctx, dsk, c.Bytes()); err != nil {
+			return err
+		}
+		return rootDS.Sync(ctx, dsk)
+	}
+
+	var nd *merkledag.ProtoNode
+	ctx := helpers.LifecycleCtx(mctx, lc)
+	val, err := repo.Datastore().Get(ctx, dsk)
+
+	switch {
+	case err == datastore.ErrNotFound || val == nil:
+		nd = unixfs.EmptyDirNode()
+		err := dag.Add(ctx, nd)
+		if err != nil {
+			return nil, fmt.Errorf("failure writing to dagstore: %s", err)
+		}
+	case err == nil:
+		c, err := cid.Cast(val)
+		if err != nil {
+			return nil, err
+		}
+
+		rnd, err := dag.Get(ctx, c)
+		if err != nil {
+			return nil, fmt.Errorf("error loading filesroot from DAG: %s", err)
+		}
+
+		pbnd, ok := rnd.(*merkledag.ProtoNode)
+		if !ok {
+			return nil, merkledag.ErrNotProtobuf
+		}
+
+		nd = pbnd
+	default:
+		return nil, err
+	}
+
+	root, err := mfs.NewRoot(ctx, dag, nd, pf)
+
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			if root == nil {
+				return nil
+			}
+
+			return root.Close()
+		},
+	})
+
+	return root, err
+}
