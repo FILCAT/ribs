@@ -53,6 +53,8 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 		fx.Decorate(func(rbs *ribsbstore.Blockstore) node.BaseBlocks {
 			return rbs
 		}),
+
+		fx.Invoke(StartMfsDav),
 	)
 	return opts, nil
 }
