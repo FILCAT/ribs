@@ -377,7 +377,7 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 
 func (r *ribsDB) GetNonFailedDealCount(group iface.GroupKey) (int, error) {
 	var count int
-	err := r.db.QueryRow(`select count(*) from deals where group_id = 7 and failed = 0 and case when last_retrieval_check > 0 then last_retrieval_check < (last_retrieval_check_success + 3600*24) else 1 end = 1`, group).Scan(&count)
+	err := r.db.QueryRow(`select count(*) from deals where group_id = ? and failed = 0 and case when last_retrieval_check > 0 then last_retrieval_check < (last_retrieval_check_success + 3600*24) else 1 end = 1`, group).Scan(&count)
 	if err != nil {
 		return 0, xerrors.Errorf("querying deal count: %w", err)
 	}
