@@ -265,6 +265,16 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				return
 			}
 
+			if resp.Ask == nil {
+				log.Errorw("got nil ask", "actor", actor)
+				return
+			}
+
+			if resp.Ask.Ask == nil {
+				log.Errorw("got nil ask", "actor", actor)
+				return
+			}
+
 			if err := r.db.UpdateProviderStorageAsk(actor, resp.Ask.Ask); err != nil {
 				log.Errorw("error updating provider ask", "actor", actor, "err", err)
 			}

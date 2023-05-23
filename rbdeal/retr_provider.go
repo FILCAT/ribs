@@ -246,10 +246,11 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 			}
 		})
 		if err != nil {
+			log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
 			return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 		}
 
-		log.Debugw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
+		log.Errorw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
 
 		b, err := wstor.BS.Get(ctx, cidToGet)
 		if err != nil {
