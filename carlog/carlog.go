@@ -630,6 +630,13 @@ func (j *CarLog) ldWrite(d ...[]byte) (int64, error) {
 var errNothingToCommit = errors.New("nothing to commit")
 
 func (j *CarLog) Commit() (int64, error) {
+	j.idxLk.RLock()
+	if j.wIdx == nil {
+		j.idxLk.RUnlock()
+		return 0, nil
+	}
+	j.idxLk.RUnlock()
+
 	// todo log commit?
 
 	if err := j.flushBuffered(); err != nil {
