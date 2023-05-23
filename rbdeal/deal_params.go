@@ -32,7 +32,7 @@ var ParallelDealChecks = 10
 var verified = true
 
 var (
-	minimumReplicaCount = 7
+	minimumReplicaCount = 5
 	targetReplicaCount  = 10
 )
 
