@@ -45,6 +45,15 @@ type retrievalProvider struct {
 	statLk   sync.Mutex
 	attempts map[peer.ID]int64
 	fails    map[peer.ID]int64
+
+	ongoingRequestsLk sync.Mutex
+	ongoingRequests   map[cid.Cid]requestPromise
+}
+
+type requestPromise struct {
+	done chan struct{}
+	res  []byte
+	err  error
 }
 
 func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
@@ -105,7 +114,7 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 
 		cs = append(cs, types.RetrievalCandidate{
 			MinerPeer: addrInfo,
-			RootCid:   gm.RootCid,
+			RootCid:   cid,
 			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{ // todo bitswap (/http?)
 				PieceCID:      gm.PieceCid,
 				VerifiedDeal:  candidate.Verified,
@@ -170,6 +179,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 		fails:    map[peer.ID]int64{},
 
 		addrs: map[address.Address]peer.AddrInfo{},
+
+		ongoingRequests: map[cid.Cid]requestPromise{},
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp), lassie.WithConcurrentSPRetrievals(10), lassie.WithGlobalTimeout(30*time.Second), lassie.WithProviderTimeout(4*time.Second))
@@ -222,6 +233,31 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 	for i, hashToGet := range mh {
 		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
+		r.ongoingRequestsLk.Lock()
+
+		if or, ok := r.ongoingRequests[cidToGet]; ok {
+			r.ongoingRequestsLk.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-or.done:
+			}
+
+			if or.err != nil {
+				return xerrors.Errorf("retr promise error: %w", or.err)
+			}
+
+			cb(i, or.res)
+			continue
+		}
+
+		promise := requestPromise{
+			done: make(chan struct{}),
+		}
+
+		r.ongoingRequests[cidToGet] = promise
+		r.ongoingRequestsLk.Unlock()
+
 		request := types.RetrievalRequest{
 			RetrievalID:       must.One(types.NewRetrievalID()),
 			Cid:               cidToGet,
@@ -233,13 +269,15 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		}
 
 		stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
+			//log.Errorw("retrieval event", "cid", cidToGet, "event", event)
+
 			if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
 				r.statLk.Lock()
 				r.attempts[event.StorageProviderId()]++
 				r.statLk.Unlock()
 			}
 			if event.Code() == types.FailedCode && event.StorageProviderId() != "" {
-				log.Errorw("retrieval failed", "cid", cidToGet, "event", event)
+				log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
 				r.statLk.Lock()
 				r.fails[event.StorageProviderId()]++
 				r.statLk.Unlock()
@@ -247,6 +285,13 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		})
 		if err != nil {
 			log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
+
+			r.ongoingRequestsLk.Lock()
+			delete(r.ongoingRequests, cidToGet)
+			r.ongoingRequestsLk.Unlock()
+
+			promise.err = err
+			close(promise.done)
 			return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 		}
 
@@ -254,8 +299,23 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 		b, err := wstor.BS.Get(ctx, cidToGet)
 		if err != nil {
+			log.Errorw("failed to get block from retrieval store", "error", err)
+
+			r.ongoingRequestsLk.Lock()
+			delete(r.ongoingRequests, cidToGet)
+			r.ongoingRequestsLk.Unlock()
+
+			promise.err = err
+			close(promise.done)
 			return xerrors.Errorf("failed to get block from retrieval store: %w", err)
 		}
+
+		r.ongoingRequestsLk.Lock()
+		delete(r.ongoingRequests, cidToGet)
+		r.ongoingRequestsLk.Unlock()
+
+		promise.res = b.RawData()
+		close(promise.done)
 
 		cb(i, b.RawData())
 	}

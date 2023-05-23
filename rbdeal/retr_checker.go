@@ -134,7 +134,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 		cent := types.RetrievalCandidate{
 			MinerPeer: *addrInfo,
-			RootCid:   group.RootCid,
+			RootCid:   cidToGet,
 			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{
 				PieceCID:      group.PieceCid,
 				VerifiedDeal:  candidate.Verified,
