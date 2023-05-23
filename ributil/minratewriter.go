@@ -17,6 +17,8 @@ type RateCounters[K comparable] struct {
 	rateFunc RateFunc
 }
 
+var TotalTransferDivFactor int64 = 4
+
 type RateFunc func(transferRateMbps float64, peerTransfers, totalTransfers int64) error
 
 func MinAvgGlobalLogPeerRate(minTxRateMbps, linkMbps float64) RateFunc {
@@ -24,7 +26,7 @@ func MinAvgGlobalLogPeerRate(minTxRateMbps, linkMbps float64) RateFunc {
 		peerTransferFactor := math.Log2(float64(peerTransfers) + 1)
 		minPeerTransferRate := minTxRateMbps * peerTransferFactor
 
-		maxAvgTransferRate := linkMbps / float64(totalTransfers)
+		maxAvgTransferRate := linkMbps / float64(totalTransfers*TotalTransferDivFactor)
 		if maxAvgTransferRate < minPeerTransferRate {
 			minPeerTransferRate = maxAvgTransferRate
 		}
