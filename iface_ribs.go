@@ -21,7 +21,7 @@ type RIBS interface {
 }
 
 type RIBSDiag interface {
-	CarUploadStats() map[GroupKey]*UploadStats
+	CarUploadStats() UploadStats
 	DealSummary() (DealSummary, error)
 	GroupDeals(gk GroupKey) ([]DealMeta, error)
 
@@ -33,6 +33,12 @@ type RIBSDiag interface {
 }
 
 type UploadStats struct {
+	ByGroup map[GroupKey]*GroupUploadStats
+
+	LastTotalBytes int64
+}
+
+type GroupUploadStats struct {
 	ActiveRequests int
 	UploadBytes    int64
 }

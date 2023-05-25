@@ -331,14 +331,21 @@ function WorkersTile({ groups }) {
 
 function CarUploadStatsTile({ carUploadStats }) {
     const [displayStats, setDisplayStats] = useState({});
+    const [globalRate, setGlobalRate] = useState(0);
     const prevStatsRef = useRef({});
+    const [lastGlobalBytes, setLastGlobalBytes] = useState(0);
     const rateEMARef = useRef({});
     const smoothingFactor = 1 / 10;
 
     const calcRates = () => {
         const newDisplayStats = {};
 
-        for (const [groupKey, uploadStats] of Object.entries(carUploadStats)) {
+        let byGroup = {};
+        if (carUploadStats.ByGroup) {
+            byGroup = carUploadStats.ByGroup;
+        }
+
+        for (const [groupKey, uploadStats] of Object.entries(byGroup)) {
             if (!prevStatsRef.current[groupKey]) {
                 // If previous stats for this group are not initialized, set them to the current stats
                 prevStatsRef.current[groupKey] = uploadStats;
@@ -363,6 +370,20 @@ function CarUploadStatsTile({ carUploadStats }) {
             prevStatsRef.current[groupKey] = { UploadBytes: bytesSent };
         }
 
+        let lastBytes = lastGlobalBytes;
+        if(lastBytes === 0) {
+            lastBytes = carUploadStats.LastTotalBytes;
+        }
+
+        const globalBytesChange = carUploadStats.LastTotalBytes - lastBytes;
+        const globalRateEMA = calcEMA(
+            globalBytesChange,
+            globalRate || 0,
+            smoothingFactor / 10
+        );
+
+        setGlobalRate(Math.round(globalRateEMA));
+        setLastGlobalBytes(carUploadStats.LastTotalBytes);
         setDisplayStats(newDisplayStats);
     };
 
@@ -384,6 +405,11 @@ function CarUploadStatsTile({ carUploadStats }) {
                 </tr>
                 </thead>
                 <tbody>
+                <tr>
+                    <td>Global</td>
+                    <td></td>
+                    <td>{formatBitsBinary(globalRate)}</td>
+                </tr>
                 {Object.entries(displayStats).map(([groupKey, uploadStats]) => (
                     <tr key={groupKey}>
                         <td>Group {groupKey}</td>

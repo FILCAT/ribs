@@ -46,7 +46,7 @@ func (rc *RIBSRpc) CrawlState(ctx context.Context) (ribs.CrawlState, error) {
 	return rc.ribs.DealDiag().CrawlState(), nil
 }
 
-func (rc *RIBSRpc) CarUploadStats(ctx context.Context) (map[ribs.GroupKey]*ribs.UploadStats, error) {
+func (rc *RIBSRpc) CarUploadStats(ctx context.Context) (ribs.UploadStats, error) {
 	return rc.ribs.DealDiag().CarUploadStats(), nil
 }
 

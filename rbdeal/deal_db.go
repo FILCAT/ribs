@@ -1204,3 +1204,13 @@ func (r *ribsDB) DropS3Offload(group iface.GroupKey) error {
 
 	return nil
 }
+
+func (r *ribsDB) LastTotalUploadedBytes() (int64, error) {
+	var b int64
+	err := r.db.QueryRow(`select sum(sp_recv_bytes) from deals`).Scan(&b)
+	if err != nil {
+		return 0, xerrors.Errorf("querying last transferred bytes: %w", err)
+	}
+
+	return b, nil
+}

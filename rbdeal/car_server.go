@@ -70,9 +70,9 @@ func (r *ribs) updateCarStats() {
 	r.uploadStatsLk.Lock()
 	defer r.uploadStatsLk.Unlock()
 
-	r.uploadStatsSnap = make(map[iface.GroupKey]*iface.UploadStats)
+	r.uploadStatsSnap = make(map[iface.GroupKey]*iface.GroupUploadStats)
 	for k, v := range r.uploadStats {
-		r.uploadStatsSnap[k] = &iface.UploadStats{
+		r.uploadStatsSnap[k] = &iface.GroupUploadStats{
 			ActiveRequests: v.ActiveRequests,
 			UploadBytes:    atomic.LoadInt64(&v.UploadBytes),
 		}
@@ -85,11 +85,19 @@ func (r *ribs) updateCarStats() {
 	}
 }
 
-func (r *ribs) CarUploadStats() map[iface.GroupKey]*iface.UploadStats {
+func (r *ribs) CarUploadStats() iface.UploadStats {
+	lastTotalBytes, err := r.db.LastTotalUploadedBytes()
+	if err != nil {
+		log.Errorw("getting last total uploaded bytes", "error", err)
+	}
+
 	r.uploadStatsLk.Lock()
 	defer r.uploadStatsLk.Unlock()
 
-	return r.uploadStatsSnap
+	return iface.UploadStats{
+		ByGroup:        r.uploadStatsSnap,
+		LastTotalBytes: lastTotalBytes,
+	}
 }
 
 type carStatWriter struct {
@@ -259,7 +267,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	r.activeUploads[reqToken.DealUUID] = struct{}{}
 
 	if r.uploadStats[reqToken.Group] == nil {
-		r.uploadStats[reqToken.Group] = &iface.UploadStats{}
+		r.uploadStats[reqToken.Group] = &iface.GroupUploadStats{}
 	}
 
 	r.uploadStats[reqToken.Group].ActiveRequests++

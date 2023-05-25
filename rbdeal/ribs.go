@@ -61,8 +61,8 @@ type ribs struct {
 	crawlState atomic.Pointer[iface.CrawlState]
 
 	/* car uploads */
-	uploadStats     map[iface.GroupKey]*iface.UploadStats
-	uploadStatsSnap map[iface.GroupKey]*iface.UploadStats
+	uploadStats     map[iface.GroupKey]*iface.GroupUploadStats
+	uploadStatsSnap map[iface.GroupKey]*iface.GroupUploadStats
 
 	activeUploads map[uuid.UUID]struct{}
 	uploadStatsLk sync.Mutex
@@ -116,8 +116,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
 
-		uploadStats:     map[iface.GroupKey]*iface.UploadStats{},
-		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
+		uploadStats:     map[iface.GroupKey]*iface.GroupUploadStats{},
+		uploadStatsSnap: map[iface.GroupKey]*iface.GroupUploadStats{},
 		activeUploads:   map[uuid.UUID]struct{}{},
 		rateCounters:    ributil.NewRateCounters[peer.ID](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps))),
 

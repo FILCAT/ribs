@@ -238,7 +238,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 				}
 			}(gid)
 		} else if gs.Retrievable >= int64(minimumReplicaCount) {
-			upStat := r.CarUploadStats()
+			upStat := r.CarUploadStats().ByGroup
 			if upStat[gid] == nil {
 				log.Errorw("OFFLOAD GROUP", "group", gid)
 
