@@ -242,6 +242,10 @@ func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
 			if upStat[gid] == nil {
 				log.Errorw("OFFLOAD GROUP", "group", gid)
 
+				if err := r.cleanupS3Offload(gid); err != nil {
+					return xerrors.Errorf("cleaning up S3 offload: %w", err)
+				}
+
 				if err := r.Storage().Offload(ctx, gid); err != nil {
 					log.Errorw("offloading group", "group", gid, "error", err)
 					return xerrors.Errorf("offloading group %d: %w", gid, err)

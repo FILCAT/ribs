@@ -3,6 +3,7 @@ package rbdeal
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	logging "github.com/ipfs/go-log/v2"
@@ -13,6 +14,7 @@ import (
 	"github.com/lotus-web3/ribs/rbstor"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
+	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -67,6 +69,15 @@ type ribs struct {
 
 	rateCounters *ributil.RateCounters[peer.ID]
 
+	/* car upload offload (S3) */
+
+	s3          *s3.S3
+	s3Bucket    string
+	s3BucketUrl *url.URL
+
+	s3Uploads map[iface.GroupKey]struct{}
+	s3Lk      sync.Mutex
+
 	/* dealmaking */
 	dealsLk        sync.Mutex
 	moreDealsLocks map[iface.GroupKey]struct{}
@@ -109,6 +120,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		uploadStatsSnap: map[iface.GroupKey]*iface.UploadStats{},
 		activeUploads:   map[uuid.UUID]struct{}{},
 		rateCounters:    ributil.NewRateCounters[peer.ID](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps))),
+
+		s3Uploads: map[iface.GroupKey]struct{}{},
 
 		close: make(chan struct{}),
 		//workerClosed: make(chan struct{}),
@@ -177,6 +190,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		if err != nil {
 			return nil, xerrors.Errorf("creating host: %w", err)
 		}
+	}
+
+	if err := r.maybeInitS3Offload(); err != nil {
+		return nil, xerrors.Errorf("trying to initialize S3 offload: %w", err)
 	}
 
 	r.RBS.ExternalStorage().InstallProvider(rp)

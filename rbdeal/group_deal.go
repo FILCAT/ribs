@@ -55,6 +55,10 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		r.dealsLk.Unlock()
 	}()
 
+	if err := r.maybeEnsureS3Offload(id); err != nil {
+		return xerrors.Errorf("attempting s3 offload: %w", err)
+	}
+
 	dealInfo, err := r.db.GetDealParams(ctx, id)
 	if err != nil {
 		return xerrors.Errorf("get deal params: %w", err)

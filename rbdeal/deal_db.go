@@ -118,6 +118,13 @@ create table if not exists providers (
     ask_max_piece_size integer not null default 0
 );
 
+create table if not exists offloads_s3
+(
+    group_id integer not null
+        constraint offloads_s3_pk
+            primary key
+);
+
 drop view if exists good_providers_view;
 drop view if exists sp_deal_stats_view;
 drop view if exists sp_retr_stats_view;
@@ -1168,4 +1175,32 @@ func (r *ribsDB) GetRetrievalCandidates(group iface.GroupKey) ([]RetrCandidate, 
 	}
 
 	return deals, nil
+}
+
+func (r *ribsDB) HasS3Offload(group iface.GroupKey) (bool, error) {
+	var has int
+	err := r.db.QueryRow(`select count(*) from offloads_s3 where group_id = ?`, group).Scan(&has)
+	if err != nil {
+		return false, xerrors.Errorf("query: %w", err)
+	}
+
+	return has > 0, nil
+}
+
+func (r *ribsDB) AddS3Offload(group iface.GroupKey) error {
+	_, err := r.db.Exec(`insert into offloads_s3 (group_id) values (?)`, group)
+	if err != nil {
+		return xerrors.Errorf("exec: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ribsDB) DropS3Offload(group iface.GroupKey) error {
+	_, err := r.db.Exec(`delete from offloads_s3 where group_id = ?`, group)
+	if err != nil {
+		return xerrors.Errorf("exec: %w", err)
+	}
+
+	return nil
 }

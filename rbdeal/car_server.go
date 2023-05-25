@@ -231,6 +231,24 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// todo run more checks here?
+
+	s3u, err := r.maybeGetS3URL(reqToken.Group)
+	if err != nil {
+		log.Errorw("car request: s3 url", "error", err, "url", req.URL)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if s3u != "" {
+		// in s3, redirect
+		log.Errorw("car request: redir to s3 url", "error", err, "url", s3u)
+		http.Redirect(w, req, s3u, http.StatusFound)
+		return
+	}
+
+	// this is a local transfer, track stats
+
 	r.uploadStatsLk.Lock()
 	if _, found := r.activeUploads[reqToken.DealUUID]; found {
 		http.Error(w, "transfer for deal already ongoing", http.StatusTooManyRequests)
