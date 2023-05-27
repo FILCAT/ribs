@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/lib/must"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-unixfsnode"
 	"github.com/ipld/go-ipld-prime"
@@ -48,7 +49,13 @@ type retrievalProvider struct {
 
 	ongoingRequestsLk sync.Mutex
 	ongoingRequests   map[cid.Cid]requestPromise
+
+	blockCache *lru.Cache[mhStr, []byte] // todo 2q with large ghost cache?
 }
+
+const BlockCacheSizeMiB = 512
+const AvgBlockSize = 256 << 10
+const BlockCacheSize = BlockCacheSizeMiB << 20 / AvgBlockSize
 
 type requestPromise struct {
 	done chan struct{}
@@ -181,6 +188,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 		addrs: map[address.Address]peer.AddrInfo{},
 
 		ongoingRequests: map[cid.Cid]requestPromise{},
+
+		blockCache: must.One(lru.New[mhStr, []byte](BlockCacheSize)),
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp), lassie.WithConcurrentSPRetrievals(10), lassie.WithGlobalTimeout(30*time.Second), lassie.WithProviderTimeout(4*time.Second))
@@ -199,8 +208,25 @@ var selectOne = func() ipld.Node {
 }()
 
 func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error {
+	var cacheHits int
+	for i, m := range mh {
+		if b, ok := r.blockCache.Get(mhStr(m)); ok {
+			cb(i, b)
+			cacheHits++
+			mh[i] = nil
+		}
+	}
+
+	if cacheHits == len(mh) {
+		return nil
+	}
+
 	r.reqSourcesLk.Lock()
 	for _, m := range mh {
+		if m == nil {
+			continue
+		}
+
 		if _, ok := r.requests[mhStr(m)]; !ok {
 			r.requests[mhStr(m)] = map[iface.GroupKey]int{}
 		}
@@ -212,6 +238,10 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 	defer func() {
 		r.reqSourcesLk.Lock()
 		for _, m := range mh {
+			if m == nil {
+				continue
+			}
+
 			r.requests[mhStr(m)][group]--
 			if r.requests[mhStr(m)][group] == 0 {
 				delete(r.requests[mhStr(m)], group)
@@ -231,6 +261,9 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 	unixfsnode.AddUnixFSReificationToLinkSystem(&linkSystem)
 
 	for i, hashToGet := range mh {
+		if hashToGet == nil {
+			continue
+		}
 		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
 		r.ongoingRequestsLk.Lock()
@@ -313,6 +346,8 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		r.ongoingRequestsLk.Lock()
 		delete(r.ongoingRequests, cidToGet)
 		r.ongoingRequestsLk.Unlock()
+
+		r.blockCache.Add(mhStr(hashToGet), b.RawData())
 
 		promise.res = b.RawData()
 		close(promise.done)
