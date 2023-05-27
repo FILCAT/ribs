@@ -494,13 +494,13 @@ func (r *ribsDB) UpdateSPDealState(id uuid.UUID, stresp *types.DealStatusRespons
         sp_sealing_status = ?,
         sp_sig_proposal = ?,
         sp_pub_msg_cid = ?,
-        sp_recv_bytes = ?,
+        sp_recv_bytes = CASE WHEN ? > COALESCE(sp_recv_bytes, 0) THEN ? ELSE sp_recv_bytes END,
         sp_txsize = ?,
         last_state_query = ?,
         last_state_query_error = ?
         where uuid = ?`, failed, stresp.DealStatus.Status, stresp.DealStatus.Error, stresp.DealStatus.SealingStatus,
 			stresp.DealStatus.SignedProposalCid.String(), pubCid,
-			stresp.NBytesReceived, stresp.TransferSize, now, lastError, id)
+			stresp.NBytesReceived, stresp.NBytesReceived, stresp.TransferSize, now, lastError, id)
 		if err != nil {
 			return xerrors.Errorf("update sp tracker: %w", err)
 		}
