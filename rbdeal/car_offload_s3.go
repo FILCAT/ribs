@@ -161,7 +161,8 @@ func (r *ribs) maybeGetS3URL(gid iface.GroupKey) (string, error) {
 	return urlCopy.String(), nil
 }
 
-var partSize = 64 << 20 // todo investigate streaming much larger parts
+var partSize = 128 << 20 // todo investigate streaming much larger parts
+var minPartSize = 8 << 20
 
 func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 	objKey := fmt.Sprintf("gdata%d.car", gid)
@@ -181,26 +182,54 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 
 	partNumber := int64(1)
 
-	maxParallel := 8 // todo: make this configurable
+	maxParallel := 4 // todo: make this configurable
 
 	throttle := make(chan struct{}, maxParallel)
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
+	curPart := pool.Get(partSize)
+	n, err := io.ReadFull(src, curPart)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return xerrors.Errorf("failed to read part: %w", err)
+	}
+	curPart = curPart[:n]
+
 	for {
-		part := pool.Get(partSize)
-		n, err := io.ReadFull(src, part)
+		if len(curPart) == 0 {
+			break
+		}
+
+		// read next part now, so that in case it's smaller than 5MB, we can merge it with the current one
+		nextPart := pool.Get(partSize)
+		n, err := io.ReadFull(src, nextPart)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return xerrors.Errorf("failed to read part: %w", err)
 		}
-		if n == 0 {
-			break
+		nextPart = nextPart[:n]
+
+		if len(curPart)+len(nextPart) < minPartSize {
+			// last part is too small, merge it with the current one
+
+			//curPart = append(curPart, nextPart...)
+
+			temp := pool.Get(len(curPart) + len(nextPart))
+
+			copy(temp, curPart)
+			pool.Put(curPart)
+
+			copy(temp[len(curPart):], nextPart)
+			pool.Put(nextPart)
+
+			curPart = temp
+
+			nextPart = []byte{}
 		}
 
 		throttle <- struct{}{}
 
-		go func(part []byte, n int, partNumber int64) {
+		go func(part []byte, partNumber int64) {
 			defer func() {
 				<-throttle
 
@@ -208,7 +237,7 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 			}()
 
 			uploadResp, err := r.s3.UploadPartWithContext(ctx, &s3.UploadPartInput{
-				Body:       bytes.NewReader(part[:n]),
+				Body:       bytes.NewReader(part),
 				Bucket:     &r.s3Bucket,
 				Key:        &objKey,
 				PartNumber: aws.Int64(partNumber),
@@ -226,8 +255,10 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 			}
 			partsLk.Unlock()
 
-			log.Errorw("uploaded part", "part", partNumber, "group", gid, "size", n)
-		}(part, n, partNumber)
+			log.Errorw("uploaded part", "part", partNumber, "group", gid, "size", len(part))
+		}(curPart, partNumber)
+
+		curPart = nextPart
 
 		partNumber++
 	}
