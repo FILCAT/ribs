@@ -206,9 +206,7 @@ func (r *rbsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error
 }
 
 func (r *rbsDB) SetGroupHead(ctx context.Context, id iface.GroupKey, state iface.GroupState, commBlk, commSz, at int64) error {
-	_, err := r.db.ExecContext(ctx, `begin transaction;
-		update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;
-		commit;`, commBlk, commSz, state, at, id)
+	_, err := r.db.ExecContext(ctx, `update groups set blocks = ?, bytes = ?, g_state = ?, jb_recorded_head = ? where id = ?;`, commBlk, commSz, state, at, id)
 	if err != nil {
 		return xerrors.Errorf("update group head: %w", err)
 	}
