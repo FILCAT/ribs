@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -209,21 +210,24 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 		}
 		nextPart = nextPart[:n]
 
-		if len(curPart)+len(nextPart) < minPartSize {
+		if len(nextPart) < minPartSize && len(nextPart) > 0 {
 			// last part is too small, merge it with the current one
-
-			//curPart = append(curPart, nextPart...)
+			log.Errorw("last part merge", "cur", len(curPart), "next", len(nextPart), "total", len(curPart)+len(nextPart))
 
 			temp := pool.Get(len(curPart) + len(nextPart))
 
-			copy(temp, curPart)
+			cn := copy(temp, curPart)
+
+			if cn != len(curPart) {
+				return xerrors.Errorf("failed to copy part: %d != %d", cn, len(curPart))
+			}
+
 			pool.Put(curPart)
 
-			copy(temp[len(curPart):], nextPart)
+			copy(temp[cn:], nextPart)
 			pool.Put(nextPart)
 
 			curPart = temp
-
 			nextPart = []byte{}
 		}
 
@@ -263,13 +267,29 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 		partNumber++
 	}
 
+	// wait for all upload goroutines to finish
 	for i := 0; i < maxParallel; i++ {
 		throttle <- struct{}{}
 	}
 
 	if len(errors) > 0 {
+		// remove failed upload
+		_, err2 := r.s3.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
+			Bucket:   &r.s3Bucket,
+			Key:      &objKey,
+			UploadId: &uploadId,
+		})
+		if err2 != nil {
+			log.Errorw("failed to abort multipart upload", "group", gid, "err", err2, "completeErr", err)
+		}
+
 		return xerrors.Errorf("failed to upload parts: %w", multierr.Combine(errors...))
 	}
+
+	// sort completed parts by part number
+	sort.Slice(completedParts, func(i, j int) bool {
+		return *completedParts[i].PartNumber < *completedParts[j].PartNumber
+	})
 
 	// Complete the multipart upload
 	_, err = r.s3.CompleteMultipartUpload(&s3.CompleteMultipartUploadInput{
@@ -281,6 +301,18 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 		},
 	})
 	if err != nil {
+		// remove failed upload
+		_, err2 := r.s3.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
+			Bucket:   &r.s3Bucket,
+			Key:      &objKey,
+			UploadId: &uploadId,
+		})
+		if err2 != nil {
+			log.Errorw("failed to abort multipart upload", "group", gid, "err", err2, "completeErr", err)
+		}
+
+		log.Errorw("failed to complete multipart upload", "group", gid, "err", err, "parts", completedParts)
+
 		return xerrors.Errorf("failed to complete multipart upload: %w", err)
 	}
 
