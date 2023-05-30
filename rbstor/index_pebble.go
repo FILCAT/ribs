@@ -15,6 +15,16 @@ import (
 type PebbleIndex struct {
 	db *pebble.DB
 
+	/*
+
+		Keys:
+		- 's:[mh bytes]' -> [i32BE size]{[i64BE best groupIdx]}
+		- 'i:[mh bytes][i64BE groupIdx]' -> {}
+
+	*/
+
+	// todo: why tf is this all big endian?
+
 	// todo limit size somehow
 	iterPool sync.Pool
 }
@@ -45,6 +55,35 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 	groups := make([][]iface.GroupKey, len(mh))
 
 	for idx, m := range mh {
+		// try to get from sizes
+		sizeKey := append([]byte("s:"), m...)
+		val, closer, err := i.db.Get(sizeKey)
+		if err == pebble.ErrNotFound {
+			continue
+		}
+		if err != nil {
+			return xerrors.Errorf("get(s:) get: %w", err)
+		}
+
+		if len(val) > 4 {
+			// todo support multiple groups?
+
+			//size := binary.BigEndian.Uint32(val[:4])
+			groupIdx := binary.BigEndian.Uint64(val[4:])
+			groups[idx] = []iface.GroupKey{iface.GroupKey(groupIdx)}
+
+			if err := closer.Close(); err != nil {
+				return xerrors.Errorf("get(s:) close: %w", err)
+			}
+			continue
+		}
+
+		if err := closer.Close(); err != nil {
+			return xerrors.Errorf("getsizes close: %w", err)
+		}
+
+		// try to get from iterable list
+
 		keyPrefix := append([]byte("i:"), m...)
 		upperBound := append(append([]byte("i:"), m...), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff)
 		//iter := i.iterPool.Get().(*pebble.Iterator)
@@ -106,7 +145,8 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, si
 	groupBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(groupBytes, uint64(group))
 
-	sizeBytes := make([]byte, 4)
+	sizeBytes := make([]byte, 4+len(groupBytes))
+	copy(sizeBytes[4:], groupBytes)
 
 	batch := i.db.NewBatch()
 	defer batch.Close()
@@ -122,8 +162,9 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, si
 		{
 			// size key
 			binary.BigEndian.PutUint32(sizeBytes, uint32(sizes[i]))
+
 			key := append(append([]byte("s:"), m...))
-			if err := batch.Set(key, sizeBytes[:4], pebble.NoSync); err != nil {
+			if err := batch.Set(key, sizeBytes, pebble.NoSync); err != nil {
 				return xerrors.Errorf("addgroup set (sk): %w", err)
 			}
 		}
