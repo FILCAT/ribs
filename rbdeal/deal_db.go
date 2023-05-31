@@ -3,6 +3,7 @@ package rbdeal
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
+	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 	"path/filepath"
 	"sort"
@@ -115,7 +117,11 @@ create table if not exists providers (
     ask_price integer not null default 0,
     ask_verif_price integer not null default 0,
     ask_min_piece_size integer not null default 0,
-    ask_max_piece_size integer not null default 0
+    ask_max_piece_size integer not null default 0,
+
+    addr_info_graphsync text,
+    addr_info_bitswap text,
+    addr_info_http text
 );
 
 create table if not exists offloads_s3
@@ -862,9 +868,37 @@ func (r *ribsDB) UpsertMarketActors(actors []int64) error {
 }
 
 func (r *ribsDB) UpdateProviderProtocols(provider int64, pres providerResult) error {
+
+	var LibP2PMaddrsJson string
+	var BitswapMaddrsJson string
+	var HttpMaddrsJson string
+
+	if len(pres.LibP2PMaddrs) > 0 {
+		a, err := json.Marshal(pres.LibP2PMaddrs)
+		if err != nil {
+			return xerrors.Errorf("marshal libp2p maddrs: %w", err)
+		}
+		LibP2PMaddrsJson = string(a)
+	}
+	if len(pres.BitswapMaddrs) > 0 {
+		a, err := json.Marshal(pres.BitswapMaddrs)
+		if err != nil {
+			return xerrors.Errorf("marshal bitswap maddrs: %w", err)
+		}
+		BitswapMaddrsJson = string(a)
+	}
+	if len(pres.HttpMaddrs) > 0 {
+		a, err := json.Marshal(pres.HttpMaddrs)
+		if err != nil {
+			return xerrors.Errorf("marshal http maddrs: %w", err)
+		}
+		HttpMaddrsJson = string(a)
+	}
+
 	_, err := r.db.Exec(`
-	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ? where id = ?;
-	`, pres.PingOk, pres.BoostDeals, pres.BoosterHttp, pres.BoosterBitswap, provider)
+	update providers set ping_ok = ?, boost_deals = ?, booster_http = ?, booster_bitswap = ?, addr_info_graphsync = ?, addr_info_bitswap = ?, addr_info_http = ? where id = ?;
+	`, pres.PingOk, pres.BoostDeals, pres.BoosterHttp, pres.BoosterBitswap, LibP2PMaddrsJson, BitswapMaddrsJson, HttpMaddrsJson,
+		provider)
 	if err != nil {
 		return xerrors.Errorf("update provider: %w", err)
 	}
@@ -1152,7 +1186,7 @@ type RetrCandidate struct {
 func (r *ribsDB) GetRetrievalCandidates(group iface.GroupKey) ([]RetrCandidate, error) {
 	rows, err := r.db.Query(`
 		SELECT uuid, provider_addr, verified, keep_unsealed, last_retrieval_check_success FROM deals 
-		WHERE group_id = ? AND sealed = 1 AND failed = 0 order by last_retrieval_check_success desc, keep_unsealed desc`,
+		WHERE group_id = ? AND sealed = 1 AND failed = 0 order by retrieval_probe_prev_ttfb_ms asc, last_retrieval_check_success desc, keep_unsealed desc`,
 		group)
 	if err != nil {
 		return nil, xerrors.Errorf("getting retrieval candidates: %w", err)
@@ -1175,6 +1209,82 @@ func (r *ribsDB) GetRetrievalCandidates(group iface.GroupKey) ([]RetrCandidate, 
 	}
 
 	return deals, nil
+}
+
+type ProviderAddrInfo struct {
+	LibP2PMaddrs  []multiaddr.Multiaddr
+	BitswapMaddrs []multiaddr.Multiaddr
+	HttpMaddrs    []multiaddr.Multiaddr
+}
+
+func (r *ribsDB) GetProviderAddrs(provider int64) (ProviderAddrInfo, error) {
+	/*
+	   addr_info_graphsync text, // json of []multiaddr.Multiaddr
+	   addr_info_bitswap text,
+	   addr_info_http text
+	*/
+
+	var addrInfo ProviderAddrInfo
+	var addrInfoGraphsync string
+	var addrInfoBitswap string
+	var addrInfoHttp string
+
+	err := r.db.QueryRow(`
+		SELECT addr_info_graphsync, addr_info_bitswap, addr_info_http FROM providers
+		WHERE id = ?`, provider).Scan(&addrInfoGraphsync, &addrInfoBitswap, &addrInfoHttp)
+	if err != nil {
+		return addrInfo, xerrors.Errorf("query: %w", err)
+	}
+
+	if addrInfoGraphsync != "" {
+		var strings []string
+		err = json.Unmarshal([]byte(addrInfoGraphsync), &strings)
+		if err != nil {
+			return addrInfo, xerrors.Errorf("unmarshal graphsync: %w", err)
+		}
+
+		for _, s := range strings {
+			maddr, err := multiaddr.NewMultiaddr(s)
+			if err != nil {
+				return addrInfo, xerrors.Errorf("parsing graphsync multiaddr: %w", err)
+			}
+			addrInfo.LibP2PMaddrs = append(addrInfo.LibP2PMaddrs, maddr)
+		}
+	}
+
+	if addrInfoBitswap != "" {
+		var strings []string
+		err = json.Unmarshal([]byte(addrInfoBitswap), &strings)
+		if err != nil {
+			return addrInfo, xerrors.Errorf("unmarshal bitswap: %w", err)
+		}
+
+		for _, s := range strings {
+			maddr, err := multiaddr.NewMultiaddr(s)
+			if err != nil {
+				return addrInfo, xerrors.Errorf("parsing bitswap multiaddr: %w", err)
+			}
+			addrInfo.BitswapMaddrs = append(addrInfo.BitswapMaddrs, maddr)
+		}
+	}
+
+	if addrInfoHttp != "" {
+		var strings []string
+		err = json.Unmarshal([]byte(addrInfoHttp), &strings)
+		if err != nil {
+			return addrInfo, xerrors.Errorf("unmarshal http: %w", err)
+		}
+
+		for _, s := range strings {
+			maddr, err := multiaddr.NewMultiaddr(s)
+			if err != nil {
+				return addrInfo, xerrors.Errorf("parsing http multiaddr: %w", err)
+			}
+			addrInfo.HttpMaddrs = append(addrInfo.HttpMaddrs, maddr)
+		}
+	}
+
+	return addrInfo, nil
 }
 
 func (r *ribsDB) HasS3Offload(group iface.GroupKey) (bool, error) {

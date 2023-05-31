@@ -2,7 +2,6 @@ package rbdeal
 
 import (
 	"context"
-	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lassie/pkg/lassie"
 	"github.com/filecoin-project/lassie/pkg/types"
 	"github.com/filecoin-project/lotus/api"
@@ -41,7 +40,7 @@ type retrievalProvider struct {
 	gw api.Gateway
 
 	addrLk sync.Mutex
-	addrs  map[address.Address]peer.AddrInfo
+	addrs  map[int64]ProviderAddrInfo
 
 	statLk   sync.Mutex
 	attempts map[peer.ID]int64
@@ -92,37 +91,59 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 		return xerrors.Errorf("failed to get group metadata: %w", err)
 	}
 
-	log.Infow("got retrieval candidates", "cid", cid, "candidates", len(candidates))
+	log.Errorw("got retrieval candidates", "cid", cid, "candidates", len(candidates))
 
 	cs := make([]types.RetrievalCandidate, 0, len(candidates))
 
 	for _, candidate := range candidates {
-		maddr, err := address.NewIDAddress(uint64(candidate.Provider))
-		if err != nil {
-			log.Errorw("failed to parse miner address", "miner", candidate.Provider, "err", err)
-			continue
-		}
-
-		var addrInfo peer.AddrInfo
+		var addrInfo ProviderAddrInfo
 		r.addrLk.Lock()
-		if _, ok := r.addrs[maddr]; !ok {
-			ai, err := GetAddrInfo(ctx, r.gw, maddr) // todo pull from db
+		if _, ok := r.addrs[candidate.Provider]; !ok {
+			ai, err := r.r.db.GetProviderAddrs(candidate.Provider)
 			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
+				r.addrLk.Unlock()
+				log.Errorw("failed to get provider addrs", "provider", candidate.Provider, "err", err)
 				continue
 			}
 
-			r.addrs[maddr] = *ai
+			r.addrs[candidate.Provider] = ai
 		}
-		addrInfo = r.addrs[maddr]
+		addrInfo = r.addrs[candidate.Provider]
 		r.addrLk.Unlock()
 
+		if len(addrInfo.BitswapMaddrs) > 0 {
+			log.Errorw("candidate has bitswap addrs", "provider", candidate.Provider)
+
+			bsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.BitswapMaddrs...)
+			if err != nil {
+				log.Errorw("failed to bitswap parse addrinfo", "provider", candidate.Provider, "err", err)
+				continue
+			}
+
+			for _, ai := range bsAddrInfo {
+				cs = append(cs, types.RetrievalCandidate{
+					MinerPeer: ai,
+					RootCid:   cid,
+					Metadata:  metadata.Default.New(&metadata.Bitswap{}),
+				})
+			}
+		}
+
+		gsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.LibP2PMaddrs...)
+		if err != nil {
+			log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+			continue
+		}
+
+		if len(gsAddrInfo) == 0 {
+			log.Errorw("no gs addrinfo", "provider", candidate.Provider)
+			continue
+		}
+
 		cs = append(cs, types.RetrievalCandidate{
-			MinerPeer: addrInfo,
+			MinerPeer: gsAddrInfo[0],
 			RootCid:   cid,
-			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{ // todo bitswap (/http?)
+			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{
 				PieceCID:      gm.PieceCid,
 				VerifiedDeal:  candidate.Verified,
 				FastRetrieval: candidate.FastRetr,
@@ -145,13 +166,26 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 		ifailRatio := float64(ifails) / float64(iattempts+1)
 		jfailRatio := float64(jfails) / float64(jattempts+1)
 
+		if ifailRatio == jfailRatio {
+			// prefer bitswap
+			if cs[i].Metadata.Protocols()[0] == multicodec.TransportBitswap {
+				return true
+			}
+		}
+
 		return ifailRatio < jfailRatio // prefer peers that have failed less
 	})
 	r.statLk.Unlock()
-	for _, c := range cs[:3] { // only return the top 3
-		/*r.statLk.Lock()
-		log.Debugw("select", "p", c.MinerPeer.ID, "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID])
-		r.statLk.Unlock()*/
+
+	n := len(cs)
+	if n > 6 { // only return the top 6
+		n = 6
+	}
+
+	for _, c := range cs[:n] {
+		r.statLk.Lock()
+		log.Errorw("select", "p", c.MinerPeer.ID, "tpt", c.Metadata.Protocols()[0].String(), "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID])
+		r.statLk.Unlock()
 
 		f(c)
 
@@ -185,7 +219,7 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 		attempts: map[peer.ID]int64{},
 		fails:    map[peer.ID]int64{},
 
-		addrs: map[address.Address]peer.AddrInfo{},
+		addrs: map[int64]ProviderAddrInfo{},
 
 		ongoingRequests: map[cid.Cid]requestPromise{},
 
@@ -297,7 +331,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 			LinkSystem:        linkSystem,
 			PreloadLinkSystem: linkSystem,
 			Selector:          selectOne,
-			Protocols:         []multicodec.Code{multicodec.TransportGraphsyncFilecoinv1},
+			Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1},
 			MaxBlocks:         10,
 		}
 

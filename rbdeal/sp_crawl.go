@@ -20,8 +20,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr/net"
 	"golang.org/x/xerrors"
 	"sync"
 	"sync/atomic"
@@ -216,19 +218,19 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
-			pi, err := GetAddrInfo(ctx, gw, maddr)
+			libp2pPi, err := GetAddrInfo(ctx, gw, maddr)
 			if err != nil {
 				return
 			}
 
-			if err := pingP2P.Connect(ctx, *pi); err != nil {
+			if err := pingP2P.Connect(ctx, *libp2pPi); err != nil {
 				return
 			}
 
 			res.PingOk = true
 			atomic.AddInt64(&reachable, 1)
 
-			boostTpt, err := boostTptClient.SendQuery(ctx, pi.ID)
+			boostTpt, err := boostTptClient.SendQuery(ctx, libp2pPi.ID)
 			if err != nil {
 				return
 			}
@@ -237,19 +239,97 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 			atomic.AddInt64(&boost, 1)
 
 			for _, protocol := range boostTpt.Protocols {
+				publicAddrs := make([]multiaddr.Multiaddr, 0, len(protocol.Addresses))
+				for _, ma := range protocol.Addresses {
+					if manet.IsPublicAddr(ma) {
+						publicAddrs = append(publicAddrs, ma)
+					}
+				}
+
+				if len(publicAddrs) == 0 {
+					continue
+				}
+
+				protocol.Addresses = publicAddrs
+
 				switch protocol.Name {
 				case "libp2p":
+					// add to libp2pPi
+
+					for _, ma := range protocol.Addresses {
+						var has bool
+						for _, a := range libp2pPi.Addrs {
+							if a.String() == ma.String() {
+								has = true
+								break
+							}
+						}
+						if !has {
+							libp2pPi.Addrs = append(libp2pPi.Addrs, ma)
+						}
+					}
+
 				case "http":
 					res.BoosterHttp = true
+					res.HttpMaddrs = protocol.Addresses
+
+					// todo validation
+
 					atomic.AddInt64(&http, 1)
 				case "bitswap":
-					res.BoosterBitswap = true
-					atomic.AddInt64(&bitswap, 1)
+					bswapPIs, err := peer.AddrInfosFromP2pAddrs(protocol.Addresses...)
+					if err != nil {
+						log.Errorw("error parsing bitswap addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
+						continue
+					}
+
+					if len(bswapPIs) == 0 {
+						continue
+					}
+
+					// ping each
+					for _, pi := range bswapPIs {
+						ctx, cancel := context.WithTimeout(ctx, timeout)
+
+						if err := pingP2P.Connect(ctx, pi); err != nil {
+							cancel()
+							continue
+						}
+
+						resCh := ping.Ping(ctx, pingP2P, pi.ID)
+						select {
+						case pres := <-resCh:
+							if pres.Error == nil {
+								res.BoosterBitswap = true
+							}
+							log.Errorw("pinging bitswap", "err", pres.Error, "provider", maddr, "peer", pi.ID)
+						case <-ctx.Done():
+							log.Errorw("error pinging bitswap", "err", ctx.Err(), "provider", maddr, "peer", pi.ID)
+						}
+						cancel()
+
+						// todo check protocols to see if it actually has bitswap
+
+						if res.BoosterBitswap {
+							break
+						}
+					}
+
+					if res.BoosterBitswap {
+						res.BitswapMaddrs = protocol.Addresses
+						atomic.AddInt64(&bitswap, 1)
+					}
 				default:
 				}
 			}
 
-			s, err := pingP2P.NewStream(ctx, pi.ID, AskProtocolID)
+			res.LibP2PMaddrs, err = peer.AddrInfoToP2pAddrs(libp2pPi)
+			if err != nil {
+				log.Errorw("error converting libp2p pi to addrs", "err", err, "pi", libp2pPi)
+				return
+			}
+
+			s, err := pingP2P.NewStream(ctx, libp2pPi.ID, AskProtocolID)
 			if err != nil {
 				return
 			}
@@ -294,6 +374,10 @@ type providerResult struct {
 	BoostDeals     bool
 	BoosterHttp    bool
 	BoosterBitswap bool
+
+	LibP2PMaddrs  []multiaddr.Multiaddr
+	BitswapMaddrs []multiaddr.Multiaddr
+	HttpMaddrs    []multiaddr.Multiaddr
 }
 
 func GetAddrInfo(ctx context.Context, api api.Gateway, maddr address.Address) (*peer.AddrInfo, error) {
