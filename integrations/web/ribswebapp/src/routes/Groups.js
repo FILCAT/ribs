@@ -79,7 +79,60 @@ const groupStateText = [
     "Offloaded"
 ];
 
-function Group({ group, headHeight }) {
+const GroupStateWritable = 0;
+const GroupStateOffloaded = 4;
+
+function Group({ groupKey, headHeight }) {
+    const [group, setGroup] = useState({
+        Deals: [],
+    });
+
+    let refreshing = false;
+
+    const fetchGroup = async () => {
+        try {
+            if (refreshing) return;
+            refreshing = true;
+
+            let now = Date.now();
+            let sinceLastRefresh = now - group.lastRefresh;
+
+            if (group.State === GroupStateWritable && sinceLastRefresh < 500) {
+                // writable groups at most every 500ms
+                return;
+            } else if (group.State === GroupStateOffloaded && sinceLastRefresh < 120000) {
+                // offloaded groups at most every 120s
+                return;
+            } else if (group.State !== GroupStateWritable && sinceLastRefresh < 10000) {
+                // non-writable groups at most every 10s
+                return;
+            }
+
+            console.log("fetching group", groupKey, sinceLastRefresh, refreshing)
+
+            let meta = await RibsRPC.call("GroupMeta", [groupKey]);
+            let deals = await RibsRPC.call("GroupDeals", [groupKey]);
+
+            now = Date.now();
+
+            refreshing = false;
+            let groupData = { ...meta, GroupKey: groupKey, Deals: deals, lastRefresh: now };
+
+            setGroup(groupData);
+        } catch (error) {
+            console.error("Error fetching group:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchGroup();
+        const intervalId = setInterval(fetchGroup, 500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [groupKey]);
+
     const [showFailedDeals, setShowFailedDeals] = useState(false);
     const toggleShowFailedDeals = () => setShowFailedDeals(!showFailedDeals);
 
@@ -146,32 +199,13 @@ function Group({ group, headHeight }) {
 
 
 function Groups() {
-    const [groups, setGroups] = useState([]);
+    const [groupKeys, setGroupKeys] = useState([]);
     const [headHeight, setHeadHeight] = useState(0);
 
     const fetchGroups = async () => {
         try {
             const groupKeys = await RibsRPC.call("Groups");
-            const groupMetas = await Promise.all(
-                groupKeys.map(async (groupKey) => {
-                    let meta = await RibsRPC.call("GroupMeta", [groupKey])
-                    return { ...meta, GroupKey: groupKey }
-                })
-            );
-
-            // GroupDeals
-            let groupDeals = await Promise.all(
-                groupKeys.map(async (groupKey) => {
-                    let deals = await RibsRPC.call("GroupDeals", [groupKey])
-                    return { GroupKey: groupKey, Deals: deals }
-                })
-            );
-
-            let groupData = groupMetas.map((groupMeta) => {
-                return { ...groupMeta, Deals: groupDeals.find((groupDeal) => groupDeal.GroupKey === groupMeta.GroupKey).Deals }
-            });
-
-            setGroups(groupData);
+            setGroupKeys(groupKeys);
 
             const head = await RibsRPC.callFil("ChainHead");
             setHeadHeight(head.Height);
@@ -180,20 +214,20 @@ function Groups() {
         }
     };
 
-    /*useEffect(() => {
+    useEffect(() => {
         fetchGroups();
-        const intervalId = setInterval(fetchGroups, 500);
+        const intervalId = setInterval(fetchGroups, 5000);
 
         return () => {
             clearInterval(intervalId);
         };
-    }, []);*/
+    }, []);
 
     return (
         <div className="Groups">
             <h2>Groups</h2>
-            {groups.map((group, index) => (
-                <Group key={group.GroupKey} group={group} headHeight={headHeight} />
+            {groupKeys.map((groupKey, index) => (
+                <Group key={groupKey} groupKey={groupKey} headHeight={headHeight} />
             ))}
         </div>
     );
