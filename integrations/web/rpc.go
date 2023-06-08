@@ -62,6 +62,10 @@ func (rc *RIBSRpc) DealSummary(ctx context.Context) (ribs.DealSummary, error) {
 	return rc.ribs.DealDiag().DealSummary()
 }
 
+func (rc *RIBSRpc) RetrStats(ctx context.Context) (ribs.RetrStats, error) {
+	return rc.ribs.DealDiag().RetrStats()
+}
+
 func (rc *RIBSRpc) TopIndexStats(ctx context.Context) (ribs.TopIndexStats, error) {
 	return rc.ribs.StorageDiag().TopIndexStats(ctx)
 }
