@@ -116,9 +116,13 @@ function GroupsTile() {
 
     return (
         <div>
-            <h2>Block Groups: {groupStats?.GroupCount}</h2>
+            <h2>Data Stats</h2>
             <table className="compact-table">
                 <tbody>
+                <tr>
+                    <td>Block Groups:</td>
+                    <td>{groupStats?.GroupCount}</td>
+                </tr>
                 <tr>
                     <td>Total data size:</td>
                     <td className="important-metric">{formatBytesBinary(groupStats?.TotalDataSize)}</td>
@@ -290,38 +294,6 @@ function ProvidersTile({ reachableProviders }) {
                 <tr>
                     <td>With all rejected deals:</td>
                     <td>{reachableProviders.filter(p => p.DealRejected).length}</td>
-                </tr>
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
-function WorkersTile({ groups }) {
-    return (
-        <div>
-            <h2>Workers: 1</h2>
-            <table className="compact-table">
-                <tbody>
-                <tr>
-                    <td>Busy workers:</td>
-                    <td className="important-metric">1/1</td>
-                </tr>
-                <tr>
-                    <td>Generating BSST:</td>
-                    <td>0/1</td>
-                </tr>
-                <tr>
-                    <td>Generating VCAR:</td>
-                    <td>0/1</td>
-                </tr>
-                <tr>
-                    <td>Generating CommP:</td>
-                    <td>0/1</td>
-                </tr>
-                <tr>
-                    <td>Making deals:</td>
-                    <td>1/1</td>
                 </tr>
                 </tbody>
             </table>
@@ -625,7 +597,6 @@ function Status() {
                 <IoStats />
                 <TopIndexTile />
                 <DealsTile dealSummary={dealSummary} />
-                <WorkersTile groups={groups} />
                 <ProvidersTile reachableProviders={reachableProviders} />
                 <CarUploadStatsTile carUploadStats={carUploadStats} />
                 <CrawlStateTile crawlState={crawlState} />
