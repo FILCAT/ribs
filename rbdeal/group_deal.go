@@ -126,7 +126,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		// generate proposal
 		dealUuid := uuid.New()
 
-		duration := 400 * builtin.EpochsInDay
+		duration := 530 * builtin.EpochsInDay
 
 		pricef := gobig.NewFloat(prov.ask_price)
 		if verified {

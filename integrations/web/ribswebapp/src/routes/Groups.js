@@ -154,8 +154,8 @@ function Groups() {
             const groupKeys = await RibsRPC.call("Groups");
             const groupMetas = await Promise.all(
                 groupKeys.map(async (groupKey) => {
-                    let deal = await RibsRPC.call("GroupMeta", [groupKey])
-                    return { ...deal, GroupKey: groupKey }
+                    let meta = await RibsRPC.call("GroupMeta", [groupKey])
+                    return { ...meta, GroupKey: groupKey }
                 })
             );
 
@@ -180,14 +180,14 @@ function Groups() {
         }
     };
 
-    useEffect(() => {
+    /*useEffect(() => {
         fetchGroups();
         const intervalId = setInterval(fetchGroups, 500);
 
         return () => {
             clearInterval(intervalId);
         };
-    }, []);
+    }, []);*/
 
     return (
         <div className="Groups">

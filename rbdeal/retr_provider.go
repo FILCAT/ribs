@@ -192,7 +192,7 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond):
 		}
 	}
 
@@ -336,7 +336,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		}
 
 		stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
-			//log.Errorw("retrieval event", "cid", cidToGet, "event", event)
+			log.Errorw("retrieval event", "cid", cidToGet, "event", event)
 
 			if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
 				r.statLk.Lock()
