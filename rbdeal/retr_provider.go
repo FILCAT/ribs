@@ -243,13 +243,24 @@ var selectOne = func() ipld.Node {
 
 func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error {
 	var cacheHits int
+	var bytesServed int64
+
+	defer func() {
+		r.r.retrBytes.Add(bytesServed)
+	}()
+
 	for i, m := range mh {
 		if b, ok := r.blockCache.Get(mhStr(m)); ok {
 			cb(i, b)
 			cacheHits++
+			bytesServed += int64(len(b))
 			mh[i] = nil
 		}
 	}
+
+	r.r.retrCacheHit.Add(int64(cacheHits))
+	r.r.retrCacheMiss.Add(int64(len(mh) - cacheHits))
+	r.r.retrSuccess.Add(int64(cacheHits))
 
 	if cacheHits == len(mh) {
 		return nil
@@ -359,6 +370,9 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 			promise.err = err
 			close(promise.done)
+
+			r.r.retrFail.Add(1)
+
 			return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 		}
 
@@ -374,6 +388,9 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 			promise.err = err
 			close(promise.done)
+
+			r.r.retrFail.Add(1)
+
 			return xerrors.Errorf("failed to get block from retrieval store: %w", err)
 		}
 
@@ -386,6 +403,8 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		promise.res = b.RawData()
 		close(promise.done)
 
+		r.r.retrSuccess.Add(1)
+		bytesServed += int64(len(b.RawData()))
 		cb(i, b.RawData())
 	}
 

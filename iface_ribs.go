@@ -29,7 +29,13 @@ type RIBSDiag interface {
 	CrawlState() CrawlState
 	ReachableProviders() []ProviderMeta
 
+	RetrStats() (RetrStats, error)
+
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type RetrStats struct {
+	Success, Bytes, Fail, CacheHit, CacheMiss int64
 }
 
 type UploadStats struct {

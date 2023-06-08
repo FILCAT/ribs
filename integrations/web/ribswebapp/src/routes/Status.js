@@ -552,6 +552,38 @@ function IoStats() {
     );
 }
 
+function RetrStats({retrStats}) {
+    return (
+        <div>
+            <h2>Retrieval Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Success:</td>
+                    <td>{formatNum(retrStats.Success)}</td>
+                </tr>
+                <tr>
+                    <td>Bytes:</td>
+                    <td>{formatBytesBinary(retrStats.Bytes)}</td>
+                </tr>
+                <tr>
+                    <td>Fail:</td>
+                    <td>{formatNum(retrStats.Fail)}</td>
+                </tr>
+                <tr>
+                    <td>Cache Hit:</td>
+                    <td>{formatNum(retrStats.CacheHit)}</td>
+                </tr>
+                <tr>
+                    <td>Cache Miss:</td>
+                    <td>{formatNum(retrStats.CacheMiss)}</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
 function Status() {
     const [walletInfo, setWalletInfo] = useState(null);
     const [groups, setGroups] = useState([]);
@@ -559,6 +591,7 @@ function Status() {
     const [carUploadStats, setCarUploadStats] = useState({});
     const [reachableProviders, setReachableProviders] = useState([]);
     const [dealSummary, setDealSummary] = useState({});
+    const [retrStats, setRetrStats] = useState({});
 
     const fetchStatus = async () => {
         try {
@@ -569,13 +602,14 @@ function Status() {
             const carUploadStats = await RibsRPC.call("CarUploadStats");
             const reachableProviders = await RibsRPC.call("ReachableProviders");
             const dealSummary = await RibsRPC.call("DealSummary");
-            const topIndexStats = await RibsRPC.call("TopIndexStats");
+            const retrStats = await RibsRPC.call("RetrStats");
 
             setGroups(groups);
             setCrawlState(crawlState);
             setCarUploadStats(carUploadStats);
             setReachableProviders(reachableProviders);
             setDealSummary(dealSummary);
+            setRetrStats(retrStats);
         } catch (error) {
             console.error("Error fetching status:", error);
         }
@@ -601,6 +635,7 @@ function Status() {
                 <CarUploadStatsTile carUploadStats={carUploadStats} />
                 <CrawlStateTile crawlState={crawlState} />
                 <WalletInfoTile walletInfo={walletInfo} />
+                <RetrStats retrStats={retrStats} />
             </div>
         </div>
     );
