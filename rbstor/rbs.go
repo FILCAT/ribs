@@ -119,6 +119,7 @@ type rbs struct {
 	writableGroups map[int64]*Group
 
 	external atomic.Pointer[iface.ExternalStorageProvider]
+	staging  atomic.Pointer[iface.StagingStorageProvider]
 
 	// diag cache
 	diagLk sync.Mutex
@@ -188,13 +189,11 @@ func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb f
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, blocks, bytes, jbhead, r.root, state, false)
+			g, err := r.openGroup(ctx, selectedGroup, blocks, bytes, jbhead, state)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
 
-			r.writableGroups[selectedGroup] = g
-			r.openGroups[selectedGroup] = g
 			return selectedGroup, cb(g)
 		}
 	}
@@ -206,13 +205,11 @@ func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb f
 		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, selectedGroup, 0, 0, 0, r.root, iface.GroupStateWritable, true)
+	g, err := r.openGroup(ctx, selectedGroup, 0, 0, 0, iface.GroupStateWritable)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
 
-	r.writableGroups[selectedGroup] = g
-	r.openGroups[selectedGroup] = g
 	return selectedGroup, cb(g)
 }
 
@@ -233,10 +230,22 @@ func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb fu
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
-	g, err := OpenGroup(ctx, r.db, r.index, group, blocks, bytes, jbhead, r.root, state, false)
+	g, err := r.openGroup(ctx, group, blocks, bytes, jbhead, state)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)
+	}
+
+	r.resumeGroup(group)
+
+	r.lk.Unlock()
+	return cb(g)
+}
+
+func (r *rbs) openGroup(ctx context.Context, group iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState) (*Group, error) {
+	g, err := OpenGroup(ctx, r.db, r.index, &r.staging, group, blocks, bytes, jbhead, r.root, state, false)
+	if err != nil {
+		return nil, xerrors.Errorf("opening group: %w", err)
 	}
 
 	if state == iface.GroupStateWritable {
@@ -244,10 +253,7 @@ func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb fu
 	}
 	r.openGroups[group] = g
 
-	r.resumeGroup(group)
-
-	r.lk.Unlock()
-	return cb(g)
+	return g, nil
 }
 
 type ribSession struct {
@@ -451,8 +457,16 @@ func (r *rbs) ExternalStorage() iface.RBSExternalStorage {
 	return r
 }
 
+func (r *rbs) InstallStagingProvider(provider iface.StagingStorageProvider) {
+	r.staging.Store(&provider)
+}
+
 func (r *rbs) InstallProvider(provider iface.ExternalStorageProvider) {
 	r.external.Store(&provider)
+}
+
+func (r *rbs) StagingStorage() iface.RBSStagingStorage {
+	return r
 }
 
 var _ iface.RBS = &rbs{}

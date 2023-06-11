@@ -23,6 +23,9 @@ type RBS interface {
 	// ExternalStorage manages offloaded data
 	ExternalStorage() RBSExternalStorage
 
+	// StagingStorage manages staged data (full non-replicated data)
+	StagingStorage() RBSStagingStorage
+
 	io.Closer
 }
 
@@ -190,4 +193,15 @@ type RBSExternalStorage interface {
 
 type ExternalStorageProvider interface {
 	FetchBlocks(ctx context.Context, group GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error
+}
+
+type RBSStagingStorage interface {
+	InstallStagingProvider(StagingStorageProvider)
+}
+
+type StagingStorageProvider interface {
+	Upload(ctx context.Context, group GroupKey, src func() io.Reader) error
+	ReadCar(ctx context.Context, group GroupKey, off, size int64) (io.ReadCloser, error)
+	Release(ctx context.Context, group GroupKey) error
+	URL(ctx context.Context, group GroupKey) (string, error)
 }

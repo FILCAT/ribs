@@ -3,6 +3,7 @@ package carlog
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"github.com/filecoin-project/lotus/lib/must"
@@ -34,9 +35,10 @@ const (
 	HeadName = "head"
 	HeadSize = 512
 
-	LevelIndex = "index.level"
-	BsstIndex  = "index.bsst"
-	HashSample = "sample.mhlist"
+	LevelIndex     = "index.level"
+	BsstIndex      = "index.bsst"
+	BsstIndexCanon = "fil.bsst"
+	HashSample     = "sample.mhlist"
 )
 
 const jbobBufSize = 16 << 20
@@ -95,7 +97,8 @@ type CarLog struct {
 
 	idxLk sync.RWMutex
 	wIdx  WritableIndex
-	rIdx  ReadableIndex
+	rIdx  ReadableIndex // local
+	eIdx  ReadableIndex // external
 
 	// buffers
 	headBuf [HeadSize]byte
@@ -134,6 +137,7 @@ type Head struct {
 	ReadOnly  bool // if true, no more writes are allowed
 	Finalized bool // if true, no more writes are allowed, and the bsst index is finalized
 	Offloaded bool // if true, the data file is offloaded to external storage, only hash samples are kept
+	External  bool // if true, the data is moved to external storage on finalize
 
 	// Layer stats, set after Finalized (Finalized can be true and layers may still not be set)
 	LayerOffsets []int64 // byte offsets of the start of each layer
@@ -246,6 +250,22 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 		return &CarLog{
 			IndexPath: indexPath,
 			DataPath:  dataPath,
+
+			layerOffsets: h.LayerOffsets,
+		}, nil
+	}
+
+	if h.External {
+		idx, err := OpenBSSTIndex(filepath.Join(indexPath, BsstIndexCanon))
+		if err != nil {
+			return nil, xerrors.Errorf("opening bsst index: %w", err)
+		}
+
+		return &CarLog{
+			IndexPath: indexPath,
+			DataPath:  dataPath,
+
+			eIdx: idx,
 
 			layerOffsets: h.LayerOffsets,
 		}, nil
@@ -860,7 +880,26 @@ func (j *CarLog) MarkReadOnly() error {
 	return nil
 }
 
-func (j *CarLog) Finalize() error {
+/*
+A, local:
+* close write idx
+* create layered bsst
+* save mh list
+* mark fin
+* swap index to layered bsst
+* rm level index
+
+B, staged:
+* create DFS bsst
+* save mh list
+* mark fin
+* send DFS car data
+* close widx
+* mark fin
+* swap to dfs bsst / serving staged
+*/
+
+func (j *CarLog) Finalize(ctx context.Context, staging CarStorageProvider) error {
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
 
@@ -879,40 +918,110 @@ func (j *CarLog) Finalize() error {
 	}
 
 	if !fin {
-		bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
-		if err != nil {
-			return xerrors.Errorf("creating bsst index: %w", err)
+		if staging == nil {
+			bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
+			if err != nil {
+				return xerrors.Errorf("creating bsst index: %w", err)
+			}
+
+			if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
+				return xerrors.Errorf("saving hash sample: %w", err)
+			}
+
+			err = j.mutHead(func(h *Head) error {
+				h.Finalized = true
+				return nil
+			})
+			if err != nil {
+				return xerrors.Errorf("marking as finalized: %w", err)
+			}
+
+			err = j.rIdx.Close()
+			j.rIdx = bss
+			if err != nil {
+				return err
+			}
+			if err := j.dropLevel(); err != nil {
+				return xerrors.Errorf("drop level index: %w", err)
+			}
+
+			if !hasTop {
+				if err := j.genTopCar(); err != nil {
+					return xerrors.Errorf("generating top car: %w", err)
+				}
+			}
+		} else {
+			// top car
+			if !hasTop {
+				if err := j.genTopCar(); err != nil {
+					return xerrors.Errorf("generating top car: %w", err)
+				}
+			}
+
+			// dfs bsst
+			iprov := &carIdxSource{
+				base:      j.rIdx,
+				carSource: j.WriteCar,
+			}
+
+			bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndexCanon), iprov)
+			if err != nil {
+				return xerrors.Errorf("write canonical bsst index: %w", err)
+			}
+
+			// mh list
+			if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
+				return xerrors.Errorf("saving hash sample: %w", err)
+			}
+
+			// send data
+			if err := staging.Upload(ctx, func() io.Reader {
+				pr, pw := io.Pipe()
+				go func() {
+					_, _, err := j.WriteCar(pw)
+					_ = pw.CloseWithError(err)
+				}()
+
+				return pr
+			}); err != nil {
+				return xerrors.Errorf("send car to staging storage: %w", err)
+			}
+
+			// mark fin
+			err = j.mutHead(func(h *Head) error {
+				h.Finalized = true
+				h.External = true
+				return nil
+			})
+			if err != nil {
+				return xerrors.Errorf("marking as finalized: %w", err)
+			}
+
+			// close level
+			err = j.rIdx.Close()
+			j.eIdx = bss
+			j.rIdx = nil
+			if err != nil {
+				return err
+			}
+			if err := j.dropLevel(); err != nil {
+				return xerrors.Errorf("drop level index: %w", err)
+			}
+
+			// drop local
+			j.pendingReads.Wait()
+
+			if err := j.offloadData(); err != nil {
+				return xerrors.Errorf("offload data: %w", err)
+			}
 		}
 
-		if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
-			return xerrors.Errorf("saving hash sample: %w", err)
-		}
-
-		err = j.mutHead(func(h *Head) error {
-			h.Finalized = true
-			return nil
-		})
-		if err != nil {
-			return xerrors.Errorf("marking as finalized: %w", err)
-		}
-
-		err = j.rIdx.Close()
-		j.rIdx = bss
-		if err != nil {
-			return err
-		}
-	}
-
-	if !hasTop {
-		if err := j.genTopCar(); err != nil {
-			return xerrors.Errorf("generating top car: %w", err)
-		}
 	}
 
 	return nil
 }
 
-func (j *CarLog) DropLevel() error {
+func (j *CarLog) dropLevel() error {
 	if j.wIdx != nil {
 		return xerrors.Errorf("cannot drop level on read-write jbob")
 	}
@@ -1190,6 +1299,65 @@ type cardata struct {
 	br *bufio.Reader
 }
 
+type carIdxSource struct {
+	base      ReadableIndex
+	carSource func(w io.Writer) (int64, cid.Cid, error)
+}
+
+func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
+	var at int64
+
+	pr, pw := io.Pipe()
+	go func() {
+		_, _, err := c.carSource(pw)
+		_ = pw.CloseWithError(err)
+	}()
+
+	br := bufio.NewReader(pr)
+
+	h, err := car.ReadHeader(br)
+	if err != nil {
+		return xerrors.Errorf("read header: %w", err)
+	}
+
+	hs, err := car.HeaderSize(h)
+	if err != nil {
+		return xerrors.Errorf("header size: %w", err)
+	}
+
+	at += int64(hs)
+
+	for {
+		d, err := carutil.LdRead(br)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil
+		}
+
+		_, c, err := cid.CidFromBytes(d) // todo attempt to make this faster
+		if err != nil {
+			return xerrors.Errorf("decode block cid: %w", err)
+		}
+
+		err = f(c.Hash(), []int64{at})
+		if err != nil {
+			return err
+		}
+
+		at += int64(len(d))
+	}
+
+	return nil
+}
+
+func (c *carIdxSource) Entries() (int64, error) {
+	return c.base.Entries()
+}
+
+var _ IndexSource = &carIdxSource{}
+
 func (j *CarLog) HashSample() ([]mh.Multihash, error) {
 	j.readStateLk.Lock()
 	if len(j.layerOffsets) == 0 {
@@ -1250,9 +1418,14 @@ func (j *CarLog) Offload() error {
 	// wait for all readers to finish
 	j.pendingReads.Wait()
 
-	// close the data file
-	if err := j.data.Close(); err != nil {
-		return xerrors.Errorf("closing data file: %w", err)
+	err = j.offloadData()
+	if err != nil {
+		return err
+	}
+
+	// remove index
+	if err := os.RemoveAll(filepath.Join(j.IndexPath, BsstIndex)); err != nil {
+		return xerrors.Errorf("removing bsst index: %w", err)
 	}
 
 	// close the head
@@ -1260,16 +1433,20 @@ func (j *CarLog) Offload() error {
 		return xerrors.Errorf("closing head: %w", err)
 	}
 
+	return nil
+}
+
+func (j *CarLog) offloadData() error {
+	// close the data file
+	if err := j.data.Close(); err != nil {
+		return xerrors.Errorf("closing data file: %w", err)
+	}
+
 	// mark some fields as nil to allow GC
 	j.data = nil
 	j.dataPos = nil
 	j.dataBuffered = nil
 	j.writeLru = nil
-
-	// remove index
-	if err := os.RemoveAll(filepath.Join(j.IndexPath, BsstIndex)); err != nil {
-		return xerrors.Errorf("removing bsst index: %w", err)
-	}
 
 	// remove data file
 	if err := os.RemoveAll(j.DataPath); err != nil {
@@ -1387,4 +1564,11 @@ func (ac *appendCounter) Write(p []byte) (int, error) {
 
 func (ac *appendCounter) Pos() int64 {
 	return atomic.LoadInt64(&ac.pos)
+}
+
+type CarStorageProvider interface {
+	Upload(ctx context.Context, src func() io.Reader) error
+	ReadCar(ctx context.Context, off, size int64) (io.ReadCloser, error)
+	Release(ctx context.Context) error
+	URL(ctx context.Context) (string, error)
 }

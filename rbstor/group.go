@@ -32,7 +32,7 @@ type Group struct {
 	db    *rbsDB
 	index iface.Index
 
-	//lotusRPCAddr string
+	staging *atomic.Pointer[iface.StagingStorageProvider]
 
 	path string
 	id   int64
@@ -74,7 +74,9 @@ type Group struct {
 	jb *carlog.CarLog
 }
 
-func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, staging *atomic.Pointer[iface.StagingStorageProvider],
+	id, committedBlocks, committedSize, recordedHead int64,
+	path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -100,8 +102,9 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 	}
 
 	g := &Group{
-		db:    db,
-		index: index,
+		db:      db,
+		index:   index,
+		staging: staging,
 
 		jb: jb,
 
@@ -310,3 +313,38 @@ func (m *Group) hashSample() ([]mh.Multihash, error) {
 }
 
 var _ iface.Group = &Group{}
+
+type carStorageWrapper struct {
+	storage iface.StagingStorageProvider
+	group   iface.GroupKey
+}
+
+func (c *carStorageWrapper) Upload(ctx context.Context, src func() io.Reader) error {
+	return c.storage.Upload(ctx, c.group, src)
+}
+
+func (c *carStorageWrapper) ReadCar(ctx context.Context, off, size int64) (io.ReadCloser, error) {
+	return c.storage.ReadCar(ctx, c.group, off, size)
+}
+
+func (c *carStorageWrapper) Release(ctx context.Context) error {
+	return c.storage.Release(ctx, c.group)
+}
+
+func (c *carStorageWrapper) URL(ctx context.Context) (string, error) {
+	return c.storage.URL(ctx, c.group)
+}
+
+var _ carlog.CarStorageProvider = &carStorageWrapper{}
+
+func (m *Group) WrapStorageProvider() carlog.CarStorageProvider {
+	p := m.staging.Load()
+	if p == nil {
+		return nil
+	}
+
+	return &carStorageWrapper{
+		storage: *p,
+		group:   m.id,
+	}
+}

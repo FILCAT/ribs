@@ -27,10 +27,6 @@ func (m *Group) Finalize(ctx context.Context) error {
 		return xerrors.Errorf("finalize jbob: %w", err)
 	}
 
-	if err := m.jb.DropLevel(); err != nil {
-		return xerrors.Errorf("removing leveldb index: %w", err)
-	}
-
 	if err := m.advanceState(ctx, iface.GroupStateVRCARDone); err != nil {
 		return xerrors.Errorf("mark level index dropped: %w", err)
 	}

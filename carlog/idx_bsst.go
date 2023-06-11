@@ -40,7 +40,12 @@ func OpenBSSTIndex(path string) (*BSSTIndex, error) {
 	}, nil
 }
 
-func CreateBSSTIndex(path string, index ReadableIndex) (*BSSTIndex, error) {
+type IndexSource interface {
+	bsst.Source
+	Entries() (int64, error)
+}
+
+func CreateBSSTIndex(path string, index IndexSource) (*BSSTIndex, error) {
 	ents, err := index.Entries()
 	if err != nil {
 		return nil, xerrors.Errorf("getting level index entries: %w", err)
