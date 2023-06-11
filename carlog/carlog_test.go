@@ -30,7 +30,7 @@ func TestCarLogBasic(t *testing.T) {
 		}
 	})
 
-	jb, err := Create(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
+	jb, err := Create(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
 	require.NoError(t, err)
 
 	b := blocks.NewBlock([]byte("hello world"))
@@ -57,7 +57,7 @@ func TestCarLogBasic(t *testing.T) {
 		return nil
 	}
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	jb, err = Open(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
 	require.NoError(t, err)
 
 	// test that we can read the data back out again
@@ -70,7 +70,7 @@ func TestCarLogBasic(t *testing.T) {
 
 	// test finalization
 	require.NoError(t, jb.MarkReadOnly())
-	require.NoError(t, jb.Finalize(context.TODO(), nil))
+	require.NoError(t, jb.Finalize(context.TODO()))
 	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
 		require.True(t, found)
 		require.Equal(t, b, []byte("hello world"))
@@ -81,7 +81,7 @@ func TestCarLogBasic(t *testing.T) {
 	err = jb.Close()
 	require.NoError(t, err)
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	jb, err = Open(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
 	require.NoError(t, err)
 
 	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
@@ -112,7 +112,7 @@ func TestCarLogBasic(t *testing.T) {
 
 	require.NoError(t, jb.Close())
 	// test open offloaded
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	jb, err = Open(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
 	require.NoError(t, err)
 
 	err = jb.View([]multihash.Multihash{h}, func(i int, found bool, b []byte) error {
@@ -137,7 +137,7 @@ func TestCarLog3K(t *testing.T) {
 		}
 	})
 
-	jb, err := Create(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
+	jb, err := Create(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
 	require.NoError(t, err)
 
 	const numBlocks = 3000
@@ -169,7 +169,7 @@ func TestCarLog3K(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, jb.MarkReadOnly())
-	require.NoError(t, jb.Finalize(context.TODO(), nil))
+	require.NoError(t, jb.Finalize(context.TODO()))
 
 	err = jb.View(mhList, func(i int, found bool, b []byte) error {
 		require.True(t, found)
@@ -185,7 +185,7 @@ func TestCarLog3K(t *testing.T) {
 		return nil
 	}
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	jb, err = Open(nil, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
 	require.NoError(t, err)
 
 	err = jb.View(mhList, func(i int, found bool, b []byte) error {
@@ -276,7 +276,9 @@ func TestCarStaging(t *testing.T) {
 		}
 	})
 
-	jb, err := Create(filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
+	tsp := &testStagingProvider{}
+
+	jb, err := Create(tsp, filepath.Join(td, "index"), filepath.Join(td, "data.car"), nil)
 	require.NoError(t, err)
 
 	const numBlocks = 3000
@@ -302,9 +304,7 @@ func TestCarStaging(t *testing.T) {
 
 	require.NoError(t, jb.MarkReadOnly())
 
-	tsp := &testStagingProvider{}
-
-	require.NoError(t, jb.Finalize(context.TODO(), tsp))
+	require.NoError(t, jb.Finalize(context.TODO()))
 
 	err = jb.View(mhList, func(i int, found bool, b []byte) error {
 		require.True(t, found)
@@ -323,7 +323,7 @@ func TestCarStaging(t *testing.T) {
 		return nil
 	}
 
-	jb, err = Open(filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	jb, err = Open(tsp, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
 	require.NoError(t, err)
 
 	err = jb.View(mhList, func(i int, found bool, b []byte) error {
@@ -333,7 +333,28 @@ func TestCarStaging(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	require.NoError(t, jb.Offload())
+
+	err = jb.View(mhList, func(i int, found bool, b []byte) error {
+		require.Fail(t, "no")
+		return nil
+	})
+	require.Error(t, err)
+
 	err = jb.Close()
+	require.NoError(t, err)
+
+	jb, err = Open(tsp, filepath.Join(td, "index"), filepath.Join(td, "data.car"), noTrunc)
+	require.NoError(t, err)
+
+	err = jb.View(mhList, func(i int, found bool, b []byte) error {
+		require.Fail(t, "no")
+		return nil
+	})
+	require.Error(t, err)
+
+	err = jb.Close()
+	require.NoError(t, err)
 }
 
 type testStagingProvider struct {
@@ -366,6 +387,16 @@ func (t *testStagingProvider) ReadCar(ctx context.Context, off, size int64) (io.
 	defer t.lk.Unlock()
 
 	return io.NopCloser(io.LimitReader(bytes.NewReader(t.bdata[off:]), size)), nil
+}
+
+func (t *testStagingProvider) ReadAt(p []byte, off int64) (n int, err error) {
+	t.lk.Lock()
+	defer t.lk.Unlock()
+	n = copy(p, t.bdata[off:])
+	if n != len(p) {
+		return n, io.EOF
+	}
+	return n, nil
 }
 
 func (t *testStagingProvider) Release(ctx context.Context) error {

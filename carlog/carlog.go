@@ -68,6 +68,8 @@ var placeholderCid = func() cid.Cid {
 // * One tx at a time
 // * Not considered written until committed
 type CarLog struct {
+	staging CarStorageProvider
+
 	// index = dir, data = file
 	IndexPath, DataPath string
 
@@ -143,7 +145,7 @@ type Head struct {
 	LayerOffsets []int64 // byte offsets of the start of each layer
 }
 
-func Create(indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
+func Create(staging CarStorageProvider, indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
 	if err := os.Mkdir(indexPath, 0755); err != nil {
 		return nil, xerrors.Errorf("mkdir index path (%s): %w", indexPath, err)
 	}
@@ -209,6 +211,8 @@ func Create(indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
 	ac := &appendCounter{dataFile, int64(at)}
 
 	return &CarLog{
+		staging: staging,
+
 		IndexPath:    indexPath,
 		DataPath:     dataPath,
 		head:         headFile,
@@ -225,7 +229,7 @@ func Create(indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
 	}, nil
 }
 
-func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
+func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 	headFile, err := os.OpenFile(filepath.Join(indexPath, HeadName), os.O_RDWR|os.O_SYNC, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening head: %w", err)
@@ -247,7 +251,13 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 	}
 
 	if h.Offloaded {
+		if err := headFile.Close(); err != nil {
+			return nil, xerrors.Errorf("close head: %w", err)
+		}
+
 		return &CarLog{
+			staging: staging,
+
 			IndexPath: indexPath,
 			DataPath:  dataPath,
 
@@ -261,7 +271,15 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 			return nil, xerrors.Errorf("opening bsst index: %w", err)
 		}
 
+		if staging == nil {
+			return nil, xerrors.Errorf("carlog: External but staging storage not set")
+		}
+
 		return &CarLog{
+			staging: staging,
+
+			head: headFile,
+
 			IndexPath: indexPath,
 			DataPath:  dataPath,
 
@@ -290,6 +308,8 @@ func Open(indexPath, dataPath string, tc TruncCleanup) (*CarLog, error) {
 	}
 
 	jb := &CarLog{
+		staging: staging,
+
 		IndexPath: indexPath,
 		DataPath:  dataPath,
 		head:      headFile,
@@ -709,6 +729,9 @@ func (j *CarLog) flushBuffered() error {
 
 func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {
 	j.idxLk.RLock()
+	if j.eIdx != nil {
+		return j.viewExternal(c, cb)
+	}
 	if j.rIdx == nil {
 		j.idxLk.RUnlock()
 		return xerrors.Errorf("cannot read from closing or offloaded carlog")
@@ -779,6 +802,64 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 
 		// READ!
 		if _, err := j.data.ReadAt(entBuf[:entLen], off+int64(lenlen)); err != nil {
+			return xerrors.Errorf("reading entry: %w", err)
+		}
+
+		n, _, err := cid.CidFromBytes(entBuf[:entLen])
+		if err != nil {
+			return xerrors.Errorf("parsing cid: %w", err)
+		}
+
+		// NOTE: THIS callback MAY UNLOCK THE LOG LOCK
+		if err := cb(i, true, entBuf[n:entLen]); err != nil {
+			return err
+		}
+	}
+
+	pool.Put(entBuf)
+
+	return nil
+}
+
+func (j *CarLog) viewExternal(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {
+	locs, err := j.eIdx.Get(c)
+
+	j.pendingReads.Add(1)
+	j.idxLk.RUnlock()
+	defer j.pendingReads.Done()
+	if err != nil {
+		return xerrors.Errorf("getting value locations: %w", err)
+	}
+
+	if j.staging == nil {
+		// this probably can't happen, but just in case
+		return xerrors.Errorf("staging storage not set")
+	}
+
+	entBuf := pool.Get(1 << 20)
+
+	for i := range c {
+		if locs[i] == -1 {
+			if err := cb(i, false, nil); err != nil {
+				return err
+			}
+			continue
+		}
+
+		off, entLen := fromOffsetLen(locs[i])
+
+		if entLen > len(entBuf) {
+			// expand buffer to next power of two if needed
+			pool.Put(entBuf)
+			entBuf = pool.Get(1 << bits.Len32(uint32(entLen)))
+		}
+
+		// calculate length of length prefix
+		// note this uses entBuf as a buffer, but we don't need the content
+		lenlen := binary.PutUvarint(entBuf, uint64(entLen))
+
+		// READ!
+		if _, err := j.staging.ReadAt(entBuf[:entLen], off+int64(lenlen)); err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
@@ -899,7 +980,7 @@ B, staged:
 * swap to dfs bsst / serving staged
 */
 
-func (j *CarLog) Finalize(ctx context.Context, staging CarStorageProvider) error {
+func (j *CarLog) Finalize(ctx context.Context) error {
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
 
@@ -918,7 +999,7 @@ func (j *CarLog) Finalize(ctx context.Context, staging CarStorageProvider) error
 	}
 
 	if !fin {
-		if staging == nil {
+		if j.staging == nil {
 			bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
 			if err != nil {
 				return xerrors.Errorf("creating bsst index: %w", err)
@@ -975,7 +1056,7 @@ func (j *CarLog) Finalize(ctx context.Context, staging CarStorageProvider) error
 			}
 
 			// send data
-			if err := staging.Upload(ctx, func() io.Reader {
+			if err := j.staging.Upload(ctx, func() io.Reader {
 				pr, pw := io.Pipe()
 				go func() {
 					_, _, err := j.WriteCar(pw)
@@ -1341,12 +1422,12 @@ func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
 			return xerrors.Errorf("decode block cid: %w", err)
 		}
 
-		err = f(c.Hash(), []int64{at})
+		err = f(c.Hash(), []int64{makeOffsetLen(at, len(d))})
 		if err != nil {
 			return err
 		}
 
-		at += int64(len(d))
+		at += int64(carutil.LdSize(d))
 	}
 
 	return nil
@@ -1390,7 +1471,7 @@ func (j *CarLog) Offload() error {
 		return xerrors.Errorf("group still writable")
 	}
 
-	if j.rIdx == nil {
+	if j.rIdx == nil && j.eIdx == nil {
 		j.idxLk.Unlock()
 		return xerrors.Errorf("group already offloaded")
 	}
@@ -1405,12 +1486,22 @@ func (j *CarLog) Offload() error {
 		return xerrors.Errorf("updating head to mark as offloaded: %w", err)
 	}
 
-	if err := j.rIdx.Close(); err != nil {
-		j.idxLk.Unlock()
-		return xerrors.Errorf("closing readable index: %w", err)
-	}
+	if j.rIdx != nil {
+		if err := j.rIdx.Close(); err != nil {
+			j.idxLk.Unlock()
+			return xerrors.Errorf("closing readable index: %w", err)
+		}
 
-	j.rIdx = nil
+		j.rIdx = nil
+	}
+	if j.eIdx != nil {
+		if err := j.eIdx.Close(); err != nil {
+			j.idxLk.Unlock()
+			return xerrors.Errorf("closing external index: %w", err)
+		}
+
+		j.eIdx = nil
+	}
 
 	// let reads resume (and fail)
 	j.idxLk.Unlock()
@@ -1423,9 +1514,12 @@ func (j *CarLog) Offload() error {
 		return err
 	}
 
-	// remove index
+	// remove indexes
 	if err := os.RemoveAll(filepath.Join(j.IndexPath, BsstIndex)); err != nil {
 		return xerrors.Errorf("removing bsst index: %w", err)
+	}
+	if err := os.RemoveAll(filepath.Join(j.IndexPath, BsstIndexCanon)); err != nil {
+		return xerrors.Errorf("removing external bsst index: %w", err)
 	}
 
 	// close the head
@@ -1438,8 +1532,10 @@ func (j *CarLog) Offload() error {
 
 func (j *CarLog) offloadData() error {
 	// close the data file
-	if err := j.data.Close(); err != nil {
-		return xerrors.Errorf("closing data file: %w", err)
+	if j.data != nil {
+		if err := j.data.Close(); err != nil {
+			return xerrors.Errorf("closing data file: %w", err)
+		}
 	}
 
 	// mark some fields as nil to allow GC
@@ -1568,7 +1664,8 @@ func (ac *appendCounter) Pos() int64 {
 
 type CarStorageProvider interface {
 	Upload(ctx context.Context, src func() io.Reader) error
-	ReadCar(ctx context.Context, off, size int64) (io.ReadCloser, error)
 	Release(ctx context.Context) error
 	URL(ctx context.Context) (string, error)
+
+	io.ReaderAt
 }
