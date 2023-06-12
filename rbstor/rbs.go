@@ -189,7 +189,7 @@ func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb f
 		}
 
 		if selectedGroup != iface.UndefGroupKey {
-			g, err := r.openGroup(ctx, selectedGroup, blocks, bytes, jbhead, state)
+			g, err := r.openGroup(ctx, selectedGroup, blocks, bytes, jbhead, state, false)
 			if err != nil {
 				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 			}
@@ -205,7 +205,7 @@ func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb f
 		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
 	}
 
-	g, err := r.openGroup(ctx, selectedGroup, 0, 0, 0, iface.GroupStateWritable)
+	g, err := r.openGroup(ctx, selectedGroup, 0, 0, 0, iface.GroupStateWritable, true)
 	if err != nil {
 		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
 	}
@@ -230,7 +230,7 @@ func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb fu
 		return xerrors.Errorf("getting group metadata: %w", err)
 	}
 
-	g, err := r.openGroup(ctx, group, blocks, bytes, jbhead, state)
+	g, err := r.openGroup(ctx, group, blocks, bytes, jbhead, state, false)
 	if err != nil {
 		r.lk.Unlock()
 		return xerrors.Errorf("opening group: %w", err)
@@ -242,8 +242,8 @@ func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb fu
 	return cb(g)
 }
 
-func (r *rbs) openGroup(ctx context.Context, group iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState) (*Group, error) {
-	g, err := OpenGroup(ctx, r.db, r.index, &r.staging, group, blocks, bytes, jbhead, r.root, state, false)
+func (r *rbs) openGroup(ctx context.Context, group iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, create bool) (*Group, error) {
+	g, err := OpenGroup(ctx, r.db, r.index, &r.staging, group, blocks, bytes, jbhead, r.root, state, create)
 	if err != nil {
 		return nil, xerrors.Errorf("opening group: %w", err)
 	}

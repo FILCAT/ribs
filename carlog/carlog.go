@@ -1056,14 +1056,9 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			}
 
 			// send data
-			if err := j.staging.Upload(ctx, func() io.Reader {
-				pr, pw := io.Pipe()
-				go func() {
-					_, _, err := j.WriteCar(pw)
-					_ = pw.CloseWithError(err)
-				}()
-
-				return pr
+			if err := j.staging.Upload(ctx, func(writer io.Writer) error {
+				_, _, err := j.WriteCar(writer)
+				return err
 			}); err != nil {
 				return xerrors.Errorf("send car to staging storage: %w", err)
 			}
@@ -1089,12 +1084,7 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 				return xerrors.Errorf("drop level index: %w", err)
 			}
 
-			// drop local
-			j.pendingReads.Wait()
-
-			if err := j.offloadData(); err != nil {
-				return xerrors.Errorf("offload data: %w", err)
-			}
+			// local data dropped after CommP
 		}
 
 	}
@@ -1552,6 +1542,19 @@ func (j *CarLog) offloadData() error {
 	return nil
 }
 
+func (j *CarLog) OffloadData() error {
+	j.idxLk.Lock()
+	defer j.idxLk.Unlock()
+
+	j.pendingReads.Wait()
+
+	if err := j.offloadData(); err != nil {
+		return xerrors.Errorf("offload data: %w", err)
+	}
+
+	return nil
+}
+
 func (j *CarLog) Close() error {
 	j.idxLk.Lock()
 	ri := j.rIdx
@@ -1663,8 +1666,7 @@ func (ac *appendCounter) Pos() int64 {
 }
 
 type CarStorageProvider interface {
-	Upload(ctx context.Context, src func() io.Reader) error
-	Release(ctx context.Context) error
+	Upload(ctx context.Context, src func(writer io.Writer) error) error
 	URL(ctx context.Context) (string, error)
 
 	io.ReaderAt

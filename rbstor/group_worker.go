@@ -31,8 +31,8 @@ func (r *rbs) workerExecTask(toExec task) {
 			return
 		}
 
-		err := g.Finalize(context.TODO())
 		r.lk.Unlock()
+		err := g.Finalize(context.TODO())
 		if err != nil {
 			log.Errorf("finalizing group: %s", err)
 		}
@@ -50,7 +50,7 @@ func (r *rbs) workerExecTask(toExec task) {
 			return
 		}
 
-		err := g.GenCommP()
+		err := g.GenCommP() // todo do in finalize...
 		if err != nil {
 			log.Errorw("generating commP", "group", toExec.group, "err", err)
 		}

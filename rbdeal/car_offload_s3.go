@@ -8,6 +8,7 @@ import (
 	pool "github.com/libp2p/go-buffer-pool"
 	"go.uber.org/multierr"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -58,6 +59,8 @@ func (r *ribs) maybeInitS3Offload() error {
 	r.s3Bucket = bucket
 	r.s3BucketUrl = burl
 
+	r.RBS.StagingStorage().InstallStagingProvider(&ribsStagingProvider{r: r})
+
 	return nil
 }
 
@@ -66,6 +69,10 @@ func (r *ribs) maybeEnsureS3Offload(gid iface.GroupKey) error {
 		return nil
 	}
 
+	return r.maybeDoS3OffloadWithSource(gid, r.RBS.Storage().ReadCar)
+}
+
+func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx context.Context, group iface.GroupKey, out io.Writer) error) error {
 	has, err := r.db.HasS3Offload(gid)
 	if err != nil {
 		return xerrors.Errorf("failed to check if group %d has S3 offload: %w", gid, err)
@@ -112,7 +119,7 @@ func (r *ribs) maybeEnsureS3Offload(gid iface.GroupKey) error {
 
 		bw := bufio.NewWriterSize(pw, 4<<20)
 
-		err := r.RBS.Storage().ReadCar(ctx, gid, bw)
+		err := source(ctx, gid, bw)
 		if err != nil {
 			perr := pw.CloseWithError(err)
 			if perr != nil {
@@ -345,4 +352,43 @@ func (r *ribs) cleanupS3Offload(gid iface.GroupKey) error {
 	}
 
 	return nil
+}
+
+type ribsStagingProvider struct {
+	r *ribs
+}
+
+func (r *ribsStagingProvider) Upload(ctx context.Context, group iface.GroupKey, src func(writer io.Writer) error) error {
+	return r.r.maybeDoS3OffloadWithSource(group, func(ctx context.Context, group iface.GroupKey, out io.Writer) error {
+		return src(out)
+	})
+}
+
+func (r *ribsStagingProvider) ReadCar(ctx context.Context, group iface.GroupKey, off, size int64) (io.ReadCloser, error) {
+	u, err := r.URL(ctx, group)
+	if err != nil {
+		return nil, xerrors.Errorf("get url: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, xerrors.Errorf("new request: %w", err)
+	}
+
+	req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", off, off+size-1))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, xerrors.Errorf("perform request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		resp.Body.Close()
+		return nil, xerrors.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return resp.Body, nil
+}
+func (r *ribsStagingProvider) URL(ctx context.Context, group iface.GroupKey) (string, error) {
+	return r.r.maybeGetS3URL(group)
 }

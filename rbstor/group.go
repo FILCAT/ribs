@@ -90,7 +90,16 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, staging *atomi
 		jbOpenFunc = carlog.Create
 	}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
+	var stw *carStorageWrapper
+	st := staging.Load()
+	if st != nil {
+		stw = &carStorageWrapper{
+			storage: *st,
+			group:   id,
+		}
+	}
+
+	jb, err := jbOpenFunc(stw, filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
 		if to < recordedHead {
 			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
 		}
@@ -319,16 +328,24 @@ type carStorageWrapper struct {
 	group   iface.GroupKey
 }
 
-func (c *carStorageWrapper) Upload(ctx context.Context, src func() io.Reader) error {
+func (c *carStorageWrapper) ReadAt(p []byte, off int64) (n int, err error) {
+	rc, err := c.storage.ReadCar(context.TODO(), c.group, off, int64(len(p)))
+	if err != nil {
+		return 0, err
+	}
+
+	n, err = io.ReadFull(rc, p)
+	cerr := rc.Close()
+
+	if err != nil {
+		return n, err
+	}
+
+	return n, cerr
+}
+
+func (c *carStorageWrapper) Upload(ctx context.Context, src func(writer io.Writer) error) error {
 	return c.storage.Upload(ctx, c.group, src)
-}
-
-func (c *carStorageWrapper) ReadCar(ctx context.Context, off, size int64) (io.ReadCloser, error) {
-	return c.storage.ReadCar(ctx, c.group, off, size)
-}
-
-func (c *carStorageWrapper) Release(ctx context.Context) error {
-	return c.storage.Release(ctx, c.group)
 }
 
 func (c *carStorageWrapper) URL(ctx context.Context) (string, error) {

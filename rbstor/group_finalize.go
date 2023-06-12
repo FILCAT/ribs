@@ -23,7 +23,7 @@ func (m *Group) Finalize(ctx context.Context) error {
 		return xerrors.Errorf("mark read-only: %w", err)
 	}
 
-	if err := m.jb.Finalize(); err != nil {
+	if err := m.jb.Finalize(ctx); err != nil {
 		return xerrors.Errorf("finalize jbob: %w", err)
 	}
 
@@ -60,6 +60,10 @@ func (m *Group) GenCommP() error {
 	if err := m.setCommP(context.Background(), iface.GroupStateLocalReadyForDeals, p, int64(sum.PieceSize), root, carSize); err != nil {
 		return xerrors.Errorf("set commP: %w", err)
 	}
+
+	//	if err := m.jb.OffloadData(); err != nil {
+	//		return xerrors.Errorf("offload data: %w", err)
+	//	}
 
 	return nil
 }
