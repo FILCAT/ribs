@@ -16,6 +16,8 @@ const UndefGroupKey = GroupKey(-1)
 // User
 
 type RBS interface {
+	Start() error
+
 	Session(ctx context.Context) Session
 	Storage() Storage
 	StorageDiag() RBSDiag

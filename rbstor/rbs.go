@@ -19,17 +19,10 @@ import (
 var log = logging.Logger("rbs")
 
 type openOptions struct {
-	workerGate chan struct{} // for testing
-	db         *sql.DB
+	db *sql.DB
 }
 
 type OpenOption func(*openOptions)
-
-func WithWorkerGate(gate chan struct{}) OpenOption {
-	return func(o *openOptions) {
-		o.workerGate = gate
-	}
-}
 
 func WithDB(db *sql.DB) OpenOption {
 	return func(o *openOptions) {
@@ -37,6 +30,9 @@ func WithDB(db *sql.DB) OpenOption {
 	}
 }
 
+const workerCount = 8
+
+// todo root as option, separate data / data index / index (/ staging?) paths
 func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
@@ -47,10 +43,7 @@ func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 		return nil, xerrors.Errorf("open top index: %w", err)
 	}
 
-	opt := &openOptions{
-		workerGate: make(chan struct{}),
-	}
-	close(opt.workerGate)
+	opt := &openOptions{}
 
 	for _, o := range opts {
 		o(opt)
@@ -73,14 +66,23 @@ func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 
 		tasks: make(chan task, 1024),
 
-		close:        make(chan struct{}),
-		workerClosed: make(chan struct{}),
+		close: make(chan struct{}),
 	}
 
-	go r.groupWorker(opt.workerGate)
-	go r.resumeGroups(context.TODO())
+	for i := 0; i < workerCount; i++ {
+		r.workerClosed[i] = make(chan struct{})
+	}
 
 	return r, nil
+}
+
+func (r *rbs) Start() error {
+	for i := 0; i < workerCount; i++ {
+		go r.groupWorker(i)
+	}
+	go r.resumeGroups(context.TODO())
+
+	return nil
 }
 
 type taskType int
@@ -102,7 +104,8 @@ type rbs struct {
 	db    *rbsDB
 	index *MeteredIndex
 
-	lk sync.Mutex
+	lk      sync.Mutex
+	writeLk sync.Mutex
 
 	/* subs */
 	subLk sync.Mutex
@@ -111,7 +114,7 @@ type rbs struct {
 	/* storage */
 
 	close        chan struct{}
-	workerClosed chan struct{}
+	workerClosed [workerCount]chan struct{}
 
 	tasks chan task
 
@@ -132,7 +135,9 @@ type rbs struct {
 
 func (r *rbs) Close() error {
 	close(r.close)
-	<-r.workerClosed
+	for i := 0; i < workerCount; i++ {
+		<-r.workerClosed[i]
+	}
 
 	r.lk.Lock()
 	defer r.lk.Unlock()
@@ -150,110 +155,6 @@ func (r *rbs) Close() error {
 	log.Errorf("TODO mark closed")
 
 	return nil
-}
-
-func (r *rbs) withWritableGroup(ctx context.Context, prefer iface.GroupKey, cb func(group *Group) error) (selectedGroup iface.GroupKey, err error) {
-	r.lk.Lock()
-	defer r.lk.Unlock()
-
-	defer func() {
-		if err != nil || selectedGroup == iface.UndefGroupKey {
-			return
-		}
-		// if the group was filled, drop it from writableGroups and start finalize
-		if r.writableGroups[selectedGroup].state != iface.GroupStateWritable {
-			delete(r.writableGroups, selectedGroup)
-
-			r.tasks <- task{
-				tt:    taskTypeFinalize,
-				group: selectedGroup,
-			}
-		}
-	}()
-
-	// todo prefer
-	for g, grp := range r.writableGroups {
-		return g, cb(grp)
-	}
-
-	// no writable groups, try to open one
-
-	selectedGroup = iface.UndefGroupKey
-	{
-		var blocks, bytes, jbhead int64
-		var state iface.GroupState
-
-		selectedGroup, blocks, bytes, jbhead, state, err = r.db.GetWritableGroup()
-		if err != nil {
-			return iface.UndefGroupKey, xerrors.Errorf("finding writable groups: %w", err)
-		}
-
-		if selectedGroup != iface.UndefGroupKey {
-			g, err := r.openGroup(ctx, selectedGroup, blocks, bytes, jbhead, state, false)
-			if err != nil {
-				return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
-			}
-
-			return selectedGroup, cb(g)
-		}
-	}
-
-	// no writable groups, create one
-
-	selectedGroup, err = r.db.CreateGroup()
-	if err != nil {
-		return iface.UndefGroupKey, xerrors.Errorf("creating group: %w", err)
-	}
-
-	g, err := r.openGroup(ctx, selectedGroup, 0, 0, 0, iface.GroupStateWritable, true)
-	if err != nil {
-		return iface.UndefGroupKey, xerrors.Errorf("opening group: %w", err)
-	}
-
-	return selectedGroup, cb(g)
-}
-
-func (r *rbs) withReadableGroup(ctx context.Context, group iface.GroupKey, cb func(group *Group) error) (err error) {
-	r.lk.Lock()
-
-	// todo prefer
-	if r.openGroups[group] != nil {
-		r.lk.Unlock()
-		return cb(r.openGroups[group])
-	}
-
-	// not open, open it
-
-	blocks, bytes, jbhead, state, err := r.db.OpenGroup(group)
-	if err != nil {
-		r.lk.Unlock()
-		return xerrors.Errorf("getting group metadata: %w", err)
-	}
-
-	g, err := r.openGroup(ctx, group, blocks, bytes, jbhead, state, false)
-	if err != nil {
-		r.lk.Unlock()
-		return xerrors.Errorf("opening group: %w", err)
-	}
-
-	r.resumeGroup(group)
-
-	r.lk.Unlock()
-	return cb(g)
-}
-
-func (r *rbs) openGroup(ctx context.Context, group iface.GroupKey, blocks, bytes, jbhead int64, state iface.GroupState, create bool) (*Group, error) {
-	g, err := OpenGroup(ctx, r.db, r.index, &r.staging, group, blocks, bytes, jbhead, r.root, state, create)
-	if err != nil {
-		return nil, xerrors.Errorf("opening group: %w", err)
-	}
-
-	if state == iface.GroupStateWritable {
-		r.writableGroups[group] = g
-	}
-	r.openGroups[group] = g
-
-	return g, nil
 }
 
 type ribSession struct {

@@ -6,14 +6,13 @@ import (
 	iface "github.com/lotus-web3/ribs"
 )
 
-func (r *rbs) groupWorker(gate <-chan struct{}) {
+func (r *rbs) groupWorker(i int) {
 	for {
-		<-gate
 		select {
 		case task := <-r.tasks:
 			r.workerExecTask(task)
 		case <-r.close:
-			close(r.workerClosed)
+			close(r.workerClosed[i])
 			return
 		}
 	}

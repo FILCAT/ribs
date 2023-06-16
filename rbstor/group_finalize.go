@@ -88,10 +88,8 @@ func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []by
 	return m.db.SetCommP(ctx, m.id, state, commp, paddedPieceSize, root, carSize)
 }
 
+// offload completely removes local data
 func (m *Group) offload() error {
-	m.offloaded.Store(1)
-	m.readers.Wait()
-
 	m.dataLk.Lock()
 	defer m.dataLk.Unlock()
 
@@ -106,6 +104,31 @@ func (m *Group) offload() error {
 	err := m.jb.Offload()
 	if err != nil {
 		return xerrors.Errorf("offloading carlog: %w", err)
+	}
+
+	if err := m.db.WriteOffloadEntry(m.id); err != nil {
+		return xerrors.Errorf("write offload entry: %w", err)
+	}
+
+	return nil
+}
+
+// offloadStaging removes local data, reads will be redirected to staging
+func (m *Group) offloadStaging() error {
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
+
+	if m.state != iface.GroupStateLocalReadyForDeals {
+		return xerrors.Errorf("can't offload group in state %d", m.state)
+	}
+
+	err := m.jb.OffloadData()
+	if err != nil {
+		return xerrors.Errorf("offloading carlog data: %w", err)
+	}
+
+	if err := m.db.WriteOffloadEntry(m.id); err != nil {
+		return xerrors.Errorf("write offload entry: %w", err)
 	}
 
 	return nil

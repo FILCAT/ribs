@@ -116,6 +116,8 @@ type CarLog struct {
 	// pendingReads is used to wait for pending reads to finish before offloading data
 	// (protects the data file)
 	pendingReads sync.WaitGroup
+
+	finalizing bool
 }
 
 // Head is the on-disk head object. CBOR-map-serialized. Must fit in
@@ -982,9 +984,15 @@ B, staged:
 
 func (j *CarLog) Finalize(ctx context.Context) error {
 	j.idxLk.Lock()
-	defer j.idxLk.Unlock()
+
+	if j.finalizing {
+		j.idxLk.Unlock()
+		return xerrors.Errorf("already finalizing")
+	}
+	j.finalizing = true
 
 	if j.wIdx != nil {
+		j.idxLk.Unlock()
 		return xerrors.Errorf("cannot finalize read-write jbob")
 	}
 
@@ -995,11 +1003,14 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 		return nil
 	})
 	if err != nil {
+		j.idxLk.Unlock()
 		return xerrors.Errorf("checking if finalized: %w", err)
 	}
 
 	if !fin {
 		if j.staging == nil {
+			j.idxLk.Unlock()
+
 			bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
 			if err != nil {
 				return xerrors.Errorf("creating bsst index: %w", err)
@@ -1008,6 +1019,9 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
 				return xerrors.Errorf("saving hash sample: %w", err)
 			}
+
+			j.idxLk.Lock()
+			j.idxLk.Unlock()
 
 			err = j.mutHead(func(h *Head) error {
 				h.Finalized = true
@@ -1027,11 +1041,15 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			}
 
 			if !hasTop {
-				if err := j.genTopCar(); err != nil {
+				j.idxLk.Unlock()
+				err := j.genTopCar()
+				j.idxLk.Lock()
+				if err != nil {
 					return xerrors.Errorf("generating top car: %w", err)
 				}
 			}
 		} else {
+			j.idxLk.Unlock()
 			// top car
 			if !hasTop {
 				if err := j.genTopCar(); err != nil {
@@ -1062,6 +1080,9 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			}); err != nil {
 				return xerrors.Errorf("send car to staging storage: %w", err)
 			}
+
+			j.idxLk.Lock()
+			j.idxLk.Unlock()
 
 			// mark fin
 			err = j.mutHead(func(h *Head) error {
@@ -1545,6 +1566,10 @@ func (j *CarLog) offloadData() error {
 func (j *CarLog) OffloadData() error {
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
+
+	if j.eIdx == nil || j.staging == nil {
+		return xerrors.Errorf("cannot offload data in a non-external-index car log")
+	}
 
 	j.pendingReads.Wait()
 
