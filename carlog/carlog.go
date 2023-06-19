@@ -881,8 +881,6 @@ func (j *CarLog) viewExternal(c []mh.Multihash, cb func(cidx int, found bool, da
 	return nil
 }
 
-var ErrNotReadOnly = errors.New("not yet read-only")
-
 func (j *CarLog) iterate(dataEnd int64, cb func(off int64, length uint64, c cid.Cid, data []byte) error) error {
 	entBuf := make([]byte, 1<<20)
 
@@ -1008,7 +1006,7 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 	}
 
 	if !fin {
-		if j.staging == nil {
+		if j.staging == nil { // Local, non-s3
 			j.idxLk.Unlock()
 
 			bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndex), j.rIdx)
@@ -1021,7 +1019,7 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			}
 
 			j.idxLk.Lock()
-			j.idxLk.Unlock()
+			defer j.idxLk.Unlock()
 
 			err = j.mutHead(func(h *Head) error {
 				h.Finalized = true
@@ -1048,7 +1046,7 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 					return xerrors.Errorf("generating top car: %w", err)
 				}
 			}
-		} else {
+		} else { // s3 offload
 			j.idxLk.Unlock()
 			// top car
 			if !hasTop {
@@ -1082,7 +1080,7 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 			}
 
 			j.idxLk.Lock()
-			j.idxLk.Unlock()
+			defer j.idxLk.Unlock()
 
 			// mark fin
 			err = j.mutHead(func(h *Head) error {

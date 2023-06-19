@@ -363,7 +363,7 @@ type testStagingProvider struct {
 	bdata []byte
 }
 
-func (t *testStagingProvider) Upload(ctx context.Context, src func() io.Reader) error {
+func (t *testStagingProvider) Upload(ctx context.Context, src func(writer io.Writer) error) error {
 	t.lk.Lock()
 	defer t.lk.Unlock()
 
@@ -371,13 +371,14 @@ func (t *testStagingProvider) Upload(ctx context.Context, src func() io.Reader) 
 		return xerrors.New("had data")
 	}
 
-	r := src()
+	var buf bytes.Buffer
 
-	var err error
-	t.bdata, err = io.ReadAll(r)
+	err := src(&buf)
 	if err != nil {
 		return err
 	}
+
+	t.bdata = buf.Bytes()
 
 	return nil
 }

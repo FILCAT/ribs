@@ -61,10 +61,6 @@ func (m *Group) GenCommP() error {
 		return xerrors.Errorf("set commP: %w", err)
 	}
 
-	//	if err := m.jb.OffloadData(); err != nil {
-	//		return xerrors.Errorf("offload data: %w", err)
-	//	}
-
 	return nil
 }
 
