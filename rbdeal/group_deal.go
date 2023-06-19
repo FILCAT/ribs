@@ -19,7 +19,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
-	chain_types "github.com/filecoin-project/lotus/chain/types"
+	ctypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -64,11 +64,6 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		return xerrors.Errorf("get deal params: %w", err)
 	}
 
-	provs, err := r.db.SelectDealProviders(id, dealInfo.PieceSize)
-	if err != nil {
-		return xerrors.Errorf("select deal providers: %w", err)
-	}
-
 	notFailed, err := r.db.GetNonFailedDealCount(id)
 	if err != nil {
 		log.Errorf("getting non-failed deal count: %s", err)
@@ -91,6 +86,28 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		return xerrors.Errorf("get wallet address: %w", err)
 	}
 
+	vc, err := gw.StateVerifiedClientStatus(ctx, walletAddr, ctypes.EmptyTSK)
+	if err != nil {
+		return xerrors.Errorf("getting verified client status: %w", err)
+	}
+
+	verified := false
+	maxToPay := maxPrice
+
+	if vc != nil {
+		if vc.LessThan(minDatacap) {
+			return xerrors.Errorf("not starting additional verified deals: datacap too low (%s, min %s)", ctypes.SizeStr(*vc), ctypes.SizeStr(minDatacap))
+		}
+
+		maxToPay = maxVerifPrice
+		verified = true
+	}
+
+	provs, err := r.db.SelectDealProviders(id, dealInfo.PieceSize, verified, maxToPay)
+	if err != nil {
+		return xerrors.Errorf("select deal providers: %w", err)
+	}
+
 	pieceCid, err := commcid.PieceCommitmentV1ToCID(dealInfo.CommP)
 	if err != nil {
 		return fmt.Errorf("failed to convert commP to cid: %w", err)
@@ -110,7 +127,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		var providerCollateral abi.TokenAmount
 
-		bounds, err := gw.StateDealProviderCollateralBounds(ctx, abi.PaddedPieceSize(dealInfo.PieceSize), verified, chain_types.EmptyTSK)
+		bounds, err := gw.StateDealProviderCollateralBounds(ctx, abi.PaddedPieceSize(dealInfo.PieceSize), verified, ctypes.EmptyTSK)
 		if err != nil {
 			return fmt.Errorf("node error getting collateral bounds: %w", err)
 		}
@@ -136,9 +153,9 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		price := big.Zero()
 		pricef.Int(price.Int)
 
-		if price.GreaterThan(big.NewInt(int64(maxPrice))) {
+		if price.GreaterThan(big.NewInt(int64(maxToPay))) {
 			// this check is probably redundant, buuut..
-			return fmt.Errorf("price %d is greater than max price %f", price, maxPrice)
+			return fmt.Errorf("price %d is greater than max price %f", price, maxToPay)
 		}
 
 		dealProposal, err := dealProposal(ctx, w, walletAddr, dealInfo.Root, abi.PaddedPieceSize(dealInfo.PieceSize), pieceCid, maddr, startEpoch, duration, verified, providerCollateral, price)

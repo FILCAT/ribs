@@ -182,8 +182,6 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         p.in_market = 1
         AND p.ping_ok = 1
         AND p.ask_ok = 1
-        AND p.ask_verif_price <= %f
-        /*AND p.ask_price <= %%f */
         AND p.ask_min_piece_size <= %d
         AND p.ask_max_piece_size >= %d
         AND (ds.failed_all IS NULL OR ds.failed_all = 0)
@@ -199,7 +197,7 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("open db: %w", err)
 	}
 
-	_, err = db.Exec(fmt.Sprintf(dbSchema, maxVerifPrice /*, maxPrice*/, maxPieceSize, minPieceSize))
+	_, err = db.Exec(fmt.Sprintf(dbSchema, maxPieceSize, minPieceSize))
 	if err != nil {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
@@ -215,7 +213,7 @@ type dealProvider struct {
 	ask_verif_price float64
 }
 
-func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64) ([]dealProvider, error) {
+func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, verified bool, maxPrice float64) ([]dealProvider, error) {
 	// only reachable, with boost_deals, only ones that don't have deals for this group
 	// 6 at random
 	// 2 of them with booster_http
@@ -235,6 +233,12 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64) ([]d
 		err := res.Scan(&id.id, &id.ask_price, &id.ask_verif_price)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning provider: %w", err)
+		}
+
+		if verified && id.ask_verif_price > maxPrice {
+			continue
+		} else if !verified && id.ask_price > maxPrice {
+			continue
 		}
 
 		random = append(random, id)
