@@ -14,6 +14,7 @@ import (
 	"path"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -247,26 +248,35 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 				pool.Put(part)
 			}()
 
-			uploadResp, err := r.s3.UploadPartWithContext(ctx, &s3.UploadPartInput{
-				Body:       bytes.NewReader(part),
-				Bucket:     &r.s3Bucket,
-				Key:        &objKey,
-				PartNumber: aws.Int64(partNumber),
-				UploadId:   &uploadId,
-			})
-
-			partsLk.Lock()
-			if err != nil {
-				errors = append(errors, xerrors.Errorf("failed to upload part %d: %w", partNumber, err))
-			} else {
-				completedParts = append(completedParts, &s3.CompletedPart{
-					ETag:       uploadResp.ETag,
+			maxRetries := 6
+			for i := 0; i < maxRetries; i++ {
+				uploadResp, err := r.s3.UploadPartWithContext(ctx, &s3.UploadPartInput{
+					Body:       bytes.NewReader(part),
+					Bucket:     &r.s3Bucket,
+					Key:        &objKey,
 					PartNumber: aws.Int64(partNumber),
+					UploadId:   &uploadId,
 				})
-			}
-			partsLk.Unlock()
 
-			log.Errorw("uploaded part", "part", partNumber, "group", gid, "size", len(part))
+				partsLk.Lock()
+				if err != nil {
+					// If we've reached the maximum retries, append the error
+					if i == maxRetries-1 {
+						errors = append(errors, xerrors.Errorf("failed to upload part %d: %w", partNumber, err))
+					}
+					log.Errorw("failed to upload part", "part", partNumber, "group", gid, "error", err)
+					time.Sleep(time.Second << uint(i))
+				} else {
+					completedParts = append(completedParts, &s3.CompletedPart{
+						ETag:       uploadResp.ETag,
+						PartNumber: aws.Int64(partNumber),
+					})
+					partsLk.Unlock()
+					log.Errorw("uploaded part", "part", partNumber, "group", gid, "size", len(part))
+					break
+				}
+				partsLk.Unlock()
+			}
 		}(curPart, partNumber)
 
 		curPart = nextPart
