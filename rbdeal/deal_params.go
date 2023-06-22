@@ -28,8 +28,7 @@ const clientWriteDeadline = 10 * time.Second
 var DealCheckInterval = 10 * time.Second
 var ParallelDealChecks = 10
 
-// deal targets
-var verified = true
+var minDatacap = types.NewInt(192 << 30)
 
 var (
 	minimumReplicaCount = 5

@@ -65,6 +65,19 @@ SELECT
     SUM(CASE WHEN g_state = 4 THEN bytes ELSE 0 END) AS offloaded_data_size
 FROM 
     groups;
+
+create table if not exists offloads
+(
+	group_id  integer not null
+	    constraint offloads_groups_id_pk
+	    		    primary key
+		constraint offloads_groups_id_fk
+			references groups
+				on update cascade on delete cascade
+);
+
+create index if not exists offloads_group_id_index
+	on offloads (group_id);
 `
 
 type rbsDB struct {
@@ -352,4 +365,40 @@ func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.G
 	}
 
 	return out, nil
+}
+
+func (r *rbsDB) CountNonOffloadedGroups() (count int, err error) {
+	err = r.db.QueryRow("SELECT COUNT(*) FROM groups LEFT JOIN offloads ON groups.id = offloads.group_id WHERE offloads.group_id IS NULL").Scan(&count)
+	if err != nil {
+		return 0, xerrors.Errorf("counting non-offloaded groups: %w", err)
+	}
+	return
+}
+
+func (r *rbsDB) GetOffloadCandidate() (id iface.GroupKey, err error) {
+	err = r.db.QueryRow(`
+		SELECT id 
+		FROM groups 
+		LEFT JOIN offloads ON groups.id = offloads.group_id 
+		WHERE offloads.group_id IS NULL AND g_state IN (3, 4) 
+		ORDER BY 
+			CASE WHEN g_state = 4 THEN 0 ELSE 1 END, 
+			id 
+		LIMIT 1
+	`).Scan(&id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return iface.UndefGroupKey, nil
+		}
+		return 0, xerrors.Errorf("getting priority non-offloaded group ID: %w", err)
+	}
+	return
+}
+
+func (r *rbsDB) WriteOffloadEntry(gid iface.GroupKey) (err error) {
+	_, err = r.db.Exec("INSERT INTO offloads (group_id) VALUES (?)", gid)
+	if err != nil {
+		return xerrors.Errorf("writing offload entry: %w", err)
+	}
+	return nil
 }

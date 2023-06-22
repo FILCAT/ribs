@@ -201,6 +201,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	r.RBS.ExternalStorage().InstallProvider(rp)
 
+	if err := r.RBS.Start(); err != nil {
+		return nil, xerrors.Errorf("start storage: %w", err)
+	}
+
 	go r.spCrawler()
 	go r.dealTracker(context.TODO())
 	go r.watchMarket(context.TODO())

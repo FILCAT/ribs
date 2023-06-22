@@ -32,7 +32,7 @@ type Group struct {
 	db    *rbsDB
 	index iface.Index
 
-	//lotusRPCAddr string
+	staging *atomic.Pointer[iface.StagingStorageProvider]
 
 	path string
 	id   int64
@@ -74,7 +74,9 @@ type Group struct {
 	jb *carlog.CarLog
 }
 
-func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedBlocks, committedSize, recordedHead int64, path string, state iface.GroupState, create bool) (*Group, error) {
+func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, staging *atomic.Pointer[iface.StagingStorageProvider],
+	id, committedBlocks, committedSize, recordedHead int64,
+	path string, state iface.GroupState, create bool) (*Group, error) {
 	groupPath := filepath.Join(path, "grp", strconv.FormatInt(id, 32))
 
 	if err := os.MkdirAll(groupPath, 0755); err != nil {
@@ -88,7 +90,16 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 		jbOpenFunc = carlog.Create
 	}
 
-	jb, err := jbOpenFunc(filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
+	var stw *carStorageWrapper
+	st := staging.Load()
+	if st != nil {
+		stw = &carStorageWrapper{
+			storage: *st,
+			group:   id,
+		}
+	}
+
+	jb, err := jbOpenFunc(stw, filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
 		if to < recordedHead {
 			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
 		}
@@ -100,8 +111,9 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, id, committedB
 	}
 
 	g := &Group{
-		db:    db,
-		index: index,
+		db:      db,
+		index:   index,
+		staging: staging,
 
 		jb: jb,
 
@@ -310,3 +322,46 @@ func (m *Group) hashSample() ([]mh.Multihash, error) {
 }
 
 var _ iface.Group = &Group{}
+
+type carStorageWrapper struct {
+	storage iface.StagingStorageProvider
+	group   iface.GroupKey
+}
+
+func (c *carStorageWrapper) ReadAt(p []byte, off int64) (n int, err error) {
+	rc, err := c.storage.ReadCar(context.TODO(), c.group, off, int64(len(p)))
+	if err != nil {
+		return 0, err
+	}
+
+	n, err = io.ReadFull(rc, p)
+	cerr := rc.Close()
+
+	if err != nil {
+		return n, err
+	}
+
+	return n, cerr
+}
+
+func (c *carStorageWrapper) Upload(ctx context.Context, src func(writer io.Writer) error) error {
+	return c.storage.Upload(ctx, c.group, src)
+}
+
+func (c *carStorageWrapper) URL(ctx context.Context) (string, error) {
+	return c.storage.URL(ctx, c.group)
+}
+
+var _ carlog.CarStorageProvider = &carStorageWrapper{}
+
+func (m *Group) WrapStorageProvider() carlog.CarStorageProvider {
+	p := m.staging.Load()
+	if p == nil {
+		return nil
+	}
+
+	return &carStorageWrapper{
+		storage: *p,
+		group:   m.id,
+	}
+}

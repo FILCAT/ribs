@@ -18,8 +18,6 @@ var _ = cid.Undef
 var _ = math.E
 var _ = sort.Sort
 
-var lengthBufHead = []byte{137}
-
 func (t *Head) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -28,49 +26,38 @@ func (t *Head) MarshalCBOR(w io.Writer) error {
 
 	cw := cbg.NewCborWriter(w)
 
-	if _, err := cw.Write(lengthBufHead); err != nil {
+	if _, err := cw.Write([]byte{170}); err != nil {
 		return err
 	}
 
-	// t.Version (int64) (int64)
-	if t.Version >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Version)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Version-1)); err != nil {
-			return err
-		}
+	// t.Valid (bool) (bool)
+	if len("Valid") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Valid\" was too long")
 	}
 
-	// t.Valid (bool) (bool)
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Valid"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Valid")); err != nil {
+		return err
+	}
+
 	if err := cbg.WriteBool(w, t.Valid); err != nil {
 		return err
 	}
 
-	// t.RetiredAt (int64) (int64)
-	if t.RetiredAt >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.RetiredAt)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.RetiredAt-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.DataStart (int64) (int64)
-	if t.DataStart >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.DataStart)); err != nil {
-			return err
-		}
-	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.DataStart-1)); err != nil {
-			return err
-		}
-	}
-
 	// t.DataEnd (int64) (int64)
+	if len("DataEnd") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"DataEnd\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("DataEnd"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("DataEnd")); err != nil {
+		return err
+	}
+
 	if t.DataEnd >= 0 {
 		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.DataEnd)); err != nil {
 			return err
@@ -81,22 +68,148 @@ func (t *Head) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.Version (int64) (int64)
+	if len("Version") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Version\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Version"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Version")); err != nil {
+		return err
+	}
+
+	if t.Version >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Version)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Version-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.External (bool) (bool)
+	if len("External") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"External\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("External"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("External")); err != nil {
+		return err
+	}
+
+	if err := cbg.WriteBool(w, t.External); err != nil {
+		return err
+	}
+
 	// t.ReadOnly (bool) (bool)
+	if len("ReadOnly") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"ReadOnly\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("ReadOnly"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("ReadOnly")); err != nil {
+		return err
+	}
+
 	if err := cbg.WriteBool(w, t.ReadOnly); err != nil {
 		return err
 	}
 
+	// t.DataStart (int64) (int64)
+	if len("DataStart") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"DataStart\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("DataStart"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("DataStart")); err != nil {
+		return err
+	}
+
+	if t.DataStart >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.DataStart)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.DataStart-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.Finalized (bool) (bool)
+	if len("Finalized") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Finalized\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Finalized"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Finalized")); err != nil {
+		return err
+	}
+
 	if err := cbg.WriteBool(w, t.Finalized); err != nil {
 		return err
 	}
 
 	// t.Offloaded (bool) (bool)
+	if len("Offloaded") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"Offloaded\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("Offloaded"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("Offloaded")); err != nil {
+		return err
+	}
+
 	if err := cbg.WriteBool(w, t.Offloaded); err != nil {
 		return err
 	}
 
+	// t.RetiredAt (int64) (int64)
+	if len("RetiredAt") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"RetiredAt\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("RetiredAt"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("RetiredAt")); err != nil {
+		return err
+	}
+
+	if t.RetiredAt >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.RetiredAt)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.RetiredAt-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.LayerOffsets ([]int64) (slice)
+	if len("LayerOffsets") > cbg.MaxLength {
+		return xerrors.Errorf("Value in field \"LayerOffsets\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("LayerOffsets"))); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, string("LayerOffsets")); err != nil {
+		return err
+	}
+
 	if len(t.LayerOffsets) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.LayerOffsets was too long")
 	}
@@ -133,229 +246,273 @@ func (t *Head) UnmarshalCBOR(r io.Reader) (err error) {
 		}
 	}()
 
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 9 && extra != 8 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	hasOffl := extra == 9
-
-	// t.Version (int64) (int64)
-	{
-		maj, extra, err := cr.ReadHeader()
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative overflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.Version = int64(extraI)
-	}
-	// t.Valid (bool) (bool)
-
-	maj, extra, err = cr.ReadHeader()
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.Valid = false
-	case 21:
-		t.Valid = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-	}
-	// t.RetiredAt (int64) (int64)
-	{
-		maj, extra, err := cr.ReadHeader()
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative overflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.RetiredAt = int64(extraI)
-	}
-	// t.DataStart (int64) (int64)
-	{
-		maj, extra, err := cr.ReadHeader()
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative overflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.DataStart = int64(extraI)
-	}
-	// t.DataEnd (int64) (int64)
-	{
-		maj, extra, err := cr.ReadHeader()
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative overflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.DataEnd = int64(extraI)
-	}
-	// t.ReadOnly (bool) (bool)
-
-	maj, extra, err = cr.ReadHeader()
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.ReadOnly = false
-	case 21:
-		t.ReadOnly = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-	}
-	// t.Finalized (bool) (bool)
-
-	maj, extra, err = cr.ReadHeader()
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.Finalized = false
-	case 21:
-		t.Finalized = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-	}
-	// t.Offloaded (bool) (bool)
-
-	if hasOffl {
-		maj, extra, err = cr.ReadHeader()
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajOther {
-			return fmt.Errorf("booleans must be major type 7")
-		}
-		switch extra {
-		case 20:
-			t.Offloaded = false
-		case 21:
-			t.Offloaded = true
-		default:
-			return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-		}
-	}
-	// t.LayerOffsets ([]int64) (slice)
-
-	maj, extra, err = cr.ReadHeader()
-	if err != nil {
-		return err
+	if maj != cbg.MajMap {
+		return fmt.Errorf("cbor input should be of type map")
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.LayerOffsets: array too large (%d)", extra)
+		return fmt.Errorf("Head: map struct too large (%d)", extra)
 	}
 
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
+	var name string
+	n := extra
 
-	if extra > 0 {
-		t.LayerOffsets = make([]int64, extra)
-	}
+	for i := uint64(0); i < n; i++ {
 
-	for i := 0; i < int(extra); i++ {
 		{
-			maj, extra, err := cr.ReadHeader()
-			var extraI int64
+			sval, err := cbg.ReadString(cr)
 			if err != nil {
 				return err
 			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative overflow")
-				}
-				extraI = -1 - extraI
+
+			name = string(sval)
+		}
+
+		switch name {
+		// t.Valid (bool) (bool)
+		case "Valid":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajOther {
+				return fmt.Errorf("booleans must be major type 7")
+			}
+			switch extra {
+			case 20:
+				t.Valid = false
+			case 21:
+				t.Valid = true
 			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
+				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.DataEnd (int64) (int64)
+		case "DataEnd":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.DataEnd = int64(extraI)
+			}
+			// t.Version (int64) (int64)
+		case "Version":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.Version = int64(extraI)
+			}
+			// t.External (bool) (bool)
+		case "External":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajOther {
+				return fmt.Errorf("booleans must be major type 7")
+			}
+			switch extra {
+			case 20:
+				t.External = false
+			case 21:
+				t.External = true
+			default:
+				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.ReadOnly (bool) (bool)
+		case "ReadOnly":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajOther {
+				return fmt.Errorf("booleans must be major type 7")
+			}
+			switch extra {
+			case 20:
+				t.ReadOnly = false
+			case 21:
+				t.ReadOnly = true
+			default:
+				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.DataStart (int64) (int64)
+		case "DataStart":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.DataStart = int64(extraI)
+			}
+			// t.Finalized (bool) (bool)
+		case "Finalized":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajOther {
+				return fmt.Errorf("booleans must be major type 7")
+			}
+			switch extra {
+			case 20:
+				t.Finalized = false
+			case 21:
+				t.Finalized = true
+			default:
+				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.Offloaded (bool) (bool)
+		case "Offloaded":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajOther {
+				return fmt.Errorf("booleans must be major type 7")
+			}
+			switch extra {
+			case 20:
+				t.Offloaded = false
+			case 21:
+				t.Offloaded = true
+			default:
+				return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+			}
+			// t.RetiredAt (int64) (int64)
+		case "RetiredAt":
+			{
+				maj, extra, err := cr.ReadHeader()
+				var extraI int64
+				if err != nil {
+					return err
+				}
+				switch maj {
+				case cbg.MajUnsignedInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 positive overflow")
+					}
+				case cbg.MajNegativeInt:
+					extraI = int64(extra)
+					if extraI < 0 {
+						return fmt.Errorf("int64 negative overflow")
+					}
+					extraI = -1 - extraI
+				default:
+					return fmt.Errorf("wrong type for int64 field: %d", maj)
+				}
+
+				t.RetiredAt = int64(extraI)
+			}
+			// t.LayerOffsets ([]int64) (slice)
+		case "LayerOffsets":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
 			}
 
-			t.LayerOffsets[i] = int64(extraI)
+			if extra > cbg.MaxLength {
+				return fmt.Errorf("t.LayerOffsets: array too large (%d)", extra)
+			}
+
+			if maj != cbg.MajArray {
+				return fmt.Errorf("expected cbor array")
+			}
+
+			if extra > 0 {
+				t.LayerOffsets = make([]int64, extra)
+			}
+
+			for i := 0; i < int(extra); i++ {
+				{
+					maj, extra, err := cr.ReadHeader()
+					var extraI int64
+					if err != nil {
+						return err
+					}
+					switch maj {
+					case cbg.MajUnsignedInt:
+						extraI = int64(extra)
+						if extraI < 0 {
+							return fmt.Errorf("int64 positive overflow")
+						}
+					case cbg.MajNegativeInt:
+						extraI = int64(extra)
+						if extraI < 0 {
+							return fmt.Errorf("int64 negative overflow")
+						}
+						extraI = -1 - extraI
+					default:
+						return fmt.Errorf("wrong type for int64 field: %d", maj)
+					}
+
+					t.LayerOffsets[i] = int64(extraI)
+				}
+			}
+
+		default:
+			// Field doesn't exist on this type, so ignore it
+			cbg.ScanForLinks(r, func(cid.Cid) {})
 		}
 	}
 
