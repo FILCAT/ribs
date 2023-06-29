@@ -194,6 +194,10 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			res.Error = err.Error()
 		}
 
+		prf.lk.Lock()
+		delete(prf.lookups, cidToGet)
+		prf.lk.Unlock()
+
 		err = r.db.RecordRetrievalCheckResult(candidate.DealID, res)
 		if err != nil {
 			return xerrors.Errorf("failed to record retrieval check result: %w", err)

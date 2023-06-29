@@ -138,7 +138,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return fmt.Errorf("getting chain head: %w", err)
 		}
 
-		startEpoch := head.Height() + abi.ChainEpoch(5760) // head + 2 days
+		startEpoch := head.Height() + dealStartTime
 
 		// generate proposal
 		dealUuid := uuid.New()
