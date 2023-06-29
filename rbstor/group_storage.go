@@ -8,7 +8,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const MaxLocalGroupCount = 4 // todo user config
+const MaxLocalGroupCount = 64 // todo user config
 
 func (r *rbs) createGroup(ctx context.Context) (iface.GroupKey, *Group, error) {
 	if err := r.ensureSpaceForGroup(ctx); err != nil {

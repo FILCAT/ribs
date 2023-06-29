@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/lotus/chain/types"
 	"time"
 )
@@ -19,6 +20,8 @@ var (
 	maxPieceSize = 64 << 30
 
 	dealPublishFinality abi.ChainEpoch = 60
+
+	dealStartTime = abi.ChainEpoch(builtin.EpochsInDay * 4) // 4 days
 )
 
 // deal checker
