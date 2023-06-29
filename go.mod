@@ -35,7 +35,7 @@ require (
 	github.com/ipld/go-ipld-prime v0.20.1-0.20230329011551-5056175565b0
 	github.com/ipni/go-libipni v0.0.8
 	github.com/libp2p/go-buffer-pool v0.1.0
-	github.com/libp2p/go-libp2p v0.27.6
+	github.com/libp2p/go-libp2p v0.27.7
 	github.com/libp2p/go-libp2p-gostream v0.6.0
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/minio/sha256-simd v1.0.1
@@ -124,7 +124,7 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
-	github.com/ipfs/boxo v0.10.1 // indirect
+	github.com/ipfs/boxo v0.10.2-0.20230629140307-fdad9f921191 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-blockservice v0.5.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
@@ -139,7 +139,7 @@ require (
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect
 	github.com/ipfs/go-verifcid v0.0.2 // indirect
-	github.com/ipld/go-car/v2 v2.10.1 // indirect
+	github.com/ipld/go-car/v2 v2.10.2-0.20230622090957-499d0c909d33 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1 // indirect
 	github.com/ipsn/go-secp256k1 v0.0.0-20180726113642-9d62b9f0bc52 // indirect
@@ -164,7 +164,7 @@ require (
 	github.com/libp2p/go-msgio v0.3.0 // indirect
 	github.com/libp2p/go-nat v0.1.0 // indirect
 	github.com/libp2p/go-netroute v0.2.1 // indirect
-	github.com/libp2p/go-reuseport v0.2.0 // indirect
+	github.com/libp2p/go-reuseport v0.3.0 // indirect
 	github.com/libp2p/go-yamux/v4 v4.0.0 // indirect
 	github.com/magefile/mage v1.9.0 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
