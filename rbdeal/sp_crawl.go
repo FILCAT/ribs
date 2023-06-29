@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/filecoin-project/boost/retrievalmarket/lp2pimpl"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
@@ -22,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	iface "github.com/lotus-web3/ribs"
+	"github.com/lotus-web3/ribs/ributil/boostnet"
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"golang.org/x/xerrors"
@@ -88,7 +88,7 @@ func (r *ribs) spCrawler() {
 }
 
 func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Host) error {
-	boostTptClient := lp2pimpl.NewTransportsClient(pingP2P)
+	boostTptClient := boostnet.NewTransportsClient(pingP2P)
 
 	r.setCrawlState(iface.CrawlState{State: crawlLoadMarket})
 

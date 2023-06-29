@@ -8,8 +8,6 @@ import (
 	gobig "math/big"
 	"time"
 
-	"github.com/filecoin-project/boost/storagemarket/types"
-	types2 "github.com/filecoin-project/boost/transport/types"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
@@ -25,6 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/ributil"
+	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"golang.org/x/xerrors"
 )
 
@@ -174,7 +173,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return xerrors.Errorf("make car request token: %w", err)
 		}
 
-		transferParams := &types2.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
+		transferParams := &types.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
 		transferParams.Headers = map[string]string{
 			"Authorization": string(reqToken),
 		}
