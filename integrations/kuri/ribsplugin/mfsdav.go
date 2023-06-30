@@ -4,12 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ipfs/go-cid"
-	ipld "github.com/ipfs/go-ipld-format"
-	dag "github.com/ipfs/go-merkledag"
-	"github.com/ipfs/go-mfs"
-	ft "github.com/ipfs/go-unixfs"
-	mh "github.com/multiformats/go-multihash"
 	"go.uber.org/fx"
 	"golang.org/x/net/webdav"
 	"golang.org/x/xerrors"
@@ -20,6 +14,13 @@ import (
 	gopath "path"
 	"strings"
 	"time"
+
+	dag "github.com/ipfs/boxo/ipld/merkledag"
+	ft "github.com/ipfs/boxo/ipld/unixfs"
+	"github.com/ipfs/boxo/mfs"
+	"github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
+	mh "github.com/multiformats/go-multihash"
 )
 
 func StartMfsDav(lc fx.Lifecycle, fr *mfs.Root) {
