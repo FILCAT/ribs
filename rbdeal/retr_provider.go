@@ -45,6 +45,7 @@ type retrievalProvider struct {
 	statLk   sync.Mutex
 	attempts map[peer.ID]int64
 	fails    map[peer.ID]int64
+	success  map[peer.ID]int64
 
 	ongoingRequestsLk sync.Mutex
 	ongoingRequests   map[cid.Cid]requestPromise
@@ -158,7 +159,7 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 		}
 
 		iattempts := r.attempts[cs[i].MinerPeer.ID]
-		jattempts := r.attempts[cs[j].MinerPeer.ID]
+		jattempts := r.success[cs[j].MinerPeer.ID]
 
 		ifails := r.fails[cs[i].MinerPeer.ID]
 		jfails := r.fails[cs[j].MinerPeer.ID]
@@ -177,23 +178,23 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	})
 	r.statLk.Unlock()
 
-	n := len(cs)
+	/*n := len(cs)
 	if n > 6 { // only return the top 6
 		n = 6
-	}
+	}*/
 
-	for _, c := range cs[:n] {
+	for _, c := range cs /*[:n]*/ {
 		r.statLk.Lock()
-		log.Errorw("select", "p", c.MinerPeer.ID, "tpt", c.Metadata.Protocols()[0].String(), "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID])
+		log.Errorw("select", "p", c.MinerPeer.ID, "tpt", c.Metadata.Protocols()[0].String(), "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID], "success", r.success[c.MinerPeer.ID])
 		r.statLk.Unlock()
 
 		f(c)
 
-		select {
+		/*select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(100 * time.Millisecond):
-		}
+		}*/
 	}
 
 	return nil
@@ -218,6 +219,7 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 
 		attempts: map[peer.ID]int64{},
 		fails:    map[peer.ID]int64{},
+		success:  map[peer.ID]int64{},
 
 		addrs: map[int64]ProviderAddrInfo{},
 
@@ -358,6 +360,11 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
 				r.statLk.Lock()
 				r.fails[event.StorageProviderId()]++
+				r.statLk.Unlock()
+			}
+			if event.Code() == types.SuccessCode && event.StorageProviderId() != "" {
+				r.statLk.Lock()
+				r.success[event.StorageProviderId()]++
 				r.statLk.Unlock()
 			}
 		})

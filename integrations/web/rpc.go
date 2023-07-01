@@ -34,6 +34,10 @@ func (rc *RIBSRpc) Groups(ctx context.Context) ([]ribs.GroupKey, error) {
 	return rc.ribs.StorageDiag().Groups()
 }
 
+func (rc *RIBSRpc) FindCid(ctx context.Context, hash cid.Cid) ([]ribs.GroupKey, error) {
+	return rc.ribs.Storage().FindHashes(ctx, hash.Hash())
+}
+
 func (rc *RIBSRpc) GroupMeta(ctx context.Context, group ribs.GroupKey) (ribs.GroupMeta, error) {
 	return rc.ribs.StorageDiag().GroupMeta(group)
 }

@@ -82,7 +82,7 @@ const groupStateText = [
 const GroupStateWritable = 0;
 const GroupStateOffloaded = 4;
 
-function Group({ groupKey, headHeight }) {
+export function Group({ groupKey, headHeight }) {
     const [group, setGroup] = useState({
         Deals: [],
     });
@@ -196,7 +196,6 @@ function Group({ groupKey, headHeight }) {
         </div>
     );
 }
-
 
 function Groups() {
     const [groupKeys, setGroupKeys] = useState([]);
