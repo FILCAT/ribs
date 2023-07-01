@@ -97,8 +97,10 @@ func (m *Group) offload() error {
 		return xerrors.Errorf("marking group as offloaded: %w", err)
 	}
 
+	// TODO Offloading state
+
 	err := m.jb.Offload()
-	if err != nil {
+	if err != nil && err != carlog.ErrAlreadyOffloaded {
 		return xerrors.Errorf("offloading carlog: %w", err)
 	}
 

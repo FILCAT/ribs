@@ -396,7 +396,7 @@ func (r *rbsDB) GetOffloadCandidate() (id iface.GroupKey, err error) {
 }
 
 func (r *rbsDB) WriteOffloadEntry(gid iface.GroupKey) (err error) {
-	_, err = r.db.Exec("INSERT INTO offloads (group_id) VALUES (?)", gid)
+	_, err = r.db.Exec("INSERT OR IGNORE INTO offloads (group_id) VALUES (?)", gid)
 	if err != nil {
 		return xerrors.Errorf("writing offload entry: %w", err)
 	}

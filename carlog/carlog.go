@@ -1463,6 +1463,8 @@ func (j *CarLog) HashSample() ([]mh.Multihash, error) {
 	return out, nil
 }
 
+var ErrAlreadyOffloaded = xerrors.Errorf("group already offloaded")
+
 func (j *CarLog) Offload() error {
 	j.readStateLk.Lock()
 
@@ -1482,7 +1484,7 @@ func (j *CarLog) Offload() error {
 
 	if j.rIdx == nil && j.eIdx == nil {
 		j.idxLk.Unlock()
-		return xerrors.Errorf("group already offloaded")
+		return ErrAlreadyOffloaded
 	}
 
 	// mark as offloaded first
