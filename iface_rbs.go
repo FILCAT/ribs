@@ -185,5 +185,4 @@ type RBSStagingStorage interface {
 type StagingStorageProvider interface {
 	Upload(ctx context.Context, group GroupKey, size int64, src func(writer io.Writer) error) error
 	ReadCar(ctx context.Context, group GroupKey, off, size int64) (io.ReadCloser, error)
-	URL(ctx context.Context, group GroupKey) (string, error)
 }

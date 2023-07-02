@@ -346,10 +346,6 @@ func (c *carStorageWrapper) Upload(ctx context.Context, size int64, src func(wri
 	return c.storage.Upload(ctx, c.group, size, src)
 }
 
-func (c *carStorageWrapper) URL(ctx context.Context) (string, error) {
-	return c.storage.URL(ctx, c.group)
-}
-
 var _ carlog.CarStorageProvider = &carStorageWrapper{}
 
 func (m *Group) WrapStorageProvider() carlog.CarStorageProvider {

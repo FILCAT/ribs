@@ -9,7 +9,6 @@ import (
 	"go.uber.org/multierr"
 	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -161,22 +160,6 @@ func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx co
 	}
 
 	return nil
-}
-
-func (r *ribs) maybeGetS3URL(gid iface.GroupKey) (string, error) {
-	has, err := r.db.HasS3Offload(gid)
-	if err != nil {
-		return "", xerrors.Errorf("failed to check if group %d has S3 offload: %w", gid, err)
-	}
-
-	if !has {
-		return "", nil
-	}
-
-	urlCopy := *r.s3BucketUrl
-	urlCopy.Path = path.Join(urlCopy.Path, fmt.Sprintf("gdata%d.car", gid))
-
-	return urlCopy.String(), nil
 }
 
 const partSize = 128 << 20 // todo investigate streaming much larger parts
@@ -414,30 +397,75 @@ func (r *ribsStagingProvider) Upload(ctx context.Context, group iface.GroupKey, 
 }
 
 func (r *ribsStagingProvider) ReadCar(ctx context.Context, group iface.GroupKey, off, size int64) (io.ReadCloser, error) {
-	u, err := r.URL(ctx, group)
+	has, err := r.r.db.HasS3Offload(group)
 	if err != nil {
-		return nil, xerrors.Errorf("get url: %w", err)
+		return nil, xerrors.Errorf("failed to check if group %d has S3 offload: %w", group, err)
+	}
+	if !has {
+		return nil, xerrors.Errorf("group %d does not have S3 offload", group)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	key := fmt.Sprintf("gdata%d.car", group)
+
+	req, _ := r.r.s3.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: &r.r.s3Bucket,
+		Key:    &key,
+	})
+
+	req.HTTPRequest.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", off, off+size-1))
+
+	err = req.Send()
+
 	if err != nil {
-		return nil, xerrors.Errorf("new request: %w", err)
+		return nil, xerrors.Errorf("failed to send request: %w", err)
 	}
 
-	req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", off, off+size-1))
+	return req.HTTPResponse.Body, nil
+	/*
+		///
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, xerrors.Errorf("perform request: %w", err)
-	}
+		u, err := r.URL(ctx, group)
+		if err != nil {
+			return nil, xerrors.Errorf("get url: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		resp.Body.Close()
-		return nil, xerrors.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
+		req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+		if err != nil {
+			return nil, xerrors.Errorf("new request: %w", err)
+		}
 
-	return resp.Body, nil
+		req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", off, off+size-1))
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, xerrors.Errorf("perform request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+			resp.Body.Close()
+			return nil, xerrors.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+
+		return resp.Body, nil*/
 }
+
+/*
 func (r *ribsStagingProvider) URL(ctx context.Context, group iface.GroupKey) (string, error) {
 	return r.r.maybeGetS3URL(group)
+}*/
+
+func (r *ribs) maybeGetS3URL(gid iface.GroupKey) (string, error) {
+	has, err := r.db.HasS3Offload(gid)
+	if err != nil {
+		return "", xerrors.Errorf("failed to check if group %d has S3 offload: %w", gid, err)
+	}
+
+	if !has {
+		return "", nil
+	}
+
+	urlCopy := *r.s3BucketUrl
+	urlCopy.Path = path.Join(urlCopy.Path, fmt.Sprintf("gdata%d.car", gid))
+
+	return urlCopy.String(), nil
 }

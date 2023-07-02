@@ -1724,7 +1724,6 @@ func (ac *appendCounter) Pos() int64 {
 
 type CarStorageProvider interface {
 	Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error
-	URL(ctx context.Context) (string, error)
 
 	io.ReaderAt
 }
