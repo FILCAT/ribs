@@ -31,7 +31,13 @@ type RIBSDiag interface {
 
 	RetrStats() (RetrStats, error)
 
+	StagingStats() (StagingStats, error)
+
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+}
+
+type StagingStats struct {
+	UploadBytes, UploadStarted, UploadDone, UploadErr, Redirects, ReadReqs, ReadBytes int64
 }
 
 type RetrStats struct {

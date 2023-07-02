@@ -78,6 +78,10 @@ type ribs struct {
 	s3Uploads map[iface.GroupKey]struct{}
 	s3Lk      sync.Mutex
 
+	/* s3 stats */
+
+	s3UploadBytes, s3UploadStarted, s3UploadDone, s3UploadErr, s3Redirects, s3ReadReqs, s3ReadBytes atomic.Int64
+
 	/* dealmaking */
 	dealsLk        sync.Mutex
 	moreDealsLocks map[iface.GroupKey]struct{}

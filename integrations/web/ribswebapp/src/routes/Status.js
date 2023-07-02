@@ -584,6 +584,95 @@ function RetrStats({retrStats}) {
     )
 }
 
+function StagingStats({stagingStats}) {
+    const prevStatsRef = useRef({});
+    const readReqsEMARef = useRef(0);
+    const readBytesEMARef = useRef(0);
+    const uploadBytesEMARef = useRef(0);
+    const redirectsEMARef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    useEffect(() => {
+        const prevStats = prevStatsRef.current;
+        const readReqs = stagingStats.ReadReqs;
+        const readBytes = stagingStats.ReadBytes;
+        const uploadBytes = stagingStats.UploadBytes;
+        const redirects = stagingStats.Redirects;
+
+        if (prevStats.ReadReqs !== undefined) {
+            const readReqsRate = readReqs - prevStats.ReadReqs;
+            const readBytesRate = readBytes - prevStats.ReadBytes;
+            const uploadBytesRate = uploadBytes - prevStats.UploadBytes;
+            const redirectsRate = redirects - prevStats.Redirects;
+
+            readReqsEMARef.current = calcEMA(
+                readReqsRate,
+                readReqsEMARef.current,
+                smoothingFactor
+            );
+            readBytesEMARef.current = calcEMA(
+                readBytesRate,
+                readBytesEMARef.current,
+                smoothingFactor
+            );
+            uploadBytesEMARef.current = calcEMA(
+                uploadBytesRate,
+                uploadBytesEMARef.current,
+                smoothingFactor
+            );
+            redirectsEMARef.current = calcEMA(
+                redirectsRate,
+                redirectsEMARef.current,
+                smoothingFactor
+            );
+        }
+
+        prevStatsRef.current = { ReadReqs: readReqs, ReadBytes: readBytes, UploadBytes: uploadBytes, Redirects: redirects };
+    }, [stagingStats]);
+
+    return (
+        <div>
+            <h2>Remote Staging Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Read Reqs/s:</td>
+                    <td>{formatNum(Math.round(readReqsEMARef.current))}/s</td>
+                </tr>
+                <tr>
+                    <td>Read Bytes/s:</td>
+                    <td>{formatBytesBinary(Math.round(readBytesEMARef.current))}/s</td>
+                </tr>
+                <tr>
+                    <td>Read Bytes:</td>
+                    <td>{formatBytesBinary(stagingStats.ReadBytes)}</td>
+                </tr>
+                <tr>
+                    <td>Upload Rate:</td>
+                    <td>{formatBytesBinary(Math.round(uploadBytesEMARef.current))}/s</td>
+                </tr>
+                <tr>
+                    <td>Uploaded Bytes:</td>
+                    <td>{formatBytesBinary(stagingStats.UploadBytes)}</td>
+                </tr>
+                <tr>
+                    <td>Active Uploads:</td>
+                    <td>{stagingStats.UploadStarted - stagingStats.UploadDone - stagingStats.UploadErr}</td>
+                </tr>
+                {stagingStats.UploadErr > 0 && <tr>
+                    <td>Upload Err:</td>
+                    <td>{formatNum(stagingStats.UploadErr)}</td>
+                </tr>}
+                <tr>
+                    <td>Redirects Rate:</td>
+                    <td>{formatNum(Math.round(redirectsEMARef.current))}/s</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
 function Status() {
     const [walletInfo, setWalletInfo] = useState(null);
     const [groups, setGroups] = useState([]);
@@ -592,6 +681,7 @@ function Status() {
     const [reachableProviders, setReachableProviders] = useState([]);
     const [dealSummary, setDealSummary] = useState({});
     const [retrStats, setRetrStats] = useState({});
+    const [stagingStats, setStagingStats] = useState({});
 
     const fetchStatus = async () => {
         try {
@@ -603,6 +693,7 @@ function Status() {
             const reachableProviders = await RibsRPC.call("ReachableProviders");
             const dealSummary = await RibsRPC.call("DealSummary");
             const retrStats = await RibsRPC.call("RetrStats");
+            const stagingStats = await RibsRPC.call("StagingStats");
 
             setGroups(groups);
             setCrawlState(crawlState);
@@ -636,6 +727,7 @@ function Status() {
                 <CrawlStateTile crawlState={crawlState} />
                 <WalletInfoTile walletInfo={walletInfo} />
                 <RetrStats retrStats={retrStats} />
+                <StagingStats stagingStats={stagingStats} />
             </div>
         </div>
     );

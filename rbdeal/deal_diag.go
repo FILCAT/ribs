@@ -33,6 +33,18 @@ func (r *ribs) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	return r.db.GroupDeals(gk)
 }
 
+func (r *ribs) StagingStats() (iface.StagingStats, error) {
+	return iface.StagingStats{
+		UploadBytes:   r.s3UploadBytes.Load(),
+		UploadStarted: r.s3UploadStarted.Load(),
+		UploadDone:    r.s3UploadDone.Load(),
+		UploadErr:     r.s3UploadErr.Load(),
+		Redirects:     r.s3Redirects.Load(),
+		ReadReqs:      r.s3ReadReqs.Load(),
+		ReadBytes:     r.s3ReadBytes.Load(),
+	}, nil
+}
+
 func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser, error) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {

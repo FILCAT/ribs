@@ -192,7 +192,16 @@ func CalculateChunkSize(fileSize int64) int {
 	return int(chunkSize)
 }
 
-func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) error {
+func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) (err error) {
+	r.s3UploadStarted.Add(1)
+	defer func() {
+		if err != nil {
+			r.s3UploadDone.Add(1)
+		} else {
+			r.s3UploadErr.Add(1)
+		}
+	}()
+
 	objKey := fmt.Sprintf("gdata%d.car", gid)
 
 	createResp, err := r.s3.CreateMultipartUpload(&s3.CreateMultipartUploadInput{
@@ -278,6 +287,8 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) er
 					PartNumber: aws.Int64(partNumber),
 					UploadId:   &uploadId,
 				})
+
+				r.s3UploadBytes.Add(int64(len(part)))
 
 				partsLk.Lock()
 				if err != nil {
@@ -404,6 +415,9 @@ func (r *ribsStagingProvider) ReadCar(ctx context.Context, group iface.GroupKey,
 	if !has {
 		return nil, xerrors.Errorf("group %d does not have S3 offload", group)
 	}
+
+	r.r.s3ReadReqs.Add(1)
+	r.r.s3ReadBytes.Add(size)
 
 	key := fmt.Sprintf("gdata%d.car", group)
 
