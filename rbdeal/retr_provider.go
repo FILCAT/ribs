@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-unixfsnode"
 	"github.com/ipld/go-ipld-prime"
+	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
@@ -22,7 +23,7 @@ import (
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"sort"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -153,7 +154,7 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	}
 
 	r.statLk.Lock()
-	sort.SliceStable(cs, func(i, j int) bool {
+	/*sort.SliceStable(cs, func(i, j int) bool {
 		if cs[i].MinerPeer.ID == cs[j].MinerPeer.ID {
 			return true
 		}
@@ -175,7 +176,9 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 		}
 
 		return ifailRatio < jfailRatio // prefer peers that have failed less
-	})
+	})*/
+
+	rand.Shuffle(len(cs), func(i, j int) { cs[i], cs[j] = cs[j], cs[i] })
 	r.statLk.Unlock()
 
 	/*n := len(cs)
@@ -311,109 +314,126 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		if hashToGet == nil {
 			continue
 		}
-		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
-		r.ongoingRequestsLk.Lock()
-
-		if or, ok := r.ongoingRequests[cidToGet]; ok {
-			r.ongoingRequestsLk.Unlock()
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-or.done:
+		var err error
+		for j := 0; j < 16; j++ {
+			err = r.fetchOne(ctx, hashToGet, i, linkSystem, wstor, cb, &bytesServed)
+			if err == nil {
+				break
 			}
-
-			if or.err != nil {
-				return xerrors.Errorf("retr promise error: %w", or.err)
-			}
-
-			cb(i, or.res)
-			continue
+			log.Errorw("failed to fetch block", "error", err, "attempt", j, "hash", hashToGet)
 		}
-
-		promise := requestPromise{
-			done: make(chan struct{}),
+		if err != nil {
+			return xerrors.Errorf("fetchOne: %w", err)
 		}
+	}
 
-		r.ongoingRequests[cidToGet] = promise
+	return nil
+}
+
+func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Multihash, i int, linkSystem linking.LinkSystem, wstor *ributil.IpldStoreWrapper, cb func(cidx int, data []byte), bytesServed *int64) error {
+	cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
+
+	r.ongoingRequestsLk.Lock()
+
+	if or, ok := r.ongoingRequests[cidToGet]; ok {
 		r.ongoingRequestsLk.Unlock()
-
-		request := types.RetrievalRequest{
-			RetrievalID:       must.One(types.NewRetrievalID()),
-			Cid:               cidToGet,
-			LinkSystem:        linkSystem,
-			PreloadLinkSystem: linkSystem,
-			Selector:          selectOne,
-			Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1},
-			MaxBlocks:         10,
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-or.done:
 		}
 
-		stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
-			log.Errorw("retrieval event", "cid", cidToGet, "event", event)
-
-			if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
-				r.statLk.Lock()
-				r.attempts[event.StorageProviderId()]++
-				r.statLk.Unlock()
-			}
-			if event.Code() == types.FailedCode && event.StorageProviderId() != "" {
-				log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
-				r.statLk.Lock()
-				r.fails[event.StorageProviderId()]++
-				r.statLk.Unlock()
-			}
-			if event.Code() == types.SuccessCode && event.StorageProviderId() != "" {
-				r.statLk.Lock()
-				r.success[event.StorageProviderId()]++
-				r.statLk.Unlock()
-			}
-		})
-		if err != nil {
-			log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
-
-			r.ongoingRequestsLk.Lock()
-			delete(r.ongoingRequests, cidToGet)
-			r.ongoingRequestsLk.Unlock()
-
-			promise.err = err
-			close(promise.done)
-
-			r.r.retrFail.Add(1)
-
-			return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
+		if or.err != nil {
+			return xerrors.Errorf("retr promise error: %w", or.err)
 		}
 
-		log.Errorw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
+		cb(i, or.res)
+		return nil
+	}
 
-		b, err := wstor.BS.Get(ctx, cidToGet)
-		if err != nil {
-			log.Errorw("failed to get block from retrieval store", "error", err)
+	promise := requestPromise{
+		done: make(chan struct{}),
+	}
 
-			r.ongoingRequestsLk.Lock()
-			delete(r.ongoingRequests, cidToGet)
-			r.ongoingRequestsLk.Unlock()
+	r.ongoingRequests[cidToGet] = promise
+	r.ongoingRequestsLk.Unlock()
 
-			promise.err = err
-			close(promise.done)
+	request := types.RetrievalRequest{
+		RetrievalID:       must.One(types.NewRetrievalID()),
+		Cid:               cidToGet,
+		LinkSystem:        linkSystem,
+		PreloadLinkSystem: linkSystem,
+		Selector:          selectOne,
+		Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1},
+		MaxBlocks:         10,
+	}
 
-			r.r.retrFail.Add(1)
+	stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
+		log.Errorw("retrieval event", "cid", cidToGet, "event", event)
 
-			return xerrors.Errorf("failed to get block from retrieval store: %w", err)
+		if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
+			r.statLk.Lock()
+			r.attempts[event.StorageProviderId()]++
+			r.statLk.Unlock()
 		}
+		if event.Code() == types.FailedCode && event.StorageProviderId() != "" {
+			log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
+			r.statLk.Lock()
+			r.fails[event.StorageProviderId()]++
+			r.statLk.Unlock()
+		}
+		if event.Code() == types.SuccessCode && event.StorageProviderId() != "" {
+			r.statLk.Lock()
+			r.success[event.StorageProviderId()]++
+			r.statLk.Unlock()
+		}
+	})
+	if err != nil {
+		log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
 
 		r.ongoingRequestsLk.Lock()
 		delete(r.ongoingRequests, cidToGet)
 		r.ongoingRequestsLk.Unlock()
 
-		r.blockCache.Add(mhStr(hashToGet), b.RawData())
-
-		promise.res = b.RawData()
+		promise.err = err
 		close(promise.done)
 
-		r.r.retrSuccess.Add(1)
-		bytesServed += int64(len(b.RawData()))
-		cb(i, b.RawData())
+		r.r.retrFail.Add(1)
+
+		return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 	}
+
+	log.Errorw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
+
+	b, err := wstor.BS.Get(ctx, cidToGet)
+	if err != nil {
+		log.Errorw("failed to get block from retrieval store", "error", err)
+
+		r.ongoingRequestsLk.Lock()
+		delete(r.ongoingRequests, cidToGet)
+		r.ongoingRequestsLk.Unlock()
+
+		promise.err = err
+		close(promise.done)
+
+		r.r.retrFail.Add(1)
+
+		return xerrors.Errorf("failed to get block from retrieval store: %w", err)
+	}
+
+	r.ongoingRequestsLk.Lock()
+	delete(r.ongoingRequests, cidToGet)
+	r.ongoingRequestsLk.Unlock()
+
+	r.blockCache.Add(mhStr(hashToGet), b.RawData())
+
+	promise.res = b.RawData()
+	close(promise.done)
+
+	r.r.retrSuccess.Add(1)
+	*bytesServed += int64(len(b.RawData()))
+	cb(i, b.RawData())
 
 	return nil
 }
