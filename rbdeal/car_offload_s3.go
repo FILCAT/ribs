@@ -8,6 +8,7 @@ import (
 	pool "github.com/libp2p/go-buffer-pool"
 	"go.uber.org/multierr"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -73,7 +74,7 @@ func (r *ribs) maybeEnsureS3Offload(gid iface.GroupKey) error {
 	return r.maybeDoS3OffloadWithSource(gid, r.RBS.Storage().ReadCar)
 }
 
-func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx context.Context, group iface.GroupKey, out io.Writer) error) error {
+func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx context.Context, group iface.GroupKey, sz func(int64), out io.Writer) error) error {
 	has, err := r.db.HasS3Offload(gid)
 	if err != nil {
 		return xerrors.Errorf("failed to check if group %d has S3 offload: %w", gid, err)
@@ -114,13 +115,19 @@ func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx co
 
 	pr, pw := io.Pipe()
 
+	sizeCh := make(chan int64, 1)
+	setSize := func(sz int64) {
+		sizeCh <- sz
+		close(sizeCh)
+	}
+
 	syncWait := make(chan struct{})
 	go func() {
 		defer close(syncWait)
 
 		bw := bufio.NewWriterSize(pw, 4<<20)
 
-		err := source(ctx, gid, bw)
+		err := source(ctx, gid, setSize, bw)
 		if err != nil {
 			perr := pw.CloseWithError(err)
 			if perr != nil {
@@ -134,7 +141,9 @@ func (r *ribs) maybeDoS3OffloadWithSource(gid iface.GroupKey, source func(ctx co
 		}
 	}()
 
-	upErr := r.uploadGroupData(gid, pr)
+	size := <-sizeCh
+
+	upErr := r.uploadGroupData(gid, size, pr)
 	if upErr != nil {
 		return xerrors.Errorf("failed to upload group %d: %w", gid, upErr)
 	}
@@ -170,10 +179,37 @@ func (r *ribs) maybeGetS3URL(gid iface.GroupKey) (string, error) {
 	return urlCopy.String(), nil
 }
 
-var partSize = 128 << 20 // todo investigate streaming much larger parts
-var minPartSize = 8 << 20
+const partSize = 128 << 20 // todo investigate streaming much larger parts
+const minPartSize = 8 << 20
+const adjustmentSize = 100 << 10 // 100 KiB
 
-func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
+func CalculateChunkSize(fileSize int64) int {
+	numParts := int64(math.Ceil(float64(fileSize) / float64(partSize)))
+	chunkSize := int64(partSize)
+
+	lastPartSize := fileSize - ((numParts - 1) * chunkSize)
+
+	// Ensure the last part is at least 5 MiB and not larger than chunk size
+	for lastPartSize < minPartSize || lastPartSize > chunkSize {
+		// Decrease the chunk size if last part size is too small
+		// Or increase it if last part size is too large
+		if lastPartSize < minPartSize {
+			chunkSize -= adjustmentSize
+		} else if lastPartSize > chunkSize {
+			chunkSize += adjustmentSize
+		}
+
+		numParts = int64(math.Ceil(float64(fileSize) / float64(chunkSize)))
+		lastPartSize = fileSize - ((numParts - 1) * chunkSize)
+		log.Errorw("try chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
+	}
+
+	log.Errorw("using chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
+
+	return int(chunkSize)
+}
+
+func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) error {
 	objKey := fmt.Sprintf("gdata%d.car", gid)
 
 	createResp, err := r.s3.CreateMultipartUpload(&s3.CreateMultipartUploadInput{
@@ -197,6 +233,8 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, src io.Reader) error {
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
+
+	partSize := CalculateChunkSize(size)
 
 	curPart := pool.Get(partSize)
 	n, err := io.ReadFull(src, curPart)
@@ -368,8 +406,9 @@ type ribsStagingProvider struct {
 	r *ribs
 }
 
-func (r *ribsStagingProvider) Upload(ctx context.Context, group iface.GroupKey, src func(writer io.Writer) error) error {
-	return r.r.maybeDoS3OffloadWithSource(group, func(ctx context.Context, group iface.GroupKey, out io.Writer) error {
+func (r *ribsStagingProvider) Upload(ctx context.Context, group iface.GroupKey, size int64, src func(writer io.Writer) error) error {
+	return r.r.maybeDoS3OffloadWithSource(group, func(ctx context.Context, group iface.GroupKey, sz func(int642 int64), out io.Writer) error {
+		sz(size)
 		return src(out)
 	})
 }

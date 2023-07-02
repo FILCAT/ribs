@@ -343,7 +343,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(respLen, 10))
 	w.Header().Set("Content-Type", "application/vnd.ipld.car")
 
-	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, rateWriter)
+	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, func(int64) {}, rateWriter)
 
 	defer func() {
 		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, rateWriter.WriteError()); err != nil {

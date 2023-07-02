@@ -265,7 +265,7 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 	panic("implement me")
 }
 
-func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, data []byte)) error {
+func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, found bool, data []byte)) error {
 	m.readers.Add(1)
 	defer m.readers.Done()
 
@@ -277,15 +277,15 @@ func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, da
 
 	// View is thread safe
 	return m.jb.View(c, func(cidx int, found bool, data []byte) error {
-		// TODO: handle not found better?
 		if !found {
-			return xerrors.Errorf("group: block not found")
+			cb(cidx, false, nil)
+			return nil
 		}
 
 		m.readBlocks.Add(1)
 		m.readSize.Add(int64(len(data)))
 
-		cb(cidx, data)
+		cb(cidx, true, data)
 		return nil
 	})
 }
@@ -321,8 +321,6 @@ func (m *Group) hashSample() ([]mh.Multihash, error) {
 	return m.jb.HashSample()
 }
 
-var _ iface.Group = &Group{}
-
 type carStorageWrapper struct {
 	storage iface.StagingStorageProvider
 	group   iface.GroupKey
@@ -344,8 +342,8 @@ func (c *carStorageWrapper) ReadAt(p []byte, off int64) (n int, err error) {
 	return n, cerr
 }
 
-func (c *carStorageWrapper) Upload(ctx context.Context, src func(writer io.Writer) error) error {
-	return c.storage.Upload(ctx, c.group, src)
+func (c *carStorageWrapper) Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error {
+	return c.storage.Upload(ctx, c.group, size, src)
 }
 
 func (c *carStorageWrapper) URL(ctx context.Context) (string, error) {

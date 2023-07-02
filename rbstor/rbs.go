@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	iface "github.com/lotus-web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
@@ -210,7 +211,13 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 		}
 
 		err := r.r.withReadableGroup(ctx, g, func(g *Group) error {
-			return g.View(ctx, toGet, func(cidx int, data []byte) {
+			return g.View(ctx, toGet, func(cidx int, found bool, data []byte) {
+				if !found {
+					c := cid.NewCidV1(cid.Raw, toGet[cidx])
+					log.Errorw("group: block not found", "mh", toGet[cidx], "cid", c.String(), "group", g.id)
+					return
+				}
+
 				cb(cidxs[cidx], data)
 			})
 		})
@@ -332,7 +339,17 @@ func (r *rbs) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.Gro
 	return r.db.DescibeGroup(ctx, group)
 }
 
-func (r *rbs) ReadCar(ctx context.Context, group iface.GroupKey, out io.Writer) error {
+func (r *rbs) ReadCar(ctx context.Context, group iface.GroupKey, sz func(int64), out io.Writer) error {
+	gm, err := r.db.GroupMeta(group)
+	if err != nil {
+		return xerrors.Errorf("getting group meta: %w", err)
+	}
+	if gm.DealCarSize == nil {
+		return xerrors.Errorf("group has no deal car size set")
+	}
+
+	sz(*gm.DealCarSize)
+
 	return r.withReadableGroup(ctx, group, func(g *Group) error {
 		_, _, err := g.writeCar(out)
 		return err

@@ -1066,13 +1066,20 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 				return xerrors.Errorf("write canonical bsst index: %w", err)
 			}
 
+			if iprov.statReader == nil {
+				return xerrors.Errorf("no stat reader")
+			}
+			if !iprov.statReader.eof {
+				return xerrors.Errorf("didn't read whole file")
+			}
+
 			// mh list
 			if err := SaveMHList(filepath.Join(j.IndexPath, HashSample), bss.bsi.CreateSample); err != nil {
 				return xerrors.Errorf("saving hash sample: %w", err)
 			}
 
 			// send data
-			if err := j.staging.Upload(ctx, func(writer io.Writer) error {
+			if err := j.staging.Upload(ctx, iprov.statReader.read, func(writer io.Writer) error {
 				_, _, err := j.WriteCar(writer)
 				return err
 			}); err != nil {
@@ -1392,6 +1399,25 @@ type cardata struct {
 type carIdxSource struct {
 	base      ReadableIndex
 	carSource func(w io.Writer) (int64, cid.Cid, error)
+
+	statReader *statRead
+}
+
+type statRead struct {
+	io.Reader
+	read int64
+	eof  bool
+}
+
+func (sr *statRead) Read(p []byte) (int, error) {
+	n, err := sr.Reader.Read(p)
+	sr.read += int64(n)
+
+	if err == io.EOF {
+		sr.eof = true
+	}
+
+	return n, err
 }
 
 func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
@@ -1403,7 +1429,13 @@ func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
 		_ = pw.CloseWithError(err)
 	}()
 
-	br := bufio.NewReader(pr)
+	if c.statReader != nil {
+		return xerrors.Errorf("cannot use carIdxSource.List more than once")
+	}
+
+	c.statReader = &statRead{Reader: pr}
+
+	br := bufio.NewReader(c.statReader)
 
 	h, err := car.ReadHeader(br)
 	if err != nil {
@@ -1691,7 +1723,7 @@ func (ac *appendCounter) Pos() int64 {
 }
 
 type CarStorageProvider interface {
-	Upload(ctx context.Context, src func(writer io.Writer) error) error
+	Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error
 	URL(ctx context.Context) (string, error)
 
 	io.ReaderAt

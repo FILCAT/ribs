@@ -73,7 +73,7 @@ type Session interface {
 type Storage interface {
 	FindHashes(ctx context.Context, hashes multihash.Multihash) ([]GroupKey, error)
 
-	ReadCar(ctx context.Context, group GroupKey, out io.Writer) error
+	ReadCar(ctx context.Context, group GroupKey, sz func(int64), out io.Writer) error
 
 	// HashSample returns a sample of hashes from the group saved when the group was finalized
 	HashSample(ctx context.Context, group GroupKey) ([]multihash.Multihash, error)
@@ -157,7 +157,7 @@ type Index interface {
 	io.Closer
 }
 
-type GroupState int
+type GroupState int // todo move to rbstore?
 
 const (
 	GroupStateWritable GroupState = iota
@@ -169,25 +169,6 @@ const (
 
 	// GroupStateDownloading
 )
-
-// Group stores a bunch of blocks, abstracting away the storage backend.
-// All underlying storage backends contain all blocks referenced by the group in
-// the top level index.
-// Group IS thread safe
-type Group interface {
-	// Put returns the number of blocks written
-	Put(ctx context.Context, c []blocks.Block) (int, error)
-	Unlink(ctx context.Context, c []multihash.Multihash) error
-	View(ctx context.Context, c []multihash.Multihash, cb func(cidx int, data []byte)) error
-	Sync(ctx context.Context) error
-
-	// Finalize marks the group as finalized, meaning no more writes will be accepted,
-	// a more optimized index will get generated, then the gropu will be queued for
-	// replication / offloading.
-	Finalize(ctx context.Context) error
-
-	io.Closer
-}
 
 type RBSExternalStorage interface {
 	InstallProvider(ExternalStorageProvider)
@@ -202,7 +183,7 @@ type RBSStagingStorage interface {
 }
 
 type StagingStorageProvider interface {
-	Upload(ctx context.Context, group GroupKey, src func(writer io.Writer) error) error
+	Upload(ctx context.Context, group GroupKey, size int64, src func(writer io.Writer) error) error
 	ReadCar(ctx context.Context, group GroupKey, off, size int64) (io.ReadCloser, error)
 	URL(ctx context.Context, group GroupKey) (string, error)
 }
