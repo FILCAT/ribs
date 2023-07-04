@@ -127,7 +127,7 @@ type ribs struct {
 	/* retrieval */
 	retrHost host.Host
 
-	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss atomic.Int64
+	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss, retrActive atomic.Int64
 
 	/* retrieval checker */
 	rckToDo, rckStarted, rckSuccess, rckFail, rckSuccessAll, rckFailAll atomic.Int64
@@ -303,6 +303,7 @@ func (r *ribs) RetrStats() (iface.RetrStats, error) {
 		Fail:      r.retrFail.Load(),
 		CacheHit:  r.retrCacheHit.Load(),
 		CacheMiss: r.retrCacheMiss.Load(),
+		Active:    r.retrActive.Load(),
 	}, nil
 }
 

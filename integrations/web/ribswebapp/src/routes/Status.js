@@ -580,26 +580,35 @@ function RetrStats({retrStats}) {
                     <td>Cache Miss:</td>
                     <td>{formatNum(retrStats.CacheMiss)}</td>
                 </tr>
+                <tr>
+                    <td>Active Retrievals:</td>
+                    <td>{formatNum(retrStats.Active)}</td>
+                </tr>
                 </tbody>
             </table>
         </div>
     )
 }
 
-function StagingStats({stagingStats}) {
+function StagingStats() {
     const prevStatsRef = useRef({});
     const readReqsEMARef = useRef(0);
     const readBytesEMARef = useRef(0);
     const uploadBytesEMARef = useRef(0);
     const redirectsEMARef = useRef(0);
     const smoothingFactor = 1 / 10;
+    const [stagingStats, setStagingStats] = useState({});
 
-    useEffect(() => {
+
+    const fetchStatus = async () => {
+        const stats = await RibsRPC.call("StagingStats");
+        setStagingStats(stats);
+
         const prevStats = prevStatsRef.current;
-        const readReqs = stagingStats.ReadReqs;
-        const readBytes = stagingStats.ReadBytes;
-        const uploadBytes = stagingStats.UploadBytes;
-        const redirects = stagingStats.Redirects;
+        const readReqs = stats.ReadReqs;
+        const readBytes = stats.ReadBytes;
+        const uploadBytes = stats.UploadBytes;
+        const redirects = stats.Redirects;
 
         if (prevStats.ReadReqs !== undefined) {
             const readReqsRate = readReqs - prevStats.ReadReqs;
@@ -630,15 +639,28 @@ function StagingStats({stagingStats}) {
         }
 
         prevStatsRef.current = { ReadReqs: readReqs, ReadBytes: readBytes, UploadBytes: uploadBytes, Redirects: redirects };
-    }, [stagingStats]);
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 1000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
 
     return (
         <div>
-            <h2>Remote Staging Stats</h2>
+            <h2>Staging Stats</h2>
             <table className="compact-table">
                 <tbody>
                 <tr>
-                    <td>Read Reqs/s:</td>
+                    <td>Read Requests:</td>
+                    <td>{formatNum(stagingStats.ReadReqs)}</td>
+                </tr>
+                <tr>
+                    <td>Read Rate:</td>
                     <td>{formatNum(Math.round(readReqsEMARef.current))}/s</td>
                 </tr>
                 <tr>
@@ -928,7 +950,6 @@ function Status() {
     const [reachableProviders, setReachableProviders] = useState([]);
     const [dealSummary, setDealSummary] = useState({});
     const [retrStats, setRetrStats] = useState({});
-    const [stagingStats, setStagingStats] = useState({});
     const [retrChecker, setRetrChecker] = useState({})
     const [workerStats, setWorkerStats] = useState({})
 
@@ -942,7 +963,6 @@ function Status() {
             const reachableProviders = await RibsRPC.call("ReachableProviders");
             const dealSummary = await RibsRPC.call("DealSummary");
             const retrStats = await RibsRPC.call("RetrStats");
-            const stagingStats = await RibsRPC.call("StagingStats");
             const retrCheckerStats = await RibsRPC.call("RetrChecker")
             const workerStats = await RibsRPC.call("WorkerStats")
 
@@ -952,7 +972,6 @@ function Status() {
             setReachableProviders(reachableProviders);
             setDealSummary(dealSummary);
             setRetrStats(retrStats);
-            setStagingStats(stagingStats);
             setRetrChecker(retrCheckerStats);
             setWorkerStats(workerStats);
         } catch (error) {
@@ -991,7 +1010,7 @@ function Status() {
                 <h1>External Storage</h1>
                 <div className="status-grid">
                     <RetrStats retrStats={retrStats} />
-                    <StagingStats stagingStats={stagingStats} />
+                    <StagingStats />
                     <RetrCheckerStats stats={retrChecker} />
                 </div>
 
