@@ -69,7 +69,7 @@ function Content() {
                         {groupIds.map((id, index) => (
                             <li key={index} onClick={() => handleGroupClick(index)} style={{margin: '1em 0', cursor: 'pointer', padding: '1em', borderRadius: '10px', boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.1)'}}>
                                 {index !== expandedGroupId && <>Group {id}</>}
-                                {index === expandedGroupId && <Group groupKey={id} headHeight={headHeight} />}
+                                {index === expandedGroupId && <Group groupKey={id} headHeight={headHeight} showCid={groupIds === null ? null : cid} />}
                             </li>
                         ))}
                     </ul>

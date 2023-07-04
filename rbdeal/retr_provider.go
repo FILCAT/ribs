@@ -231,7 +231,11 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 		blockCache: must.One(lru.New[mhStr, []byte](BlockCacheSize)),
 	}
 
-	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp), lassie.WithConcurrentSPRetrievals(10), lassie.WithGlobalTimeout(30*time.Second), lassie.WithProviderTimeout(4*time.Second))
+	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp),
+		lassie.WithConcurrentSPRetrievals(1000),
+		lassie.WithBitswapConcurrency(1000),
+		lassie.WithGlobalTimeout(30*time.Second),
+		lassie.WithProviderTimeout(4*time.Second))
 	if err != nil {
 		log.Fatalw("failed to create lassie", "error", err)
 	}
@@ -358,6 +362,9 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 
 	r.ongoingRequests[cidToGet] = promise
 	r.ongoingRequestsLk.Unlock()
+
+	r.r.retrActive.Add(1)
+	defer r.r.retrActive.Add(-1)
 
 	request := types.RetrievalRequest{
 		RetrievalID:       must.One(types.NewRetrievalID()),

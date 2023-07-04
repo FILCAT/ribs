@@ -5,7 +5,7 @@ import "./Groups.css";
 import "./Deal.css";
 import {Link} from "react-router-dom";
 
-function Deal({ deal, headHeight }) {
+function Deal({ deal, headHeight, pieceCid, dataCid }) {
     const {
         UUID,
         Provider,
@@ -47,6 +47,11 @@ function Deal({ deal, headHeight }) {
                     {DealID>0 && <span> <a href={`https://filfox.info/en/deal/${DealID}`} target="_blank" rel="noopener noreferrer">{DealID}</a></span>}
                 </span>
             )}
+            {dataCid && (
+                <span>
+                    <a href={`https://dag.parts/view/f0${Provider}/${pieceCid}/${dataCid}/?view=ipld`} target="_blank" rel="noopener noreferrer">[dagparts ipld]</a>
+                </span>
+            )}
             {!Sealed && (
                 <>
                     {BytesRecv > 0 && <>
@@ -82,7 +87,7 @@ const groupStateText = [
 const GroupStateWritable = 0;
 const GroupStateOffloaded = 4;
 
-export function Group({ groupKey, headHeight }) {
+export function Group({ groupKey, headHeight, showCid }) {
     const [group, setGroup] = useState({
         Deals: [],
     });
@@ -189,7 +194,7 @@ export function Group({ groupKey, headHeight }) {
                 {dealsToDisplay.length > 0 && (
                     <>
                         {dealsToDisplay.map((deal) => (
-                            <Deal key={deal.UUID} deal={deal} headHeight={headHeight} />
+                            <Deal key={deal.UUID} deal={deal} headHeight={headHeight} pieceCid={group.PieceCID} dataCid={showCid} />
                         ))}
                     </>
                 )}

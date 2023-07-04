@@ -87,7 +87,7 @@ type ribs struct {
 	moreDealsLocks map[iface.GroupKey]struct{}
 
 	/* retrieval stats */
-	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss atomic.Int64
+	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss, retrActive atomic.Int64
 }
 
 func (r *ribs) Wallet() iface.Wallet {
@@ -256,6 +256,7 @@ func (r *ribs) RetrStats() (iface.RetrStats, error) {
 		Fail:      r.retrFail.Load(),
 		CacheHit:  r.retrCacheHit.Load(),
 		CacheMiss: r.retrCacheMiss.Load(),
+		Active:    r.retrActive.Load(),
 	}, nil
 }
 
