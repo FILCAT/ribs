@@ -673,6 +673,32 @@ function StagingStats({stagingStats}) {
     )
 }
 
+// retrieval checker stats
+
+// read/write busy time
+
+// process stats
+// - memory
+// - fds
+// - gc
+// - goroutines
+
+// libp2p nodes
+// - peer ids
+// - peer counts
+// - bw
+
+// lotus rpc
+// - calls
+
+// - metamask integ?
+
+// - market balance setting
+
+// - commp compute rate
+// - bsst compute rate??
+// - local index rates
+
 function Status() {
     const [walletInfo, setWalletInfo] = useState(null);
     const [groups, setGroups] = useState([]);
