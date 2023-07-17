@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
+import content from "./Content";
 
 const oneFil = 1000000000000000000
 
@@ -794,6 +795,15 @@ function GoRuntimeStats() {
     );
 }
 
+
+function getPercentage(value, total) {
+    if (total === 0) {
+        return 0;
+    } else {
+        return (value / total) * 100;
+    }
+}
+
 function RetrCheckerStats({stats}) {
     return (
         <div>
@@ -802,29 +812,29 @@ function RetrCheckerStats({stats}) {
                 <tbody>
                 <tr>
                     <td>Progress:</td>
-                    <td>{stats.Success+stats.Fail} / {stats.ToDo} ({(stats.Success+stats.Fail) / stats.ToDo * 100}%)</td>
+                    <td>{stats.Success+stats.Fail} / {stats.ToDo} ({getPercentage(stats.Success+stats.Fail, stats.ToDo)}%)</td>
                 </tr>
                 <tr>
                     <td colSpan={2}>
                         <div className="progress-bar">
-                            <div className="progress-bar__fill" style={{ width: `${(stats.Success+stats.Fail) / stats.ToDo * 100}%` }}></div>
+                            <div className="progress-bar__fill" style={{ width: `${getPercentage(stats.Success+stats.Fail, stats.ToDo)}%` }}></div>
                         </div>
                     </td>
                 </tr>
                 <tr>
                     <td>Success (current):</td>
-                    <td>{stats.Success} ({stats.Success / stats.ToDo * 100}%)</td>
+                    <td>{stats.Success} ({getPercentage(stats.Success, stats.ToDo)}%)</td>
                 </tr>
                 <tr>
                     <td>Fail (current):</td>
-                    <td>{stats.Fail} ({stats.Fail / stats.ToDo * 100}%)</td>
+                    <td>{stats.Fail} ({getPercentage(stats.Fail, stats.ToDo)}%)</td>
                 </tr><tr>
                     <td>Success:</td>
-                    <td>{stats.SuccessAll} ({stats.SuccessAll / stats.ToDo * 100}%)</td>
+                    <td>{stats.SuccessAll} ({getPercentage(stats.SuccessAll, stats.ToDo)}%)</td>
                 </tr>
                 <tr>
                     <td>Fail:</td>
-                    <td>{stats.FailAll} ({stats.FailAll / stats.ToDo * 100}%)</td>
+                    <td>{stats.FailAll} ({getPercentage(stats.FailAll, stats.ToDo)}%)</td>
                 </tr>
                 </tbody>
             </table>
