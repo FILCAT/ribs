@@ -8,8 +8,12 @@ import (
 	"github.com/lotus-web3/ribs/carlog"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
+	"io"
+	"sync/atomic"
 	"time"
 )
+
+var globalCommpBytes atomic.Int64
 
 func (m *Group) Finalize(ctx context.Context) error {
 	m.dataLk.Lock()
@@ -43,7 +47,13 @@ func (m *Group) GenCommP() error {
 
 	start := time.Now()
 
-	carSize, root, err := m.writeCar(cc)
+	commStatWr := &rateStatWriter{
+		w:  cc,
+		st: &globalCommpBytes,
+	}
+	defer commStatWr.done()
+
+	carSize, root, err := m.writeCar(commStatWr)
 	if err != nil {
 		return xerrors.Errorf("write car: %w", err)
 	}
@@ -131,3 +141,29 @@ func (m *Group) offloadStaging() error {
 
 	return nil
 }
+
+type rateStatWriter struct {
+	w io.Writer
+
+	st *atomic.Int64
+	t  int64
+}
+
+func (r *rateStatWriter) Write(p []byte) (n int, err error) {
+	n, err = r.w.Write(p)
+
+	r.t += int64(n)
+	if r.t > 1<<23 {
+		r.st.Add(r.t)
+		r.t = 0
+	}
+
+	return
+}
+
+func (r *rateStatWriter) done() {
+	r.st.Add(r.t)
+	r.t = 0
+}
+
+var _ io.Writer = &rateStatWriter{}

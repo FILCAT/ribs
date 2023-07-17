@@ -101,6 +101,10 @@ func (rc *RIBSRpc) P2PNodes(ctx context.Context) (map[string]ribs.Libp2pInfo, er
 	return rc.ribs.DealDiag().P2PNodes(ctx)
 }
 
+func (rc *RIBSRpc) WorkerStats(ctx context.Context) (ribs.WorkerStats, error) {
+	return rc.ribs.StorageDiag().WorkerStats(), nil
+}
+
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
 

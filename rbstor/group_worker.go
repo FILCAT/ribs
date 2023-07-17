@@ -7,6 +7,9 @@ import (
 )
 
 func (r *rbs) groupWorker(i int) {
+	r.workersAvail.Add(1)
+	defer r.workersAvail.Add(-1)
+
 	for {
 		select {
 		case task := <-r.tasks:
@@ -21,6 +24,8 @@ func (r *rbs) groupWorker(i int) {
 func (r *rbs) workerExecTask(toExec task) {
 	switch toExec.tt {
 	case taskTypeFinalize:
+		r.workersFinalizing.Add(1)
+		defer r.workersFinalizing.Add(-1)
 
 		r.lk.Lock()
 		g, ok := r.openGroups[toExec.group]
@@ -41,6 +46,9 @@ func (r *rbs) workerExecTask(toExec task) {
 		fallthrough
 
 	case taskTypeGenCommP:
+		r.workersCommP.Add(1)
+		defer r.workersCommP.Add(-1)
+
 		r.lk.Lock()
 		g, ok := r.openGroups[toExec.group]
 		r.lk.Unlock()

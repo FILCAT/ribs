@@ -132,6 +132,11 @@ type rbs struct {
 	grpReadSize    int64
 	grpWriteBlocks int64
 	grpWriteSize   int64
+
+	// workers
+	workersAvail      atomic.Int64
+	workersFinalizing atomic.Int64
+	workersCommP      atomic.Int64
 }
 
 func (r *rbs) Close() error {

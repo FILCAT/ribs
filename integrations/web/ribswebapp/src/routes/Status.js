@@ -797,7 +797,7 @@ function GoRuntimeStats() {
 function RetrCheckerStats({stats}) {
     return (
         <div>
-            <h2>Retrieval Checkec</h2>
+            <h2>Retrieval Checker</h2>
             <table className="compact-table">
                 <tbody>
                 <tr>
@@ -832,6 +832,45 @@ function RetrCheckerStats({stats}) {
     )
 }
 
+function WorkerStats({stats}) {
+    return (
+        <div>
+            <h2>Worker Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Use:</td>
+                    <td>{stats.InFinalize+stats.InCommP} / {stats.Available}</td>
+                </tr>
+                <tr>
+                    <td colSpan={2}>
+                        <div className="progress-bar">
+                            <div className="progress-bar__fill" style={{ width: `${(stats.InFinalize+stats.InCommP) / stats.Available * 100}%` }}></div>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Group Finalize:</td>
+                    <td>{stats.InFinalize}</td>
+                </tr>
+                <tr>
+                    <td>Compute Data CID</td>
+                    <td>{stats.InCommP}</td>
+                </tr><tr>
+                    <td>Queued Tasks:</td>
+                    <td>{stats.TaskQueue}</td>
+                </tr>
+                <tr>
+                    <td>DataCID rate:</td>
+                    <td>{formatBytesBinary(stats.CommPBytes)}</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+
 // read/write busy time
 
 // process stats [rpc]
@@ -859,6 +898,7 @@ function Status() {
     const [retrStats, setRetrStats] = useState({});
     const [stagingStats, setStagingStats] = useState({});
     const [retrChecker, setRetrChecker] = useState({})
+    const [workerStats, setWorkerStats] = useState({})
 
     const fetchStatus = async () => {
         try {
@@ -872,6 +912,7 @@ function Status() {
             const retrStats = await RibsRPC.call("RetrStats");
             const stagingStats = await RibsRPC.call("StagingStats");
             const retrCheckerStats = await RibsRPC.call("RetrChecker")
+            const workerStats = await RibsRPC.call("WorkerStats")
 
             setGroups(groups);
             setCrawlState(crawlState);
@@ -880,7 +921,8 @@ function Status() {
             setDealSummary(dealSummary);
             setRetrStats(retrStats);
             setStagingStats(stagingStats);
-            setRetrChecker(retrCheckerStats)
+            setRetrChecker(retrCheckerStats);
+            setWorkerStats(workerStats);
         } catch (error) {
             console.error("Error fetching status:", error);
         }
@@ -896,21 +938,37 @@ function Status() {
     }, []);
 
     return (
-        <div className="Status">
-            <div className="status-grid">
-                <GroupsTile groups={groups} />
-                <IoStats />
-                <TopIndexTile />
-                <DealsTile dealSummary={dealSummary} />
-                <ProvidersTile reachableProviders={reachableProviders} />
-                <CarUploadStatsTile carUploadStats={carUploadStats} />
-                <CrawlStateTile crawlState={crawlState} />
-                <WalletInfoTile walletInfo={walletInfo} />
-                <RetrStats retrStats={retrStats} />
-                <StagingStats stagingStats={stagingStats} />
-                <P2PNodes />
-                <GoRuntimeStats />
-                <RetrCheckerStats stats={retrChecker} />
+        <div className="">
+            <div className="Status">
+                <h1>Storage</h1>
+                <div className="status-grid">
+                    <GroupsTile groups={groups} />
+                    <DealsTile dealSummary={dealSummary} />
+                    <IoStats />
+                    <TopIndexTile />
+                </div>
+
+                <h1><abbr title="Decentralized Storage Network">DSN</abbr></h1>
+                <div className="status-grid">
+                    <ProvidersTile reachableProviders={reachableProviders} />
+                    <CarUploadStatsTile carUploadStats={carUploadStats} />
+                    <CrawlStateTile crawlState={crawlState} />
+                    <WalletInfoTile walletInfo={walletInfo} />
+                </div>
+
+                <h1>External Storage</h1>
+                <div className="status-grid">
+                    <RetrStats retrStats={retrStats} />
+                    <StagingStats stagingStats={stagingStats} />
+                    <RetrCheckerStats stats={retrChecker} />
+                </div>
+
+                <h1>Internals</h1>
+                <div className="status-grid">
+                    <P2PNodes />
+                    <GoRuntimeStats />
+                    <WorkerStats stats={workerStats} />
+                </div>
             </div>
         </div>
     );

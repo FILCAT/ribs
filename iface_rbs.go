@@ -102,6 +102,15 @@ type RBSDiag interface {
 	TopIndexStats(context.Context) (TopIndexStats, error)
 	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
+
+	WorkerStats() WorkerStats
+}
+
+type WorkerStats struct {
+	Available, InFinalize, InCommP int64
+	TaskQueue                      int64
+
+	CommPBytes int64
 }
 
 /* Deal diag */
