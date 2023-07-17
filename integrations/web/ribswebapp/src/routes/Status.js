@@ -832,8 +832,6 @@ function RetrCheckerStats({stats}) {
     )
 }
 
-// retrieval checker stats
-
 // read/write busy time
 
 // process stats [rpc]

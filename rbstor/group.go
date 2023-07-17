@@ -8,6 +8,7 @@ import (
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/carlog"
 	mh "github.com/multiformats/go-multihash"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"path/filepath"
 	"strconv"
@@ -183,21 +184,42 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 		sz[i] = int32(len(blk.RawData()))
 	}
 
-	err := m.jb.Put(c[:writeBlocks], b[:writeBlocks])
-	if err != nil {
-		// todo handle properly (abort, close, check disk space / resources, repopen)
-		// todo docrement inflight?
-		return 0, xerrors.Errorf("writing to jbob: %w", err)
-	}
+	// parallel data(log) / index write; In case of unclean shutdown we may get
+	// orphan entries in the top index, but that should be fine - unclean shutdowns
+	// generally don't happen a lot, and if we use one of those bad entries, and
+	// don't find the data in the correct block group, we'll just try another one.
+	// Proper cleanup is also possible, but very expensive as it requires scanning of
+	// all the data.
+	// tldr we do stuff in parallel because more speed good
+	eg := new(errgroup.Group)
 
-	// 3. write top-level index (before we update group head so replay is possible, before jbob commit so that it's faster)
-	//    missed, uncommitted jbob writes should be ignored.
-	// ^ TODO: Test this commit edge case
-	// TODO: Async index queue
-	err = m.index.AddGroup(ctx, c[:writeBlocks], sz[:writeBlocks], m.id)
-	if err != nil {
-		// todo handle properly (abort, close, check disk space / resources, repopen)
-		return 0, xerrors.Errorf("writing index: %w", err)
+	eg.Go(func() error {
+		err := m.jb.Put(c[:writeBlocks], b[:writeBlocks])
+		if err != nil {
+			// todo handle properly (abort, close, check disk space / resources, repopen)
+			// todo docrement inflight?
+			return xerrors.Errorf("writing to jbob: %w", err)
+		}
+
+		return nil
+	})
+
+	eg.Go(func() error {
+		// 3. write top-level index (before we update group head so replay is possible, before jbob commit so that it's faster)
+		//    missed, uncommitted jbob writes should be ignored.
+		// ^ TODO: Test this commit edge case
+		// TODO: Async index queue
+		err := m.index.AddGroup(ctx, c[:writeBlocks], sz[:writeBlocks], m.id)
+		if err != nil {
+			// todo handle properly (abort, close, check disk space / resources, repopen)
+			return xerrors.Errorf("writing index: %w", err)
+		}
+
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return 0, xerrors.Errorf("data/index write: %w", err)
 	}
 
 	// 3.5 mark as read-only if full
