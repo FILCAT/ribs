@@ -34,6 +34,16 @@ type RIBSDiag interface {
 	StagingStats() (StagingStats, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+
+	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
+}
+
+type Libp2pInfo struct {
+	PeerID string
+
+	Listen []string
+
+	Peers int
 }
 
 type StagingStats struct {

@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
+	"runtime"
 
 	"github.com/lotus-web3/ribs"
 )
@@ -84,6 +85,16 @@ func (rc *RIBSRpc) GroupIOStats(ctx context.Context) (ribs.GroupIOStats, error) 
 
 func (rc *RIBSRpc) GetGroupStats(ctx context.Context) (*ribs.GroupStats, error) {
 	return rc.ribs.StorageDiag().GetGroupStats()
+}
+
+func (rc *RIBSRpc) RuntimeStats(ctx context.Context) (runtime.MemStats, error) {
+	var out runtime.MemStats
+	runtime.ReadMemStats(&out)
+	return out, nil
+}
+
+func (rc *RIBSRpc) P2PNodes(ctx context.Context) (map[string]ribs.Libp2pInfo, error) {
+	return rc.ribs.DealDiag().P2PNodes(ctx)
 }
 
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {

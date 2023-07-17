@@ -57,6 +57,10 @@ type ribs struct {
 
 	//
 
+	/* sp crawl */
+
+	crawlHost host.Host
+
 	/* sp tracker */
 	crawlState atomic.Pointer[iface.CrawlState]
 
@@ -86,7 +90,9 @@ type ribs struct {
 	dealsLk        sync.Mutex
 	moreDealsLocks map[iface.GroupKey]struct{}
 
-	/* retrieval stats */
+	/* retrieval */
+	retrHost host.Host
+
 	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss atomic.Int64
 }
 
@@ -138,7 +144,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		moreDealsLocks: map[iface.GroupKey]struct{}{},
 	}
 
-	rp := newRetrievalProvider(context.TODO(), r)
+	rp, err := newRetrievalProvider(context.TODO(), r)
+	if err != nil {
+		return nil, xerrors.Errorf("creating retrieval provider: %w", err)
+	}
 
 	{
 		walletPath := "~/.ribswallet"

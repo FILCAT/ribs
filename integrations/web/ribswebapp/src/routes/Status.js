@@ -1,6 +1,7 @@
 import './Status.css';
 import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
+import { CopyToClipboard } from 'react-copy-to-clipboard';
 import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
 
 const oneFil = 1000000000000000000
@@ -673,20 +674,75 @@ function StagingStats({stagingStats}) {
     )
 }
 
+/*
+rpc:
+nodeName -> node info
+ 	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
+
+
+type Libp2pInfo struct {
+	PeerID string
+
+	Listen []string
+
+	Peers int
+} */
+
+function P2PNodes() {
+    const [nodes, setNodes] = useState({});
+
+    const fetchStatus = async () => {
+        try {
+            const nodeStats = await RibsRPC.call("P2PNodes");
+            setNodes(nodeStats)
+        } catch (error) {
+            console.error("Error fetching p2p node infos:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h2>LibP2P Nodes</h2>
+            <table className="compact-table">
+                <tbody>
+                {Object.keys(nodes).map((nodeName, index) => (
+                    <tr key={index}>
+                        <td colSpan={2}><h3>{nodeName}</h3></td>
+                        <td colSpan={2}>
+                            <CopyToClipboard text={nodes[nodeName].PeerID}>
+                                <p title={`PeerID: ${nodes[nodeName].PeerID}\n\nListen Addresses: ${nodes[nodeName].Listen.join('\n')}`}>
+                                    {`${nodes[nodeName].PeerID.slice(0, 10)}...`}
+                                </p>
+                            </CopyToClipboard>
+                        </td>
+                        <td colSpan={2}>Peers: {nodes[nodeName].Peers}</td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 // retrieval checker stats
 
 // read/write busy time
 
-// process stats
+// process stats [rpc]
 // - memory
 // - fds
 // - gc
 // - goroutines
 
-// libp2p nodes
-// - peer ids
-// - peer counts
-// - bw
 
 // lotus rpc
 // - calls
@@ -754,6 +810,7 @@ function Status() {
                 <WalletInfoTile walletInfo={walletInfo} />
                 <RetrStats retrStats={retrStats} />
                 <StagingStats stagingStats={stagingStats} />
+                <P2PNodes />
             </div>
         </div>
     );

@@ -64,6 +64,7 @@ func (r *ribs) spCrawler() {
 	if err != nil {
 		panic(err)
 	}
+	r.crawlHost = pingP2P
 
 	for {
 		select {
