@@ -843,6 +843,29 @@ function RetrCheckerStats({stats}) {
 }
 
 function WorkerStats({stats}) {
+    const prevStatsRef = useRef({});
+    const prevTimeRef = useRef(Date.now());
+    const commPBytesRateRef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    useEffect(() => {
+        const prevStats = prevStatsRef.current;
+        const currentTime = Date.now();
+        const elapsedTime = (currentTime - prevTimeRef.current) / 1000; // convert ms to s
+        prevTimeRef.current = currentTime;
+
+        if (prevStats.CommPBytes !== undefined) {
+            const commPBytesRate = (stats.CommPBytes - prevStats.CommPBytes) / elapsedTime;
+            commPBytesRateRef.current = calcEMA(
+                commPBytesRate,
+                commPBytesRateRef.current,
+                smoothingFactor
+            );
+        }
+
+        prevStatsRef.current = stats;
+    }, [stats]);
+
     return (
         <div>
             <h2>Worker Stats</h2>
@@ -872,14 +895,13 @@ function WorkerStats({stats}) {
                 </tr>
                 <tr>
                     <td>DataCID rate:</td>
-                    <td>{formatBytesBinary(stats.CommPBytes)}</td>
+                    <td>{formatBytesBinary(commPBytesRateRef.current)}/s</td>
                 </tr>
                 </tbody>
             </table>
         </div>
     )
 }
-
 
 // read/write busy time
 
