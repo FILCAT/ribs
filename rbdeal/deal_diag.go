@@ -77,3 +77,14 @@ func (r *ribs) P2PNodes(ctx context.Context) (map[string]iface.Libp2pInfo, error
 
 	return out, nil
 }
+
+func (r *ribs) RetrChecker() iface.RetrCheckerStats {
+	return iface.RetrCheckerStats{
+		ToDo:       r.rckToDo.Load(),
+		Started:    r.rckStarted.Load(),
+		Success:    r.retrSuccess.Load(),
+		Fail:       r.retrFail.Load(),
+		SuccessAll: r.rckSuccessAll.Load(),
+		FailAll:    r.rckFailAll.Load(),
+	}
+}

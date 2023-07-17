@@ -674,20 +674,6 @@ function StagingStats({stagingStats}) {
     )
 }
 
-/*
-rpc:
-nodeName -> node info
- 	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
-
-
-type Libp2pInfo struct {
-	PeerID string
-
-	Listen []string
-
-	Peers int
-} */
-
 function P2PNodes() {
     const [nodes, setNodes] = useState({});
 
@@ -808,16 +794,51 @@ function GoRuntimeStats() {
     );
 }
 
+function RetrCheckerStats({stats}) {
+    return (
+        <div>
+            <h2>Retrieval Checkec</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Progress:</td>
+                    <td>{stats.Success+stats.Fail} / {stats.ToDo} ({(stats.Success+stats.Fail) / stats.ToDo * 100}%)</td>
+                </tr>
+                <tr>
+                    <td colSpan={2}>
+                        <div className="progress-bar">
+                            <div className="progress-bar__fill" style={{ width: `${(stats.Success+stats.Fail) / stats.ToDo * 100}%` }}></div>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Success (current):</td>
+                    <td>{stats.Success} ({stats.Success / stats.ToDo * 100}%)</td>
+                </tr>
+                <tr>
+                    <td>Fail (current):</td>
+                    <td>{stats.Fail} ({stats.Fail / stats.ToDo * 100}%)</td>
+                </tr><tr>
+                    <td>Success:</td>
+                    <td>{stats.SuccessAll} ({stats.SuccessAll / stats.ToDo * 100}%)</td>
+                </tr>
+                <tr>
+                    <td>Fail:</td>
+                    <td>{stats.FailAll} ({stats.FailAll / stats.ToDo * 100}%)</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
 // retrieval checker stats
 
 // read/write busy time
 
 // process stats [rpc]
-// - memory
 // - fds
-// - gc
 // - goroutines
-
 
 // lotus rpc
 // - calls
@@ -839,6 +860,7 @@ function Status() {
     const [dealSummary, setDealSummary] = useState({});
     const [retrStats, setRetrStats] = useState({});
     const [stagingStats, setStagingStats] = useState({});
+    const [retrChecker, setRetrChecker] = useState({})
 
     const fetchStatus = async () => {
         try {
@@ -851,6 +873,7 @@ function Status() {
             const dealSummary = await RibsRPC.call("DealSummary");
             const retrStats = await RibsRPC.call("RetrStats");
             const stagingStats = await RibsRPC.call("StagingStats");
+            const retrCheckerStats = await RibsRPC.call("RetrChecker")
 
             setGroups(groups);
             setCrawlState(crawlState);
@@ -858,6 +881,8 @@ function Status() {
             setReachableProviders(reachableProviders);
             setDealSummary(dealSummary);
             setRetrStats(retrStats);
+            setStagingStats(stagingStats);
+            setRetrChecker(retrCheckerStats)
         } catch (error) {
             console.error("Error fetching status:", error);
         }
@@ -887,6 +912,7 @@ function Status() {
                 <StagingStats stagingStats={stagingStats} />
                 <P2PNodes />
                 <GoRuntimeStats />
+                <RetrCheckerStats stats={retrChecker} />
             </div>
         </div>
     );

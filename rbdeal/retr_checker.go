@@ -93,6 +93,13 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		return xerrors.Errorf("failed to get retrieval check candidates: %w", err)
 	}
 
+	r.rckToDo.Store(int64(len(candidates)))
+	r.rckStarted.Store(0)
+	r.rckSuccess.Store(0)
+	r.rckFail.Store(0)
+
+	// last retr check candidates
+
 	groups := map[iface.GroupKey]iface.GroupDesc{}
 	samples := map[iface.GroupKey][]multihash.Multihash{}
 	for _, candidate := range candidates {
@@ -116,6 +123,8 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 	}
 
 	for _, candidate := range candidates {
+		r.rckStarted.Add(1)
+
 		hashToGet := samples[candidate.Group][rand.Intn(len(samples[candidate.Group]))]
 		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
@@ -188,10 +197,16 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			res.Success = true
 			res.Duration = time.Since(start)
 			res.TimeToFirstByte = stat.TimeToFirstByte
+
+			r.rckSuccess.Add(1)
+			r.rckSuccessAll.Add(1)
 		} else {
 			log.Errorw("failed to fetch", "error", err)
 			res.Success = false
 			res.Error = err.Error()
+
+			r.rckFail.Add(1)
+			r.rckFailAll.Add(1)
 		}
 
 		prf.lk.Lock()

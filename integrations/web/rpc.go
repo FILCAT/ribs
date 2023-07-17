@@ -93,6 +93,10 @@ func (rc *RIBSRpc) RuntimeStats(ctx context.Context) (runtime.MemStats, error) {
 	return out, nil
 }
 
+func (rc *RIBSRpc) RetrChecker() (ribs.RetrCheckerStats, error) {
+	return rc.ribs.DealDiag().RetrChecker(), nil
+}
+
 func (rc *RIBSRpc) P2PNodes(ctx context.Context) (map[string]ribs.Libp2pInfo, error) {
 	return rc.ribs.DealDiag().P2PNodes(ctx)
 }

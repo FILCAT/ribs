@@ -94,6 +94,9 @@ type ribs struct {
 	retrHost host.Host
 
 	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss atomic.Int64
+
+	/* retrieval checker */
+	rckToDo, rckStarted, rckSuccess, rckFail, rckSuccessAll, rckFailAll atomic.Int64
 }
 
 func (r *ribs) Wallet() iface.Wallet {

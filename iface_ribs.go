@@ -36,6 +36,17 @@ type RIBSDiag interface {
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
 
 	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
+
+	RetrChecker() RetrCheckerStats
+}
+
+type RetrCheckerStats struct {
+	ToDo       int64
+	Started    int64
+	Success    int64
+	Fail       int64
+	SuccessAll int64
+	FailAll    int64
 }
 
 type Libp2pInfo struct {
