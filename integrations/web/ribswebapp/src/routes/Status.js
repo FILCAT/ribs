@@ -733,6 +733,81 @@ function P2PNodes() {
     );
 }
 
+function GoRuntimeStats() {
+    const [stats, setStats] = useState({});
+    const prevStatsRef = useRef({});
+    const prevTimeRef = useRef(Date.now());
+    const gcPausePercentEMARef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    const fetchStats = async () => {
+        try {
+            const runtimeStats = await RibsRPC.call("RuntimeStats");
+            const currentTime = Date.now();
+            const elapsedTime = currentTime - prevTimeRef.current;
+            prevTimeRef.current = currentTime;
+
+            if (prevStatsRef.current.PauseTotalNs !== undefined) {
+                const gcPauseTimeDelta = runtimeStats.PauseTotalNs - prevStatsRef.current.PauseTotalNs;
+                const gcPauseTimePercent = gcPauseTimeDelta / (elapsedTime * 1e6); // convert ms to ns
+                gcPausePercentEMARef.current = calcEMA(gcPauseTimePercent, gcPausePercentEMARef.current, smoothingFactor);
+            }
+
+            prevStatsRef.current = runtimeStats;
+            setStats(runtimeStats);
+        } catch (error) {
+            console.error("Error fetching Go runtime stats:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStats();
+        const intervalId = setInterval(fetchStats, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h2>Go Runtime Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Alloc:</td>
+                    <td>{formatBytesBinary(stats.Alloc)}</td>
+                </tr>
+                <tr>
+                    <td>TotalAlloc:</td>
+                    <td>{formatBytesBinary(stats.TotalAlloc)}</td>
+                </tr>
+                <tr>
+                    <td>HeapAlloc:</td>
+                    <td>{formatBytesBinary(stats.HeapAlloc)}</td>
+                </tr>
+                <tr>
+                    <td>HeapSys:</td>
+                    <td>{formatBytesBinary(stats.HeapSys)}</td>
+                </tr>
+                <tr>
+                    <td>HeapObjects:</td>
+                    <td>{formatNum(stats.HeapObjects)}</td>
+                </tr>
+                <tr>
+                    <td>Number of GC:</td>
+                    <td>{formatNum(stats.NumGC)}</td>
+                </tr>
+                <tr>
+                    <td>GC Pause (% of time):</td>
+                    <td>{formatNum(gcPausePercentEMARef.current * 100, 3)}%</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 // retrieval checker stats
 
 // read/write busy time
@@ -811,6 +886,7 @@ function Status() {
                 <RetrStats retrStats={retrStats} />
                 <StagingStats stagingStats={stagingStats} />
                 <P2PNodes />
+                <GoRuntimeStats />
             </div>
         </div>
     );

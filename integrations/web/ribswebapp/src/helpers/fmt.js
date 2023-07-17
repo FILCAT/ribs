@@ -16,13 +16,13 @@ export function formatBitsBinary(bytes) {
     return (n.toFixed(l > 0 ? 2 : 0) + ' ' + units[l]);
 }
 
-export function formatNum(bytes) {
+export function formatNum(nm, fracDigits = 0) {
     const units = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
-    let l = 0, n = parseInt(bytes, 10) || 0;
+    let l = 0, n = parseFloat(nm) || 0;
     while (n >= 1000 && ++l) {
         n = n / 1000;
     }
-    return (n.toFixed(l > 0 ? 2 : 0) + ' ' + units[l]).trim();
+    return (n.toFixed(l > 0 ? fracDigits : 0) + ' ' + units[l]).trim();
 }
 
 export function formatNum6(bytes) {
