@@ -10,7 +10,7 @@ auto-dagstore-like blockstore with fully automated Filecoin data offload support
 # WORK IN PROGRESS
 
 **RIBS is a work-in-progress project. Most features aren't finished, and on-disk
-format is not stabse. DO NOT USE FOR STORING CIRTICAL DATA, OR ANY OTHER DATA**
+format is not stable. DO NOT USE FOR STORING CIRITICAL DATA, OR ANY OTHER DATA**
 
 **Status:**
 * Data layer is mostly implemented, but needs a lot of hardening to gain

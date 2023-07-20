@@ -3,6 +3,12 @@ package rbdeal
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -14,24 +20,52 @@ import (
 	"github.com/lotus-web3/ribs/rbstor"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
-	"net/url"
-	"os"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 var log = logging.Logger("ribs")
 
 type openOptions struct {
-	hostGetter func(...libp2p.Option) (host.Host, error)
+	hostGetter          func(...libp2p.Option) (host.Host, error)
+	localWalletOpener   func(path string) (*ributil.LocalWallet, error)
+	localWalletPath     string
+	fileCoinAPIEndpoint string
 }
 
 type OpenOption func(*openOptions)
 
+// WithHostGetter sets the function used to instantiate the libp2p host used by RIBS.
+// Defaults to libp2p.New.
 func WithHostGetter(hg func(...libp2p.Option) (host.Host, error)) OpenOption {
 	return func(o *openOptions) {
 		o.hostGetter = hg
+	}
+}
+
+// WithLocalWalletOpener sets the function used to open the local wallet path.
+// Defaults to using ributil.OpenWallet, where the wallet is instantiated if it does not exist.
+// In a case where it is auto generated, the wallet path must be backed up elsewhere.
+//
+// See: WithLocalWalletPath.
+func WithLocalWalletOpener(wg func(path string) (*ributil.LocalWallet, error)) OpenOption {
+	return func(o *openOptions) {
+		o.localWalletOpener = wg
+	}
+}
+
+// WithLocalWalletPath sets the path to the local directory containing the wallet.
+// Care must be taken in backing up this directory.
+// Defaults to `.ribswallet` under user home directory.
+func WithLocalWalletPath(wp string) OpenOption {
+	return func(o *openOptions) {
+		o.localWalletPath = wp
+	}
+}
+
+// WithFileCoinApiEndpoint sets the FileCoin API endpoint used to probe the chain.
+// Defaults to "https://pac-l-gw.devtty.eu/rpc/v1".
+func WithFileCoinApiEndpoint(wp string) OpenOption {
+	return func(o *openOptions) {
+		o.localWalletPath = wp
 	}
 }
 
@@ -109,7 +143,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	}
 
 	opt := &openOptions{
-		hostGetter: libp2p.New,
+		hostGetter:          libp2p.New,
+		localWalletOpener:   ributil.OpenWallet,
+		localWalletPath:     "~/.ribswallet",
+		fileCoinAPIEndpoint: "https://pac-l-gw.devtty.eu/rpc/v1",
 	}
 
 	for _, o := range opts {
@@ -130,7 +167,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		RBS: rbs,
 		db:  db,
 
-		lotusRPCAddr: "https://pac-l-gw.devtty.eu/rpc/v1",
+		lotusRPCAddr: opt.fileCoinAPIEndpoint,
 
 		uploadStats:     map[iface.GroupKey]*iface.GroupUploadStats{},
 		uploadStatsSnap: map[iface.GroupKey]*iface.GroupUploadStats{},
@@ -153,9 +190,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	}
 
 	{
-		walletPath := "~/.ribswallet"
-
-		wallet, err := ributil.OpenWallet(walletPath)
+		wallet, err := opt.localWalletOpener(opt.localWalletPath)
 		if err != nil {
 			return nil, xerrors.Errorf("open wallet: %w", err)
 		}
@@ -177,7 +212,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 				fmt.Println("CREATED NEW RIBS WALLET")
 				fmt.Println("ADDRESS: ", color.GreenString("%s", a))
 				fmt.Println("")
-				fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", walletPath)
+				fmt.Printf("BACKUP YOUR WALLET DIRECTORY (%s)\n", opt.localWalletPath)
 				fmt.Println("")
 				fmt.Println("Before using RIBS, you must fund your wallet with FIL.")
 				fmt.Println("You can also supply it with DataCap if you want to make")
