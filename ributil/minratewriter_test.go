@@ -33,13 +33,13 @@ func TestRateEnforcingWriter(t *testing.T) {
 		defer rew.Done()
 
 		data := make([]byte, 1024)
-		n, err := rew.Write(data)
+		_, err := rew.Write(data)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		time.Sleep(60 * time.Millisecond) // Increase the sleep duration to make sure the rate is below the minimum
-		n, err = rew.Write(data)
+		n, err := rew.Write(data)
 		t.Log(err)
 		if !errors.Is(err, rew.writeError) {
 			t.Fatalf("expected error, got: %v", err)

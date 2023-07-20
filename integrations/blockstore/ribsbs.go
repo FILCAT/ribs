@@ -3,6 +3,9 @@ package ribsbstore
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
+	"time"
+
 	lotusbstore "github.com/filecoin-project/lotus/blockstore"
 	blockstore "github.com/ipfs/boxo/blockstore"
 	blocks "github.com/ipfs/go-block-format"
@@ -11,8 +14,6 @@ import (
 	"github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"sync/atomic"
-	"time"
 )
 
 type Request[P, R any] struct {
@@ -38,8 +39,6 @@ type Blockstore struct {
 	flushPos atomic.Int64
 
 	flush chan struct{}
-
-	lastFlush atomic.Int64
 
 	stop, stopped chan struct{}
 }
@@ -280,9 +279,7 @@ func (b *Blockstore) AllKeysChan(ctx context.Context) (<-chan cid.Cid, error) {
 	return nil, xerrors.Errorf("too slow")
 }
 
-func (b *Blockstore) HashOnRead(enabled bool) {
-	return
-}
+func (b *Blockstore) HashOnRead(bool) {}
 
 func (b *Blockstore) Flush(ctx context.Context) error {
 	// note "now"

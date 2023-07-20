@@ -3,12 +3,12 @@ package rbstor
 import (
 	"context"
 	"encoding/binary"
-	iface "github.com/lotus-web3/ribs"
-	"golang.org/x/xerrors"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
+	"golang.org/x/xerrors"
 )
 
 // PebbleIndex is the top-level index, thread-safe.
@@ -163,7 +163,7 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, si
 			// size key
 			binary.BigEndian.PutUint32(sizeBytes, uint32(sizes[i]))
 
-			key := append(append([]byte("s:"), m...))
+			key := append([]byte("s:"), m...)
 			if err := batch.Set(key, sizeBytes, pebble.NoSync); err != nil {
 				return xerrors.Errorf("addgroup set (sk): %w", err)
 			}

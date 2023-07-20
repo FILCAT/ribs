@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"sort"
+	"time"
+
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
 	types2 "github.com/filecoin-project/lotus/chain/types"
@@ -14,9 +18,6 @@ import (
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
-	"path/filepath"
-	"sort"
-	"time"
 )
 
 type ribsDB struct {
@@ -703,15 +704,13 @@ FROM
 
 	var ds iface.DealSummary
 
-	for res.Next() {
+	if res.Next() {
 		err := res.Scan(&ds.NonFailed, &ds.TotalDataSize, &ds.TotalDealSize,
 			&ds.StoredDataSize, &ds.StoredDealSize,
 			&ds.InProgress, &ds.Done, &ds.Failed)
 		if err != nil {
 			return iface.DealSummary{}, xerrors.Errorf("scanning group: %w", err)
 		}
-
-		break
 	}
 
 	return ds, nil
@@ -793,7 +792,7 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 
 	var found bool
 
-	for res.Next() {
+	if res.Next() {
 		var commp, root []byte
 		var pieceSize, carSize int64
 		err := res.Scan(&commp, &root, &pieceSize, &carSize)
@@ -803,12 +802,13 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 
 		out.CommP = commp
 		_, out.Root, err = cid.CidFromBytes(root)
+		if err != nil {
+			return dealParams{}, xerrors.Errorf("parsing cid: %w", err)
+		}
 		out.PieceSize = pieceSize
 		out.CarSize = carSize
 
 		found = true
-
-		break
 	}
 
 	if err := res.Err(); err != nil {

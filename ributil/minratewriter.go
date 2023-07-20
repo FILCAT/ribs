@@ -1,12 +1,13 @@
 package ributil
 
 import (
-	"golang.org/x/xerrors"
 	"io"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/xerrors"
 )
 
 type RateCounters[K comparable] struct {
@@ -121,8 +122,7 @@ func (rc *RateCounter) Check(cb func() error) error {
 }
 
 type RateEnforcingWriter struct {
-	w        io.Writer
-	rateMbps float64
+	w io.Writer
 
 	writeError error
 

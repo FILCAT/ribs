@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
+	"time"
+
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-fil-markets/shared"
@@ -19,19 +22,11 @@ import (
 	"github.com/lotus-web3/ribs/ributil"
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"golang.org/x/xerrors"
-	"sort"
-	"time"
 )
 
 const DealStatusV12ProtocolID = "/fil/storage/status/1.2.0"
 
 func (r *ribs) dealTracker(ctx context.Context) {
-	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
-	if err != nil {
-		panic(err)
-	}
-	defer closer()
-
 	for {
 		checkStart := time.Now()
 		select {
@@ -40,7 +35,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 		default:
 		}
 
-		err := r.runDealCheckLoop(ctx, gw)
+		err := r.runDealCheckLoop(ctx)
 		if err != nil {
 			log.Errorw("deal check loop failed", "error", err)
 		}
@@ -59,7 +54,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 	}
 }
 
-func (r *ribs) runDealCheckLoop(ctx context.Context, gw api.Gateway) error {
+func (r *ribs) runDealCheckLoop(ctx context.Context) error {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
 		return xerrors.Errorf("creating gateway rpc client: %w", err)
