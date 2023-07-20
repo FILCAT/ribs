@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"github.com/ipfs/go-cid"
-	u "github.com/ipfs/go-ipfs-util"
-	"golang.org/x/xerrors"
 	"io"
 	"io/fs"
 	"os"
@@ -15,8 +12,11 @@ import (
 	"testing"
 
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	u "github.com/ipfs/go-ipfs-util"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 )
 
 func TestCarLogBasic(t *testing.T) {
@@ -357,13 +357,15 @@ func TestCarStaging(t *testing.T) {
 	require.NoError(t, err)
 }
 
+var _ CarStorageProvider = (*testStagingProvider)(nil)
+
 type testStagingProvider struct {
 	lk sync.Mutex
 
 	bdata []byte
 }
 
-func (t *testStagingProvider) Upload(ctx context.Context, src func(writer io.Writer) error) error {
+func (t *testStagingProvider) Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error {
 	t.lk.Lock()
 	defer t.lk.Unlock()
 
