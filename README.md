@@ -121,12 +121,15 @@ go build -o kuri ./integrations/kuri/cmd/kuri
 
 ```
 ./kuri init
+
+# By default a new wallet will be generated.
+# Send Filecoin funds or DataCap before the next
+# starting the node daemon.
+
 ./kuri daemon
 ```
 
-// todo note how to setup wallet
-
-* Use the node, like any Kube node!
+* Use the node, like any Kubo node!
 
 ```
 ./kuri add README.md
