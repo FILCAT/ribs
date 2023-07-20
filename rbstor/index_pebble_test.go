@@ -3,13 +3,13 @@ package rbstor
 import (
 	"context"
 	"crypto/rand"
+	"math/big"
 	"os"
 	"testing"
 
 	iface "github.com/lotus-web3/ribs"
-	"github.com/stretchr/testify/require"
-
 	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPebbleIndex(t *testing.T) {
@@ -21,10 +21,10 @@ func TestPebbleIndex(t *testing.T) {
 		require.NoError(t, idx.Close())
 	})
 
-	mhs := genMhashList(10)
+	mhs, sizes := genMhashList(t, 10)
 	group := iface.GroupKey(2)
 
-	err = idx.AddGroup(context.Background(), mhs, group)
+	err = idx.AddGroup(context.Background(), mhs, sizes, group)
 	require.NoError(t, err)
 
 	var result [][]iface.GroupKey
@@ -62,14 +62,14 @@ func TestMultipleGroupsPerHash(t *testing.T) {
 		require.NoError(t, idx.Close())
 	})
 
-	mhs := genMhashList(10)
+	mhs, sizes := genMhashList(t, 10)
 	group1 := iface.GroupKey(2)
 	group2 := iface.GroupKey(3)
 
-	err = idx.AddGroup(context.Background(), mhs, group1)
+	err = idx.AddGroup(context.Background(), mhs, sizes, group1)
 	require.NoError(t, err)
 
-	err = idx.AddGroup(context.Background(), mhs, group2)
+	err = idx.AddGroup(context.Background(), mhs, sizes, group2)
 	require.NoError(t, err)
 
 	var result [][]iface.GroupKey
@@ -97,8 +97,11 @@ func TestMultipleGroupsPerHash(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func genMhashList(count int) []multihash.Multihash {
+func genMhashList(t testing.TB, count int) ([]multihash.Multihash, []int32) {
+	const maxSize = 1 << 20 // 1 MiB
+	maxSizeBigInt := big.NewInt(maxSize)
 	mhashes := make([]multihash.Multihash, count)
+	sizes := make([]int32, count)
 	for i := 0; i < count; i++ {
 		buf := make([]byte, 32)
 		_, err := rand.Read(buf)
@@ -110,8 +113,11 @@ func genMhashList(count int) []multihash.Multihash {
 			panic(err)
 		}
 		mhashes[i] = mhash
+		size, err := rand.Int(rand.Reader, maxSizeBigInt)
+		require.NoError(t, err)
+		sizes[i] = int32(size.Int64())
 	}
-	return mhashes
+	return mhashes, sizes
 }
 
 func BenchmarkAddGet16k(b *testing.B) {
@@ -130,11 +136,11 @@ func BenchmarkAddGet16k(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-		mhs := genMhashList(16_000)
+		mhs, sizes := genMhashList(b, 16_000)
 		group := iface.GroupKey(n)
 		b.StartTimer()
 
-		err = idx.AddGroup(context.Background(), mhs, group)
+		err = idx.AddGroup(context.Background(), mhs, sizes, group)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -171,10 +177,10 @@ func BenchmarkGetSingleHash100k(b *testing.B) {
 	})
 
 	// Prepare the database with 100,000 entries
-	mhs := genMhashList(1_000_000)
+	mhs, sizes := genMhashList(b, 1_000_000)
 	for i, mh := range mhs {
 		group := iface.GroupKey(i)
-		err = idx.AddGroup(context.Background(), []multihash.Multihash{mh}, group)
+		err = idx.AddGroup(context.Background(), []multihash.Multihash{mh}, []int32{sizes[i]}, group)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -210,7 +216,7 @@ func BenchmarkAddSingleHash100k(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	mhs := genMhashList(100_000)
+	mhs, sizes := genMhashList(b, 100_000)
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -219,7 +225,7 @@ func BenchmarkAddSingleHash100k(b *testing.B) {
 		group := iface.GroupKey(100_000 + n) // Use new groups for each AddGroup call
 		b.StartTimer()
 
-		err = idx.AddGroup(context.Background(), []multihash.Multihash{mhs[hashIndex]}, group)
+		err = idx.AddGroup(context.Background(), []multihash.Multihash{mhs[hashIndex]}, []int32{sizes[hashIndex]}, group)
 		if err != nil {
 			b.Fatal(err)
 		}
