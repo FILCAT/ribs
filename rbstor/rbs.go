@@ -3,6 +3,12 @@ package rbstor
 import (
 	"context"
 	"database/sql"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -10,11 +16,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"io"
-	"os"
-	"path/filepath"
-	"sync"
-	"sync/atomic"
 )
 
 var log = logging.Logger("rbs")
@@ -126,7 +127,6 @@ type rbs struct {
 	staging  atomic.Pointer[iface.StagingStorageProvider]
 
 	// diag cache
-	diagLk sync.Mutex
 
 	grpReadBlocks  int64
 	grpReadSize    int64
@@ -174,7 +174,6 @@ type ribBatch struct {
 	toFlush            map[iface.GroupKey]struct{}
 
 	// todo: use lru
-	currentReadTarget iface.GroupKey
 }
 
 func (r *rbs) Session(ctx context.Context) iface.Session {

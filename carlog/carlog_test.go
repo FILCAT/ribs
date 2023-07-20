@@ -13,7 +13,6 @@ import (
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
-	u "github.com/ipfs/go-ipfs-util"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/xerrors"
@@ -76,6 +75,7 @@ func TestCarLogBasic(t *testing.T) {
 		require.Equal(t, b, []byte("hello world"))
 		return nil
 	})
+	require.NoError(t, err)
 
 	// test open finalized
 	err = jb.Close()
@@ -97,6 +97,7 @@ func TestCarLogBasic(t *testing.T) {
 		require.Equal(t, h, hs.Hash())
 		return nil
 	})
+	require.NoError(t, err)
 
 	// test offload
 	require.NoError(t, jb.Offload())
@@ -150,7 +151,10 @@ func TestCarLog3K(t *testing.T) {
 		_, err := rand.Read(blockData[i])
 		require.NoError(t, err)
 
-		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV0(u.Hash(blockData[i])))
+		mh, err := multihash.Sum(blockData[i], multihash.SHA2_256, -1)
+		require.NoError(t, err)
+
+		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV1(cid.Raw, mh))
 		mhList[i] = b.Cid().Hash()
 		blockList[i] = b
 	}
@@ -176,6 +180,7 @@ func TestCarLog3K(t *testing.T) {
 		require.Equal(t, b, blockData[i])
 		return nil
 	})
+	require.NoError(t, err)
 
 	err = jb.Close()
 	require.NoError(t, err)
@@ -202,6 +207,7 @@ func TestCarLog3K(t *testing.T) {
 	require.NoError(t, err)
 
 	err = jb.Close()
+	require.NoError(t, err)
 
 	//require.NoError(t, VerifyCar(filepath.Join(td, "canon.car")))
 	//require.NoError(t, VerifyCar(filepath.Join(td, "data.car")))
@@ -291,7 +297,10 @@ func TestCarStaging(t *testing.T) {
 		_, err := rand.Read(blockData[i])
 		require.NoError(t, err)
 
-		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV0(u.Hash(blockData[i])))
+		mh, err := multihash.Sum(blockData[i], multihash.SHA2_256, -1)
+		require.NoError(t, err)
+
+		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV1(cid.Raw, mh))
 		mhList[i] = b.Cid().Hash()
 		blockList[i] = b
 	}
