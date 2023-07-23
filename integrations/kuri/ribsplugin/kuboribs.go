@@ -3,6 +3,8 @@ package kuboribs
 import (
 	"context"
 	"fmt"
+	"os"
+
 	lotusbstore "github.com/filecoin-project/lotus/blockstore"
 	blockstore "github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/go-cid"
@@ -29,7 +31,6 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
-	"os"
 )
 
 var log = logging.Logger("ribsplugin")
@@ -169,8 +170,6 @@ func (d *flushingGCLocker) Unlock(ctx context.Context) {
 	if err != nil {
 		log.Errorw("flushing blockstore through GCLocker", "error", err)
 	}
-
-	return
 }
 
 func (d *flushingGCLocker) GCLock(ctx context.Context) blockstore.Unlocker {
