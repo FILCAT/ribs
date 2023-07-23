@@ -6,11 +6,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/filecoin-project/lotus/lib/must"
-	lru "github.com/hashicorp/golang-lru/v2"
-	cbor "github.com/ipfs/go-ipld-cbor"
-	carutil "github.com/ipld/go-car/util"
-	"golang.org/x/xerrors"
 	"io"
 	"math/bits"
 	"os"
@@ -18,6 +13,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/filecoin-project/lotus/lib/must"
+	lru "github.com/hashicorp/golang-lru/v2"
+	cbor "github.com/ipfs/go-ipld-cbor"
+	carutil "github.com/ipld/go-car/util"
+	"golang.org/x/xerrors"
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -1569,6 +1570,7 @@ func (j *CarLog) Offload() error {
 	if err := j.head.Close(); err != nil {
 		return xerrors.Errorf("closing head: %w", err)
 	}
+	j.head = nil
 
 	return nil
 }
@@ -1623,6 +1625,27 @@ func (j *CarLog) Close() error {
 	j.pendingReads.Wait() // writes hold idxLk
 
 	if ri == nil {
+		if j.data != nil {
+			_, err := j.Commit()
+			if err != nil {
+				return xerrors.Errorf("committing head: %w", err)
+			}
+			if err := j.data.Close(); err != nil {
+				return xerrors.Errorf("closing data: %w", err)
+			}
+		}
+
+		if j.head != nil {
+			if err := j.head.Close(); err != nil {
+				return xerrors.Errorf("closing head: %w", err)
+			}
+		}
+
+		if j.eIdx != nil {
+			if err := j.eIdx.Close(); err != nil {
+				return xerrors.Errorf("closing e index: %w", err)
+			}
+		}
 		// either already closed, or offloaded
 		return nil
 	}
