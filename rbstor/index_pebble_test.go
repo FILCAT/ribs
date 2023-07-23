@@ -13,9 +13,7 @@ import (
 )
 
 func TestPebbleIndex(t *testing.T) {
-	tdir := t.TempDir()
-
-	idx, err := NewPebbleIndex(tdir)
+	idx, err := NewPebbleIndex(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, idx.Close())
@@ -52,9 +50,7 @@ func TestPebbleIndex(t *testing.T) {
 }
 
 func TestMultipleGroupsPerHash(t *testing.T) {
-	tdir := t.TempDir()
-
-	idx, err := NewPebbleIndex(tdir)
+	idx, err := NewPebbleIndex(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, idx.Close())
