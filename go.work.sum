@@ -933,10 +933,12 @@ github.com/ipfs/go-hamt-ipld v0.1.1 h1:0IQdvwnAAUKmDE+PMJa5y1QiwOPHpI9+eAbQEEEYt
 github.com/ipfs/go-ipfs-blockstore v0.1.4/go.mod h1:Jxm3XMVjh6R17WvxFEiyKBLUGr86HgIYJW/D/MwqeYQ=
 github.com/ipfs/go-ipfs-blockstore v0.1.6/go.mod h1:Jxm3XMVjh6R17WvxFEiyKBLUGr86HgIYJW/D/MwqeYQ=
 github.com/ipfs/go-ipfs-blockstore v1.0.4/go.mod h1:uL7/gTJ8QIZ3MtA3dWf+s1a0U3fJy2fcEZAsovpRp+w=
+github.com/ipfs/go-ipfs-chunker v0.0.5/go.mod h1:jhgdF8vxRHycr00k13FM8Y0E+6BoalYeobXmUyTreP8=
 github.com/ipfs/go-ipfs-ds-help v1.0.0/go.mod h1:ujAbkeIgkKAWtxxNkoZHWLCyk5JpPoKnGyCcsoF6ueE=
 github.com/ipfs/go-ipfs-files v0.0.8/go.mod h1:wiN/jSG8FKyk7N0WyctKSvq3ljIa2NNTiZB55kpTdOs=
 github.com/ipfs/go-ipfs-files v0.1.1/go.mod h1:8xkIrMWH+Y5P7HvJ4Yc5XWwIW2e52dyXUiC0tZyjDbM=
 github.com/ipfs/go-ipfs-files v0.2.0/go.mod h1:vT7uaQfIsprKktzbTPLnIsd+NGw9ZbYwSq0g3N74u0M=
+github.com/ipfs/go-ipfs-files v0.3.0/go.mod h1:xAUtYMwB+iu/dtf6+muHNSFQCJG2dSiStR2P6sn9tIM=
 github.com/ipfs/go-ipfs-http-client v0.5.0 h1:Nisy9655Ru4PQn4+wM+rhzyTBg4ATvqgTq2jPNKrCzE=
 github.com/ipfs/go-ipfs-http-client v0.5.0/go.mod h1:RUXNIL5dbEIngUWPXpNQjeFkBuqwwc5NZVD3bdgg5L4=
 github.com/ipfs/go-ipfs-routing v0.3.0/go.mod h1:dKqtTFIql7e1zYsEuWLyuOU+E0WJWW8JjbTPLParDWo=
@@ -951,6 +953,7 @@ github.com/ipfs/go-libipfs v0.3.0/go.mod h1:pSUHZ5qPJTAidsxe9bAeHp3KIiw2ODEW2a2k
 github.com/ipfs/go-libipfs v0.4.0/go.mod h1:XsU2cP9jBhDrXoJDe0WxikB8XcVmD3k2MEZvB3dbYu8=
 github.com/ipfs/go-libipfs v0.6.0/go.mod h1:UjjDIuehp2GzlNP0HEr5I9GfFT7zWgst+YfpUEIThtw=
 github.com/ipfs/go-libipfs v0.6.1/go.mod h1:FmhKgxMOQA572TK5DA3MZ5GL44ZqsMHIrkgK4gLn4A8=
+github.com/ipfs/go-libipfs v0.7.0/go.mod h1:KsIf/03CqhICzyRGyGo68tooiBE2iFbI/rXW7FhAYr0=
 github.com/ipfs/go-log/v2 v2.0.8/go.mod h1:eZs4Xt4ZUJQFM3DlanGhy7TkwwawCZcSByscwkWG+dw=
 github.com/ipfs/go-log/v2 v2.1.2/go.mod h1:2v2nsGfZsvvAJz13SyFzf9ObaqwHiHxsPLEHntrv9KM=
 github.com/ipfs/go-log/v2 v2.5.0/go.mod h1:prSpmC1Gpllc9UYWxDiZDreBYw7zp4Iqp1kOLU9U5UI=
@@ -961,6 +964,7 @@ github.com/ipfs/go-namesys v0.7.0 h1:xqosk71GIVRkFDtF2UNRcXn4LdNeo7tzuy8feHD6NbU
 github.com/ipfs/go-namesys v0.7.0/go.mod h1:KYSZBVZG3VJC34EfqqJPG7T48aWgxseoMPAPA5gLyyQ=
 github.com/ipfs/go-path v0.1.1/go.mod h1:vC8q4AKOtrjJz2NnllIrmr2ZbGlF5fW2OKKyhV9ggb0=
 github.com/ipfs/go-path v0.3.0/go.mod h1:NOScsVgxfC/eIw4nz6OiGwK42PjaSJ4Y/ZFPn1Xe07I=
+github.com/ipfs/go-path v0.3.1/go.mod h1:eNLsxJEEMxn/CDzUJ6wuNl+6No6tEUhOZcPKsZsYX0E=
 github.com/ipfs/go-peertaskqueue v0.1.1/go.mod h1:Jmk3IyCcfl1W3jTW3YpghSwSEC6IJ3Vzz/jUmWw8Z0U=
 github.com/ipfs/go-peertaskqueue v0.2.0/go.mod h1:5/eNrBEbtSKWCG+kQK8K8fGNixoYUnr+P7jivavs9lY=
 github.com/ipfs/go-peertaskqueue v0.8.0/go.mod h1:cz8hEnnARq4Du5TGqiWKgMr/BOSQ5XOgMOh1K5YYKKM=
@@ -969,6 +973,7 @@ github.com/ipfs/go-unixfs v0.4.0/go.mod h1:I7Nqtm06HgOOd+setAoCU6rf/HgVFHE+peeNu
 github.com/ipfs/go-unixfs v0.4.1-0.20230111141328-e98debe2cb55/go.mod h1:CVgoSyVY2Bw8IJHNTM83ZBredw3w733daAFa3cAg3L8=
 github.com/ipfs/go-unixfs v0.4.3/go.mod h1:TSG7G1UuT+l4pNj91raXAPkX0BhJi3jST1FDTfQ5QyM=
 github.com/ipfs/go-unixfs v0.4.4/go.mod h1:TSG7G1UuT+l4pNj91raXAPkX0BhJi3jST1FDTfQ5QyM=
+github.com/ipfs/go-unixfs v0.4.5/go.mod h1:BIznJNvt/gEx/ooRMI4Us9K8+qeGO7vx1ohnbk8gjFg=
 github.com/ipfs/go-unixfsnode v1.5.1/go.mod h1:ed79DaG9IEuZITJVQn4U6MZDftv6I3ygUBLPfhEbHvk=
 github.com/ipfs/go-unixfsnode v1.5.2/go.mod h1:NlOebRwYx8lMCNMdhAhEspYPBD3obp7TE0LvBqHY+ks=
 github.com/ipfs/interface-go-ipfs-core v0.9.0/go.mod h1:F3EcmDy53GFkF0H3iEJpfJC320fZ/4G60eftnItrrJ0=
@@ -1179,6 +1184,7 @@ github.com/libp2p/go-yamux/v2 v2.1.1/go.mod h1:3So6P6TV6r75R9jiBpiIKgU/66lOarCZj
 github.com/libp2p/go-yamux/v2 v2.2.0 h1:RwtpYZ2/wVviZ5+3pjC8qdQ4TKnrak0/E01N1UWoAFU=
 github.com/libp2p/go-yamux/v3 v3.1.1/go.mod h1:jeLEQgLXqE2YqX1ilAClIfCMDY+0uXQUKmmb/qp0gT4=
 github.com/libp2p/go-yamux/v3 v3.1.2 h1:lNEy28MBk1HavUAlzKgShp+F6mn/ea1nDYWftZhFW9Q=
+github.com/libp2p/go-yamux/v3 v3.1.2/go.mod h1:jeLEQgLXqE2YqX1ilAClIfCMDY+0uXQUKmmb/qp0gT4=
 github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-bc2310a04743 h1:143Bb8f8DuGWck/xpNUOckBVYfFbBTnLevfRZ1aVVqo=
 github.com/lightstep/lightstep-tracer-go v0.18.1 h1:vi1F1IQ8N7hNWytK9DpJsUfQhGuNSc19z330K6vl4zk=
 github.com/lucas-clemente/quic-go v0.27.1/go.mod h1:AzgQoPda7N+3IqMMMkywBKggIFo2KT6pfnlrQ2QieeI=
@@ -1203,6 +1209,7 @@ github.com/marten-seemann/qpack v0.2.1 h1:jvTsT/HpCn2UZJdP+UUB53FfUUgeOyG5K1ns0O
 github.com/marten-seemann/qtls v0.10.0 h1:ECsuYUKalRL240rRD4Ri33ISb7kAQ3qGDlrrl55b2pc=
 github.com/marten-seemann/qtls-go1-15 v0.1.1 h1:LIH6K34bPVttyXnUWixk0bzH6/N07VxbSabxn5A5gZQ=
 github.com/marten-seemann/qtls-go1-16 v0.1.5 h1:o9JrYPPco/Nukd/HpOHMHZoBDXQqoNtUCmny98/1uqQ=
+github.com/marten-seemann/qtls-go1-16 v0.1.5/go.mod h1:gNpI2Ol+lRS3WwSOtIUUtRwZEQMXjYK+dQSBFbethAk=
 github.com/marten-seemann/qtls-go1-17 v0.1.1/go.mod h1:C2ekUKcDdz9SDWxec1N/MvcXBpaX9l3Nx67XaR84L5s=
 github.com/marten-seemann/qtls-go1-17 v0.1.2 h1:JADBlm0LYiVbuSySCHeY863dNkcpMmDR7s0bLKJeYlQ=
 github.com/marten-seemann/qtls-go1-17 v0.1.2/go.mod h1:C2ekUKcDdz9SDWxec1N/MvcXBpaX9l3Nx67XaR84L5s=
@@ -1271,10 +1278,12 @@ github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e h1:fD57ERR4JtEqsWb
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/nikkolasg/hexjson v0.1.0 h1:Cgi1MSZVQFoJKYeRpBNEcdF3LB+Zo4fYKsDz7h8uJYQ=
 github.com/nikkolasg/hexjson v0.1.0/go.mod h1:fbGbWFZ0FmJMFbpCMtJpwb0tudVxSSZ+Es2TsCg57cA=
+github.com/nxadm/tail v1.4.8/go.mod h1:+ncqLTQzXmGhMZNUePPaPqPvBxHAIsmXswZKocGu+AU=
 github.com/oklog/oklog v0.3.2 h1:wVfs8F+in6nTBMkA7CbRw+zZMIB7nNM825cM1wuzoTk=
 github.com/oklog/run v1.0.0 h1:Ru7dDtJNOyC66gQ5dQmaCa0qIsAUFY3sFpK1Xk8igrw=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
 github.com/olekukonko/tablewriter v0.0.0-20170122224234-a0225b3f23b5 h1:58+kh9C6jJVXYjt8IE48G2eWl6BjwU5Gj0gqY84fy78=
+github.com/onsi/ginkgo v1.16.5/go.mod h1:+E8gABHa3K6zRBolWtd+ROzc/U5bkGt0FwiG042wbpU=
 github.com/onsi/ginkgo/v2 v2.2.0/go.mod h1:MEH45j8TBi6u9BMogfbp0stKC5cdGjumZj5Y7AG4VIk=
 github.com/onsi/ginkgo/v2 v2.4.0/go.mod h1:iHkDK1fKGcBoEHT5W7YBq4RFWaQulw+caOMkAt4OrFo=
 github.com/onsi/ginkgo/v2 v2.5.1/go.mod h1:63DOGlLAH8+REH8jUGdL3YpCpu7JODesutUjdENfUAc=
@@ -1462,6 +1471,7 @@ github.com/whyrusleeping/ledger-filecoin-go v0.9.1-0.20201010031517-c3dcc1bddce4
 github.com/whyrusleeping/mafmt v1.2.8 h1:TCghSl5kkwEE0j+sU/gudyhVMRlpBin8fMBBHg59EbA=
 github.com/whyrusleeping/mdns v0.0.0-20190826153040-b9b60ed33aa9 h1:Y1/FEOpaCpD21WxrmfeIYCFPuVPRCY2XZTWzTNHGw30=
 github.com/whyrusleeping/timecache v0.0.0-20160911033111-cfcb2f1abfee h1:lYbXeSvJi5zk5GLKVuid9TVjS9a0OmLIDKTfoZBL6Ow=
+github.com/whyrusleeping/timecache v0.0.0-20160911033111-cfcb2f1abfee/go.mod h1:m2aV4LZI4Aez7dP5PMyVKEHhUyEJ/RjmPEDOpDvudHg=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2 h1:00txxvfBM9muc0jiLIEAkAcIMJzfthRT6usrui8uGmg=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f h1:J9EGpcZtP0E/raorCMxlFGSTBrsSlaDGf3jU/qvAE2c=
 github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 h1:EzJWgHovont7NscjpAxXsDA8S8BMYve8Y5+7cuRE7R0=
