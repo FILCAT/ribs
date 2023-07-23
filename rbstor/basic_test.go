@@ -55,6 +55,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestFullGroup(t *testing.T) {
+	t.Skip("worker gate needed to re-enable this test")
 	maxGroupSize = 100 << 20
 
 	td := t.TempDir()
