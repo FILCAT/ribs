@@ -125,6 +125,7 @@ func TestCarLogBasic(t *testing.T) {
 	s, err = jb.HashSample()
 	require.NoError(t, err)
 	require.Len(t, s, 1)
+	require.NoError(t, jb.Close())
 }
 
 func TestCarLog3K(t *testing.T) {
@@ -202,6 +203,7 @@ func TestCarLog3K(t *testing.T) {
 
 	f, err := os.Create(filepath.Join(td, "canon.car"))
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, f.Close()) })
 
 	_, _, err = jb.WriteCar(f)
 	require.NoError(t, err)

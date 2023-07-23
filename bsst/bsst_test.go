@@ -2,6 +2,7 @@ package bsst
 
 import (
 	"encoding/binary"
+	"path/filepath"
 	"testing"
 
 	mh "github.com/multiformats/go-multihash"
@@ -36,8 +37,9 @@ func TestBSSTCreate(t *testing.T) {
 
 	n := int64(1024)
 
-	bsst, err := Create("/tmp/a.bsst", n, &testSource{n: n})
+	bsst, err := Create(filepath.Join(t.TempDir(), "/a.bsst"), n, &testSource{n: n})
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bsst.Close()) })
 
 	var got int64
 
