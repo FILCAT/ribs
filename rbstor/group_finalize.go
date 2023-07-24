@@ -86,6 +86,9 @@ func (m *Group) setCommP(ctx context.Context, state iface.GroupState, commp []by
 
 // offload completely removes local data
 func (m *Group) offload() error {
+	m.offloaded.Store(1)
+	// m.jb.Offload will wait for any in-progress writes to finish
+
 	m.dataLk.Lock()
 	defer m.dataLk.Unlock()
 

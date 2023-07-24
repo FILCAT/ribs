@@ -16,7 +16,7 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.3.1
 	github.com/filecoin-project/go-legs v0.4.9
 	github.com/filecoin-project/go-state-types v0.11.1
-	github.com/filecoin-project/lassie v0.13.0
+	github.com/filecoin-project/lassie v0.14.2
 	github.com/filecoin-project/lotus v1.23.2-0.20230628201333-30a9f631653f
 	github.com/filecoin-project/specs-storage v0.4.1
 	github.com/gbrlsnchs/jwt/v3 v3.0.1

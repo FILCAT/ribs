@@ -95,6 +95,8 @@ func (r *ribs) Wallet() iface.Wallet {
 }
 
 func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
+	logging.SetLogLevel("lassie/retriever", "DEBUG")
+
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
 	}

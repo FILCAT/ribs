@@ -288,6 +288,12 @@ github.com/filecoin-project/kubo-api-client v0.0.1 h1:IR1b+sm+VYxSRvbgECVv9SbhIg
 github.com/filecoin-project/kubo-api-client v0.0.1/go.mod h1:c36PPMIVOkKfHDwDG5U05gUlPRY9wNuh/BePwo0e+6Y=
 github.com/filecoin-project/lassie v0.13.0 h1:nNm2WUYEE1FO5duNY38W5HLPC3IqyMV754c+CGIgV90=
 github.com/filecoin-project/lassie v0.13.0/go.mod h1:kbO6Ljk/2ug6CLJuHsgsd4c6EVrAmnVQKFAktmETSI4=
+github.com/filecoin-project/lassie v0.13.1-0.20230706083511-1a7a87f98357 h1:MT7rykfaWkVTuUffyepsTEOZ3qUCpTC1o77cada6VV8=
+github.com/filecoin-project/lassie v0.13.1-0.20230706083511-1a7a87f98357/go.mod h1:kbO6Ljk/2ug6CLJuHsgsd4c6EVrAmnVQKFAktmETSI4=
+github.com/filecoin-project/lassie v0.13.1-0.20230707051726-5ecc99120c94 h1:FUxQRPPV7A2Jhf78LdSCeJi2oaxD1aubhfAKp8XjyMg=
+github.com/filecoin-project/lassie v0.13.1-0.20230707051726-5ecc99120c94/go.mod h1:kbO6Ljk/2ug6CLJuHsgsd4c6EVrAmnVQKFAktmETSI4=
+github.com/filecoin-project/lassie v0.14.2 h1:OwNfhittloStrOlwA/ivxqIOWiKxMFezNzrG0o1y3So=
+github.com/filecoin-project/lassie v0.14.2/go.mod h1:kbO6Ljk/2ug6CLJuHsgsd4c6EVrAmnVQKFAktmETSI4=
 github.com/filecoin-project/lotus v1.23.2-0.20230628201333-30a9f631653f h1:wanwycIHrQgtTl65dfUXtoOIQcZeoiUjBfc+1YvFZe8=
 github.com/filecoin-project/lotus v1.23.2-0.20230628201333-30a9f631653f/go.mod h1:GyBIOXSJLWc7BloL3WjYHbHlifx+c+cNGFHTwuxYZco=
 github.com/filecoin-project/specs-actors v0.9.4/go.mod h1:BStZQzx5x7TmCkLv0Bpa07U6cPKol6fd3w9KjMPZ6Z4=

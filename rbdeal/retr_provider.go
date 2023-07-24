@@ -379,22 +379,22 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 	stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
 		log.Errorw("retrieval event", "cid", cidToGet, "event", event)
 
-		if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
+		/*if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
 			r.statLk.Lock()
 			r.attempts[event.StorageProviderId()]++
 			r.statLk.Unlock()
-		}
-		if event.Code() == types.FailedCode && event.StorageProviderId() != "" {
+		}*/
+		if event.Code() == types.FailedCode /* && event.StorageProviderId() != "" */ {
 			log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
-			r.statLk.Lock()
+			/*r.statLk.Lock()
 			r.fails[event.StorageProviderId()]++
-			r.statLk.Unlock()
+			r.statLk.Unlock()*/
 		}
-		if event.Code() == types.SuccessCode && event.StorageProviderId() != "" {
+		/*if event.Code() == types.SuccessCode && event.StorageProviderId() != "" {
 			r.statLk.Lock()
 			r.success[event.StorageProviderId()]++
 			r.statLk.Unlock()
-		}
+		}*/
 	})
 	if err != nil {
 		log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
