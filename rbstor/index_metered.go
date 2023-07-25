@@ -21,7 +21,7 @@ func (m *MeteredIndex) EstimateSize(ctx context.Context) (int64, error) {
 	return m.sub.EstimateSize(ctx)
 }
 
-func (m *MeteredIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (more bool, err error)) error {
+func (m *MeteredIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func(cidx int, gk iface.GroupKey) (more bool, err error)) error {
 	atomic.AddInt64(&m.reads, int64(len(mh)))
 	return m.sub.GetGroups(ctx, mh, cb)
 }

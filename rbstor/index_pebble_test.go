@@ -22,33 +22,31 @@ func TestPebbleIndex(t *testing.T) {
 	})
 
 	mhs, sizes := genMhashList(t, 10)
-	group := iface.GroupKey(2)
+	testGroup := iface.GroupKey(2)
 
-	err = idx.AddGroup(context.Background(), mhs, sizes, group)
+	err = idx.AddGroup(context.Background(), mhs, sizes, testGroup)
 	require.NoError(t, err)
 
-	var result [][]iface.GroupKey
-	err = idx.GetGroups(context.Background(), mhs, func(groups [][]iface.GroupKey) (bool, error) {
-		result = groups
-		return false, nil
+	result := map[int][]iface.GroupKey{}
+	err = idx.GetGroups(context.Background(), mhs, func(cidx int, group iface.GroupKey) (bool, error) {
+		result[cidx] = append(result[cidx], group)
+		return true, nil
 	})
 	require.NoError(t, err)
 
 	for _, groupKeys := range result {
-		require.Contains(t, groupKeys, group)
+		require.Contains(t, groupKeys, testGroup)
 	}
 
-	err = idx.DropGroup(context.Background(), mhs, group)
+	err = idx.DropGroup(context.Background(), mhs, testGroup)
 	require.NoError(t, err)
 
 	err = idx.Sync(context.Background())
 	require.NoError(t, err)
 
-	err = idx.GetGroups(context.Background(), mhs, func(groups [][]iface.GroupKey) (bool, error) {
-		for i, groupKeys := range groups {
-			require.NotContains(t, groupKeys, group, "g %d should have been dropped", i)
-		}
-		return false, nil
+	err = idx.GetGroups(context.Background(), mhs, func(cidx int, group iface.GroupKey) (bool, error) {
+		require.NotEqual(t, testGroup, group, "g %d should have been dropped", testGroup)
+		return true, nil
 	})
 	require.NoError(t, err)
 }
@@ -72,10 +70,10 @@ func TestMultipleGroupsPerHash(t *testing.T) {
 	err = idx.AddGroup(context.Background(), mhs, sizes, group2)
 	require.NoError(t, err)
 
-	var result [][]iface.GroupKey
-	err = idx.GetGroups(context.Background(), mhs, func(groups [][]iface.GroupKey) (bool, error) {
-		result = groups
-		return false, nil
+	result := map[int][]iface.GroupKey{}
+	err = idx.GetGroups(context.Background(), mhs, func(cidx int, group iface.GroupKey) (bool, error) {
+		result[cidx] = append(result[cidx], group)
+		return true, nil
 	})
 	require.NoError(t, err)
 
@@ -87,11 +85,9 @@ func TestMultipleGroupsPerHash(t *testing.T) {
 	err = idx.DropGroup(context.Background(), mhs, group1)
 	require.NoError(t, err)
 
-	err = idx.GetGroups(context.Background(), mhs, func(groups [][]iface.GroupKey) (bool, error) {
-		for _, groupKeys := range groups {
-			require.NotContains(t, groupKeys, group1)
-			require.Contains(t, groupKeys, group2)
-		}
+	err = idx.GetGroups(context.Background(), mhs, func(cidx int, group iface.GroupKey) (bool, error) {
+		require.NotEqual(t, group1, group, "g %d should have been dropped", group1)
+		require.Equal(t, group2, group, "g %d should not have been dropped", group2)
 		return false, nil
 	})
 	require.NoError(t, err)
@@ -145,9 +141,9 @@ func BenchmarkAddGet16k(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		var result [][]iface.GroupKey
-		err = idx.GetGroups(context.Background(), mhs, func(groups [][]iface.GroupKey) (bool, error) {
-			result = groups
+		result := map[int][]iface.GroupKey{}
+		err = idx.GetGroups(context.Background(), mhs, func(cidx int, group iface.GroupKey) (bool, error) {
+			result[cidx] = append(result[cidx], group)
 			return false, nil
 		})
 		if err != nil {
@@ -192,9 +188,9 @@ func BenchmarkGetSingleHash100k(b *testing.B) {
 		hashIndex := n % len(mhs) // Cycle through the hashes
 		expectedGroup := iface.GroupKey(hashIndex)
 
-		var result [][]iface.GroupKey
-		err = idx.GetGroups(context.Background(), []multihash.Multihash{mhs[hashIndex]}, func(groups [][]iface.GroupKey) (bool, error) {
-			result = groups
+		result := map[int][]iface.GroupKey{}
+		err = idx.GetGroups(context.Background(), []multihash.Multihash{mhs[hashIndex]}, func(cidx int, group iface.GroupKey) (bool, error) {
+			result[cidx] = append(result[cidx], group)
 			return false, nil
 		})
 		if err != nil {

@@ -27,6 +27,9 @@ type PebbleIndex struct {
 
 	// todo limit size somehow
 	iterPool sync.Pool
+
+	// todo sharded lock
+	dropLk sync.Mutex
 }
 
 // NewPebbleIndex creates a new Pebble-backed Index.
@@ -51,9 +54,7 @@ func (i *PebbleIndex) Sync(ctx context.Context) error {
 	return i.db.Flush()
 }
 
-func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]iface.GroupKey) (more bool, err error)) error {
-	groups := make([][]iface.GroupKey, len(mh))
-
+func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, cb func(cidx int, gk iface.GroupKey) (more bool, err error)) error {
 	for idx, m := range mh {
 		// try to get from sizes
 		sizeKey := append([]byte("s:"), m...)
@@ -66,16 +67,21 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 		}
 
 		if len(val) > 4 {
-			// todo support multiple groups?
-
 			//size := binary.BigEndian.Uint32(val[:4])
 			groupIdx := binary.BigEndian.Uint64(val[4:])
-			groups[idx] = []iface.GroupKey{iface.GroupKey(groupIdx)}
+			groupKey := iface.GroupKey(groupIdx)
 
 			if err := closer.Close(); err != nil {
 				return xerrors.Errorf("get(s:) close: %w", err)
 			}
-			continue
+
+			more, err := cb(idx, groupKey)
+			if err != nil {
+				return err
+			}
+			if !more {
+				continue
+			}
 		}
 
 		if err := closer.Close(); err != nil {
@@ -86,16 +92,24 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 
 		keyPrefix := append([]byte("i:"), m...)
 		upperBound := append(append([]byte("i:"), m...), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff)
-		//iter := i.iterPool.Get().(*pebble.Iterator)
 		iter := i.db.NewIter(nil)
 		iter.SetBounds(keyPrefix, upperBound)
 
-		var gkList []iface.GroupKey
 		for iter.SeekGE(keyPrefix); iter.Valid(); iter.Next() {
 			key := iter.Key()
 			groupKeyBytes := key[len(key)-8:]
 			groupKey := binary.BigEndian.Uint64(groupKeyBytes)
-			gkList = append(gkList, iface.GroupKey(groupKey))
+
+			more, err := cb(idx, iface.GroupKey(groupKey))
+			if err != nil {
+				if err := iter.Close(); err != nil {
+					return xerrors.Errorf("closing iterator: %w", err)
+				}
+				return err
+			}
+			if !more {
+				break
+			}
 		}
 
 		if err := iter.Error(); err != nil {
@@ -106,12 +120,6 @@ func (i *PebbleIndex) GetGroups(ctx context.Context, mh []multihash.Multihash, c
 		if err := iter.Close(); err != nil {
 			return xerrors.Errorf("closing iterator: %w", err)
 		}
-		groups[idx] = gkList
-	}
-
-	more, err := cb(groups)
-	if !more || err != nil {
-		return err
 	}
 
 	return nil
@@ -178,6 +186,9 @@ func (i *PebbleIndex) AddGroup(ctx context.Context, mh []multihash.Multihash, si
 }
 
 func (i *PebbleIndex) DropGroup(ctx context.Context, mh []multihash.Multihash, group iface.GroupKey) error {
+	i.dropLk.Lock()
+	defer i.dropLk.Unlock()
+
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(group))
 
@@ -189,11 +200,49 @@ func (i *PebbleIndex) DropGroup(ctx context.Context, mh []multihash.Multihash, g
 		if err := batch.Delete(key, pebble.NoSync); err != nil {
 			return xerrors.Errorf("dropgroup delete: %w", err)
 		}
+
+		// if the size key contains entry for this group, remove the group pointer from the size key
+		// this way GetGroups is able to return data with a single read from s: keys in the
+		// common, optimistic case where the size key contains a group entry, and in the case when
+		// the size key does not contain a group entry, it will still be able to return the correct
+		// groups by reading from the i: keys
+		//
+		// note that we could scan the i: keys to find out if another mh->group mapping exists,
+		// but that would slow down deletes by a lot. Instead this will be done lazily in a GC pass
+		sizeKey := append([]byte("s:"), m...)
+		val, closer, err := i.db.Get(sizeKey)
+		if err == pebble.ErrNotFound {
+			continue
+		}
+		if err != nil {
+			return xerrors.Errorf("get(s:) get: %w", err)
+		}
+
+		if len(val) > 4 {
+			//size := binary.BigEndian.Uint32(val[:4])
+			groupIdx := binary.BigEndian.Uint64(val[4:])
+			groupKey := iface.GroupKey(groupIdx)
+
+			if groupKey == group {
+				newSizeVal := make([]byte, 4)
+				copy(newSizeVal, val[:4])
+
+				if err := batch.Set(sizeKey, newSizeVal, pebble.NoSync); err != nil {
+					return xerrors.Errorf("dropgroup set (sk): %w", err)
+				}
+			}
+		}
+
+		if err := closer.Close(); err != nil {
+			return xerrors.Errorf("delget(s:) close: %w", err)
+		}
 	}
 
 	if err := batch.Commit(pebble.NoSync); err != nil {
 		return xerrors.Errorf("dropgroup commit: %w", err)
 	}
+
+	// todo: gc size keys
 
 	return nil
 }
