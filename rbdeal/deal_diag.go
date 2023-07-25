@@ -82,8 +82,8 @@ func (r *ribs) RetrChecker() iface.RetrCheckerStats {
 	return iface.RetrCheckerStats{
 		ToDo:       r.rckToDo.Load(),
 		Started:    r.rckStarted.Load(),
-		Success:    r.retrSuccess.Load(),
-		Fail:       r.retrFail.Load(),
+		Success:    r.rckSuccess.Load(),
+		Fail:       r.rckFail.Load(),
 		SuccessAll: r.rckSuccessAll.Load(),
 		FailAll:    r.rckFailAll.Load(),
 	}

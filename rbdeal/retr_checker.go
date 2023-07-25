@@ -27,7 +27,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-var retrievalCheckTimeout = 45 * time.Second
+var retrievalCheckTimeout = 7 * time.Second
 
 type ProbingRetrievalFinder struct {
 	lk      sync.Mutex
@@ -72,7 +72,9 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithProviderAllowList(map[peer.ID]bool{}),
-		lassie.WithFinder(rf))
+		lassie.WithFinder(rf),
+		lassie.WithGlobalTimeout(retrievalCheckTimeout),
+		lassie.WithProviderTimeout(retrievalCheckTimeout))
 	if err != nil {
 		log.Fatalw("failed to create lassie", "error", err)
 	}
