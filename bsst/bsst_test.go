@@ -35,7 +35,7 @@ var _ Source = (*testSource)(nil)
 
 func TestBSSTCreate(t *testing.T) {
 
-	n := int64(1024)
+	n := int64(13421280)
 
 	bsst, err := Create(filepath.Join(t.TempDir(), "/a.bsst"), n, &testSource{n: n})
 	require.NoError(t, err)
