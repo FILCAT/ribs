@@ -1301,6 +1301,16 @@ func (r *ribsDB) HasS3Offload(group iface.GroupKey) (bool, error) {
 	return has > 0, nil
 }
 
+func (r *ribsDB) NeedS3Offload() (bool, error) {
+	var has int
+	err := r.db.QueryRow(`select count(*) from offloads_s3`).Scan(&has)
+	if err != nil {
+		return false, xerrors.Errorf("query: %w", err)
+	}
+
+	return has > 0, nil
+}
+
 func (r *ribsDB) AddS3Offload(group iface.GroupKey) error {
 	_, err := r.db.Exec(`insert into offloads_s3 (group_id) values (?)`, group)
 	if err != nil {
