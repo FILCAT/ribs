@@ -55,8 +55,15 @@ function WalletInfoTile({ walletInfo }) {
                         <td>{truncateAddress(walletInfo.Addr)}</td>
                     </tr>
                     <tr>
+                        <td colSpan={2} style={{textAlign: 'center'}}>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://filfox.info/en/address/${walletInfo.Addr}`}>FilFox</a>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://datacapstats.io/clients/${walletInfo.IDAddr}`}>DcapStats</a>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://dag.parts/client/${walletInfo.IDAddr}`}>DagParts</a>
+                        </td>
+                    </tr>
+                    <tr>
                         <td>Balance:</td>
-                        <td>{walletInfo.Balance} [Send]</td>
+                        <td>{walletInfo.Balance}</td>
                     </tr>
                     <tr>
                         <td>Market Balance:</td>

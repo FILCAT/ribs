@@ -115,7 +115,7 @@ type Wallet interface {
 }
 
 type WalletInfo struct {
-	Addr string
+	Addr, IDAddr string
 
 	DataCap string
 
