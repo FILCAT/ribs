@@ -38,6 +38,14 @@ type RIBSDiag interface {
 	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
 
 	RetrChecker() RetrCheckerStats
+
+	RetrievableDealCounts() ([]DealCountStats, error)
+	SealedDealCounts() ([]DealCountStats, error)
+}
+
+type DealCountStats struct {
+	Count  int
+	Groups int
 }
 
 type RetrCheckerStats struct {

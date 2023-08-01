@@ -1342,3 +1342,93 @@ func (r *ribsDB) LastTotalUploadedBytes() (int64, error) {
 
 	return *b, nil
 }
+
+func (r *ribsDB) GetRetrievableDealStats() ([]iface.DealCountStats, error) {
+	query := `
+	SELECT
+		retrievable_count AS "X retrievable deals",
+		COUNT(*) AS "Number of groups"
+	FROM
+		(
+			SELECT
+				d.group_id,
+				COUNT(*) AS retrievable_count
+			FROM
+				deals d
+			WHERE
+				d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+			GROUP BY
+				d.group_id
+		) AS retrievable_deals_per_group
+	GROUP BY
+		retrievable_count
+	ORDER BY
+		retrievable_count;`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, xerrors.Errorf("getting retrievable deal stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []iface.DealCountStats
+	for rows.Next() {
+		var stat iface.DealCountStats
+		err := rows.Scan(&stat.Count, &stat.Groups)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return stats, nil
+}
+
+func (r *ribsDB) GetSealedDealStats() ([]iface.DealCountStats, error) {
+	query := `
+	SELECT
+		retrievable_count AS "X sealed deals",
+		COUNT(*) AS "Number of groups"
+	FROM
+		(
+			SELECT
+				d.group_id,
+				COUNT(*) AS retrievable_count
+			FROM
+				deals d
+			WHERE
+				d.sealed = 1
+			GROUP BY
+				d.group_id
+		) AS retrievable_deals_per_group
+	GROUP BY
+		retrievable_count
+	ORDER BY
+		retrievable_count;`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, xerrors.Errorf("getting sealed deal stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []iface.DealCountStats
+	for rows.Next() {
+		var stat iface.DealCountStats
+		err := rows.Scan(&stat.Count, &stat.Groups)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return stats, nil
+}

@@ -4,6 +4,7 @@ import RibsRPC from "../helpers/rpc";
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
 import content from "./Content";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 
 const oneFil = 1000000000000000000
 
@@ -925,6 +926,58 @@ function WorkerStats({stats}) {
     )
 }
 
+function DealCountsChart() {
+    const [dealCounts, setDealCounts] = useState([]);
+
+    const fetchData = async () => {
+        try {
+            const retrievableDealCounts = await RibsRPC.call('RetrievableDealCounts');
+            const sealedDealCounts = await RibsRPC.call('SealedDealCounts');
+
+            // Create a map to easily find sealed deals by count
+            const sealedMap = Object.fromEntries(sealedDealCounts.map(item => [item.Count, item.Groups]));
+
+            const data = retrievableDealCounts.map(item => ({
+                name: item.Count,
+                Retrievable: item.Groups,
+                Sealed: sealedMap[item.Count] || 0
+            }));
+            setDealCounts(data);
+        } catch (error) {
+            console.error('Error fetching deal counts:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+        const intervalId = setInterval(fetchData, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div style={{height: "25em", gridColumn: "span 2"}}>
+            <h2>Deals Per Group</h2>
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                    data={dealCounts}
+                    margin={{ top: 20, right: 0, left: 0, bottom: 64 }}
+                >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="Retrievable" fill="#8884d8" />
+                    <Bar dataKey="Sealed" fill="#82ca9d" />
+                </BarChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
+
 // read/write busy time
 
 // process stats [rpc]
@@ -997,6 +1050,7 @@ function Status() {
                     <DealsTile dealSummary={dealSummary} />
                     <IoStats />
                     <TopIndexTile />
+                    <DealCountsChart />
                 </div>
 
                 <h1><abbr title="Decentralized Storage Network">DSN</abbr></h1>

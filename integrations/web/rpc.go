@@ -105,6 +105,14 @@ func (rc *RIBSRpc) WorkerStats(ctx context.Context) (ribs.WorkerStats, error) {
 	return rc.ribs.StorageDiag().WorkerStats(), nil
 }
 
+func (rc *RIBSRpc) RetrievableDealCounts(ctx context.Context) ([]ribs.DealCountStats, error) {
+	return rc.ribs.DealDiag().RetrievableDealCounts()
+}
+
+func (rc *RIBSRpc) SealedDealCounts(ctx context.Context) ([]ribs.DealCountStats, error) {
+	return rc.ribs.DealDiag().SealedDealCounts()
+}
+
 func MakeRPCServer(ctx context.Context, ribs ribs.RIBS) (*jsonrpc.RPCServer, jsonrpc.ClientCloser, error) {
 	hnd := &RIBSRpc{ribs: ribs}
 

@@ -88,3 +88,11 @@ func (r *ribs) RetrChecker() iface.RetrCheckerStats {
 		FailAll:    r.rckFailAll.Load(),
 	}
 }
+
+func (r *ribs) RetrievableDealCounts() ([]iface.DealCountStats, error) {
+	return r.db.GetRetrievableDealStats()
+}
+
+func (r *ribs) SealedDealCounts() ([]iface.DealCountStats, error) {
+	return r.db.GetSealedDealStats()
+}
