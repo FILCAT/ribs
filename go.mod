@@ -16,15 +16,15 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.3.1
 	github.com/filecoin-project/go-legs v0.4.9
 	github.com/filecoin-project/go-state-types v0.11.1
-	github.com/filecoin-project/lassie v0.14.2
+	github.com/filecoin-project/lassie v0.14.3
 	github.com/filecoin-project/lotus v1.23.2-0.20230628201333-30a9f631653f
 	github.com/filecoin-project/specs-storage v0.4.1
 	github.com/gbrlsnchs/jwt/v3 v3.0.1
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru/v2 v2.0.2
+	github.com/ipfs/boxo v0.10.2-0.20230629140307-fdad9f921191
 	github.com/ipfs/go-block-format v0.1.2
 	github.com/ipfs/go-cid v0.4.1
-	github.com/ipfs/go-ipfs-blockstore v1.3.0
 	github.com/ipfs/go-ipfs-util v0.0.3
 	github.com/ipfs/go-ipld-cbor v0.0.6
 	github.com/ipfs/go-ipld-format v0.5.0
@@ -124,11 +124,11 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
-	github.com/ipfs/boxo v0.10.2-0.20230629140307-fdad9f921191 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-blockservice v0.5.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
-	github.com/ipfs/go-graphsync v0.14.6 // indirect
+	github.com/ipfs/go-graphsync v0.14.7 // indirect
+	github.com/ipfs/go-ipfs-blockstore v1.3.0 // indirect
 	github.com/ipfs/go-ipfs-cmds v0.9.0 // indirect
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-ds-help v1.1.0 // indirect
