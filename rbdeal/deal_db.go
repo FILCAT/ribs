@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"sort"
+	"time"
+
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/abi"
 	types2 "github.com/filecoin-project/lotus/chain/types"
@@ -14,9 +18,6 @@ import (
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
-	"path/filepath"
-	"sort"
-	"time"
 )
 
 type ribsDB struct {
@@ -703,15 +704,13 @@ FROM
 
 	var ds iface.DealSummary
 
-	for res.Next() {
+	if res.Next() {
 		err := res.Scan(&ds.NonFailed, &ds.TotalDataSize, &ds.TotalDealSize,
 			&ds.StoredDataSize, &ds.StoredDealSize,
 			&ds.InProgress, &ds.Done, &ds.Failed)
 		if err != nil {
 			return iface.DealSummary{}, xerrors.Errorf("scanning group: %w", err)
 		}
-
-		break
 	}
 
 	return ds, nil
@@ -793,7 +792,7 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 
 	var found bool
 
-	for res.Next() {
+	if res.Next() {
 		var commp, root []byte
 		var pieceSize, carSize int64
 		err := res.Scan(&commp, &root, &pieceSize, &carSize)
@@ -803,12 +802,13 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 
 		out.CommP = commp
 		_, out.Root, err = cid.CidFromBytes(root)
+		if err != nil {
+			return dealParams{}, xerrors.Errorf("parsing cid: %w", err)
+		}
 		out.PieceSize = pieceSize
 		out.CarSize = carSize
 
 		found = true
-
-		break
 	}
 
 	if err := res.Err(); err != nil {
@@ -1301,6 +1301,16 @@ func (r *ribsDB) HasS3Offload(group iface.GroupKey) (bool, error) {
 	return has > 0, nil
 }
 
+func (r *ribsDB) NeedS3Offload() (bool, error) {
+	var has int
+	err := r.db.QueryRow(`select count(*) from offloads_s3`).Scan(&has)
+	if err != nil {
+		return false, xerrors.Errorf("query: %w", err)
+	}
+
+	return has > 0, nil
+}
+
 func (r *ribsDB) AddS3Offload(group iface.GroupKey) error {
 	_, err := r.db.Exec(`insert into offloads_s3 (group_id) values (?)`, group)
 	if err != nil {
@@ -1331,4 +1341,94 @@ func (r *ribsDB) LastTotalUploadedBytes() (int64, error) {
 	}
 
 	return *b, nil
+}
+
+func (r *ribsDB) GetRetrievableDealStats() ([]iface.DealCountStats, error) {
+	query := `
+	SELECT
+		retrievable_count AS "X retrievable deals",
+		COUNT(*) AS "Number of groups"
+	FROM
+		(
+			SELECT
+				d.group_id,
+				COUNT(*) AS retrievable_count
+			FROM
+				deals d
+			WHERE
+				d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+			GROUP BY
+				d.group_id
+		) AS retrievable_deals_per_group
+	GROUP BY
+		retrievable_count
+	ORDER BY
+		retrievable_count;`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, xerrors.Errorf("getting retrievable deal stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []iface.DealCountStats
+	for rows.Next() {
+		var stat iface.DealCountStats
+		err := rows.Scan(&stat.Count, &stat.Groups)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return stats, nil
+}
+
+func (r *ribsDB) GetSealedDealStats() ([]iface.DealCountStats, error) {
+	query := `
+	SELECT
+		retrievable_count AS "X sealed deals",
+		COUNT(*) AS "Number of groups"
+	FROM
+		(
+			SELECT
+				d.group_id,
+				COUNT(*) AS retrievable_count
+			FROM
+				deals d
+			WHERE
+				d.sealed = 1
+			GROUP BY
+				d.group_id
+		) AS retrievable_deals_per_group
+	GROUP BY
+		retrievable_count
+	ORDER BY
+		retrievable_count;`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, xerrors.Errorf("getting sealed deal stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []iface.DealCountStats
+	for rows.Next() {
+		var stat iface.DealCountStats
+		err := rows.Scan(&stat.Count, &stat.Groups)
+		if err != nil {
+			return nil, xerrors.Errorf("scanning deal stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, xerrors.Errorf("iterating rows: %w", err)
+	}
+
+	return stats, nil
 }

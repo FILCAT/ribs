@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"context"
+	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
@@ -52,4 +53,46 @@ func (r *ribs) Filecoin(ctx context.Context) (api.Gateway, jsonrpc.ClientCloser,
 	}
 
 	return gw, closer, nil
+}
+
+func getLibP2PInfoForHost(h host.Host) iface.Libp2pInfo {
+	out := iface.Libp2pInfo{
+		PeerID: h.ID().String(),
+		Peers:  len(h.Network().Peers()),
+	}
+
+	for _, ma := range h.Network().ListenAddresses() {
+		out.Listen = append(out.Listen, ma.String())
+	}
+
+	return out
+}
+
+func (r *ribs) P2PNodes(ctx context.Context) (map[string]iface.Libp2pInfo, error) {
+	out := map[string]iface.Libp2pInfo{}
+
+	out["main"] = getLibP2PInfoForHost(r.host)
+	out["crawl"] = getLibP2PInfoForHost(r.crawlHost)
+	out["lassie"] = getLibP2PInfoForHost(r.retrHost)
+
+	return out, nil
+}
+
+func (r *ribs) RetrChecker() iface.RetrCheckerStats {
+	return iface.RetrCheckerStats{
+		ToDo:       r.rckToDo.Load(),
+		Started:    r.rckStarted.Load(),
+		Success:    r.rckSuccess.Load(),
+		Fail:       r.rckFail.Load(),
+		SuccessAll: r.rckSuccessAll.Load(),
+		FailAll:    r.rckFailAll.Load(),
+	}
+}
+
+func (r *ribs) RetrievableDealCounts() ([]iface.DealCountStats, error) {
+	return r.db.GetRetrievableDealStats()
+}
+
+func (r *ribs) SealedDealCounts() ([]iface.DealCountStats, error) {
+	return r.db.GetSealedDealStats()
 }

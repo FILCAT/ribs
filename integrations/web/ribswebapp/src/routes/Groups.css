@@ -78,3 +78,13 @@
 .deal-error {
     color: #f44336;
 }
+
+.pagination-btn {
+    margin-right: 5px;
+    margin-bottom: 3px;
+
+    color: unset;
+    background-color: unset;
+    border: solid 1px #4caf50;
+    border-radius: 3px;
+}

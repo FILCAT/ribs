@@ -3,6 +3,12 @@ package rbstor
 import (
 	"context"
 	"database/sql"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -10,11 +16,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"io"
-	"os"
-	"path/filepath"
-	"sync"
-	"sync/atomic"
 )
 
 var log = logging.Logger("rbs")
@@ -126,12 +127,16 @@ type rbs struct {
 	staging  atomic.Pointer[iface.StagingStorageProvider]
 
 	// diag cache
-	diagLk sync.Mutex
 
 	grpReadBlocks  int64
 	grpReadSize    int64
 	grpWriteBlocks int64
 	grpWriteSize   int64
+
+	// workers
+	workersAvail      atomic.Int64
+	workersFinalizing atomic.Int64
+	workersCommP      atomic.Int64
 }
 
 func (r *rbs) Close() error {
@@ -169,7 +174,6 @@ type ribBatch struct {
 	toFlush            map[iface.GroupKey]struct{}
 
 	// todo: use lru
-	currentReadTarget iface.GroupKey
 }
 
 func (r *rbs) Session(ctx context.Context) iface.Session {
@@ -182,23 +186,19 @@ func (r *ribSession) View(ctx context.Context, c []mh.Multihash, cb func(cidx in
 	done := map[int]struct{}{}
 	byGroup := map[iface.GroupKey][]int{}
 
-	err := r.r.index.GetGroups(ctx, c, func(i [][]iface.GroupKey) (bool, error) {
-		for cidx, groups := range i {
-			if _, ok := done[cidx]; ok {
-				continue
-			}
-			done[cidx] = struct{}{}
+	err := r.r.index.GetGroups(ctx, c, func(cidx int, group iface.GroupKey) (bool, error) {
+		if _, ok := done[cidx]; ok {
+			return false, nil
+		}
+		done[cidx] = struct{}{}
 
-			for _, g := range groups {
-				if g == iface.UndefGroupKey {
-					continue
-				}
-
-				byGroup[g] = append(byGroup[g], cidx)
-			}
+		if group == iface.UndefGroupKey {
+			return true, nil
 		}
 
-		return len(done) != len(c), nil
+		byGroup[group] = append(byGroup[group], cidx)
+
+		return false, nil
 	})
 	if err != nil {
 		return err
@@ -315,15 +315,12 @@ func (r *rbs) Offload(ctx context.Context, group iface.GroupKey) error {
 func (r *rbs) FindHashes(ctx context.Context, hash mh.Multihash) ([]iface.GroupKey, error) {
 	var out []iface.GroupKey
 
-	err := r.index.GetGroups(ctx, []mh.Multihash{hash}, func(i [][]iface.GroupKey) (bool, error) {
-		for _, groups := range i {
-			for _, g := range groups {
-				if g == iface.UndefGroupKey {
-					continue
-				}
-				out = append(out, g)
-			}
+	err := r.index.GetGroups(ctx, []mh.Multihash{hash}, func(cidx int, group iface.GroupKey) (bool, error) {
+		if group == iface.UndefGroupKey {
+			return true, nil
 		}
+
+		out = append(out, group)
 
 		return true, nil
 	})

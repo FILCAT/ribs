@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"github.com/ipfs/go-cid"
-	u "github.com/ipfs/go-ipfs-util"
-	"golang.org/x/xerrors"
 	"io"
 	"io/fs"
 	"os"
@@ -15,8 +12,10 @@ import (
 	"testing"
 
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 )
 
 func TestCarLogBasic(t *testing.T) {
@@ -76,6 +75,7 @@ func TestCarLogBasic(t *testing.T) {
 		require.Equal(t, b, []byte("hello world"))
 		return nil
 	})
+	require.NoError(t, err)
 
 	// test open finalized
 	err = jb.Close()
@@ -97,6 +97,7 @@ func TestCarLogBasic(t *testing.T) {
 		require.Equal(t, h, hs.Hash())
 		return nil
 	})
+	require.NoError(t, err)
 
 	// test offload
 	require.NoError(t, jb.Offload())
@@ -124,6 +125,7 @@ func TestCarLogBasic(t *testing.T) {
 	s, err = jb.HashSample()
 	require.NoError(t, err)
 	require.Len(t, s, 1)
+	require.NoError(t, jb.Close())
 }
 
 func TestCarLog3K(t *testing.T) {
@@ -150,7 +152,10 @@ func TestCarLog3K(t *testing.T) {
 		_, err := rand.Read(blockData[i])
 		require.NoError(t, err)
 
-		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV0(u.Hash(blockData[i])))
+		mh, err := multihash.Sum(blockData[i], multihash.SHA2_256, -1)
+		require.NoError(t, err)
+
+		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV1(cid.Raw, mh))
 		mhList[i] = b.Cid().Hash()
 		blockList[i] = b
 	}
@@ -176,6 +181,7 @@ func TestCarLog3K(t *testing.T) {
 		require.Equal(t, b, blockData[i])
 		return nil
 	})
+	require.NoError(t, err)
 
 	err = jb.Close()
 	require.NoError(t, err)
@@ -197,11 +203,13 @@ func TestCarLog3K(t *testing.T) {
 
 	f, err := os.Create(filepath.Join(td, "canon.car"))
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, f.Close()) })
 
 	_, _, err = jb.WriteCar(f)
 	require.NoError(t, err)
 
 	err = jb.Close()
+	require.NoError(t, err)
 
 	//require.NoError(t, VerifyCar(filepath.Join(td, "canon.car")))
 	//require.NoError(t, VerifyCar(filepath.Join(td, "data.car")))
@@ -291,7 +299,10 @@ func TestCarStaging(t *testing.T) {
 		_, err := rand.Read(blockData[i])
 		require.NoError(t, err)
 
-		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV0(u.Hash(blockData[i])))
+		mh, err := multihash.Sum(blockData[i], multihash.SHA2_256, -1)
+		require.NoError(t, err)
+
+		b, _ := blocks.NewBlockWithCid(blockData[i], cid.NewCidV1(cid.Raw, mh))
 		mhList[i] = b.Cid().Hash()
 		blockList[i] = b
 	}
@@ -357,13 +368,15 @@ func TestCarStaging(t *testing.T) {
 	require.NoError(t, err)
 }
 
+var _ CarStorageProvider = (*testStagingProvider)(nil)
+
 type testStagingProvider struct {
 	lk sync.Mutex
 
 	bdata []byte
 }
 
-func (t *testStagingProvider) Upload(ctx context.Context, src func(writer io.Writer) error) error {
+func (t *testStagingProvider) Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error {
 	t.lk.Lock()
 	defer t.lk.Unlock()
 

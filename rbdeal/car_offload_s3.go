@@ -26,8 +26,17 @@ import (
 )
 
 func (r *ribs) maybeInitS3Offload() error {
+	need, err := r.db.NeedS3Offload()
+	if err != nil {
+		return xerrors.Errorf("failed to check if S3 offload is needed: %w", err)
+	}
+
 	endpoint := os.Getenv("S3_ENDPOINT")
 	if endpoint == "" {
+		if need {
+			return xerrors.Errorf("S3 offload enabled but S3_ENDPOINT not set")
+		}
+
 		return nil
 	}
 

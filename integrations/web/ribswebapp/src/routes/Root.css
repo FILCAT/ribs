@@ -102,7 +102,7 @@ body {
 }
 
 
-button {
+button, .button-ish {
     background-color: #4caf50;
     border: none;
     border-radius: 3px;
@@ -117,7 +117,7 @@ button {
     transition-duration: 0.4s;
 }
 
-button:hover {
+button:hover, .button-ish {
     background-color: #45a049;
     color: white;
 }

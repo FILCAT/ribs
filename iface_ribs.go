@@ -34,6 +34,35 @@ type RIBSDiag interface {
 	StagingStats() (StagingStats, error)
 
 	Filecoin(context.Context) (api.Gateway, jsonrpc.ClientCloser, error)
+
+	P2PNodes(ctx context.Context) (map[string]Libp2pInfo, error)
+
+	RetrChecker() RetrCheckerStats
+
+	RetrievableDealCounts() ([]DealCountStats, error)
+	SealedDealCounts() ([]DealCountStats, error)
+}
+
+type DealCountStats struct {
+	Count  int
+	Groups int
+}
+
+type RetrCheckerStats struct {
+	ToDo       int64
+	Started    int64
+	Success    int64
+	Fail       int64
+	SuccessAll int64
+	FailAll    int64
+}
+
+type Libp2pInfo struct {
+	PeerID string
+
+	Listen []string
+
+	Peers int
 }
 
 type StagingStats struct {
@@ -86,7 +115,7 @@ type Wallet interface {
 }
 
 type WalletInfo struct {
-	Addr string
+	Addr, IDAddr string
 
 	DataCap string
 

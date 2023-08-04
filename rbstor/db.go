@@ -3,11 +3,12 @@ package rbstor
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
+
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
-	"path/filepath"
 )
 
 var pragmas = []string{
@@ -129,13 +130,11 @@ func (r *rbsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhe
 
 	selectedGroup := iface.UndefGroupKey
 
-	for res.Next() {
+	if res.Next() {
 		err := res.Scan(&selectedGroup, &blocks, &bytes, &jbhead, &state)
 		if err != nil {
 			return 0, 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
 		}
-
-		break
 	}
 
 	if err := res.Err(); err != nil {
@@ -165,15 +164,13 @@ func (r *rbsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, stat
 
 	var found bool
 
-	for res.Next() {
+	if res.Next() {
 		err := res.Scan(&blocks, &bytes, &jbhead, &state)
 		if err != nil {
 			return 0, 0, 0, 0, xerrors.Errorf("scanning group: %w", err)
 		}
 
 		found = true
-
-		break
 	}
 
 	if err := res.Err(); err != nil {
@@ -289,15 +286,13 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	var carSize *int64
 	var commp []byte
 
-	for res.Next() {
+	if res.Next() {
 		err := res.Scan(&blocks, &bytes, &state, &carSize, &commp)
 		if err != nil {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
 		}
 
 		found = true
-
-		break
 	}
 
 	if err := res.Err(); err != nil {
@@ -348,7 +343,7 @@ func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.G
 
 	var found bool
 
-	for res.Next() {
+	if res.Next() {
 		var root, commp []byte
 		err := res.Scan(&root, &commp)
 		if err != nil {
@@ -366,7 +361,6 @@ func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.G
 		}
 
 		found = true
-		break
 	}
 
 	if err := res.Err(); err != nil {

@@ -1,10 +1,11 @@
 package rbdeal
 
 import (
+	"time"
+
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/lotus/chain/types"
-	"time"
 )
 
 const mFil = 1_000_000_000_000_000
@@ -47,8 +48,10 @@ var autoMarketBalance = types.NewInt(1_000_000_000_000_000_000) // 1 FIL
 // deal transfers
 
 // todo this definitely needs to be configurable by the user
-var minTransferMbps = 8                                     // at 10 Mbps, a 32 GiB piece takes ~7 hours to transfer
-var linkSpeedMbps = 1000                                    // 1 Gbps
+var minTransferMbps = 8  // at 10 Mbps, a 32 GiB piece takes ~7 hours to transfer
+var linkSpeedMbps = 1000 // 1 Gbps
+
+//lint:ignore U1000 To be revisited in the context of S3 offloading.
 var maxTransfers = linkSpeedMbps / minTransferMbps * 8 / 10 // 80% for safety margin
 
 // time the sp has to start the first transfer, and for data to not be flowing

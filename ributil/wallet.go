@@ -3,7 +3,15 @@ package ributil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/api"
@@ -14,12 +22,6 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/whyrusleeping/base32"
 	"golang.org/x/xerrors"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"sync"
 )
 
 const (
@@ -133,7 +135,7 @@ func (w *LocalWallet) SetDefault(a address.Address) error {
 	}
 
 	if err := w.keystore.Delete(KDefault); err != nil {
-		if !xerrors.Is(err, types.ErrKeyInfoNotFound) {
+		if !errors.Is(err, types.ErrKeyInfoNotFound) {
 			fmt.Println("failed to delete old default key: ", err)
 		}
 	}
@@ -161,7 +163,7 @@ func (w *LocalWallet) WalletNew(ctx context.Context, typ types.KeyType) (address
 
 	_, err = w.keystore.Get(KDefault)
 	if err != nil {
-		if !xerrors.Is(err, types.ErrKeyInfoNotFound) {
+		if !errors.Is(err, types.ErrKeyInfoNotFound) {
 			return address.Undef, err
 		}
 
@@ -187,7 +189,7 @@ func (w *LocalWallet) findKey(addr address.Address) (*key.Key, error) {
 
 	ki, err := w.tryFind(addr)
 	if err != nil {
-		if xerrors.Is(err, types.ErrKeyInfoNotFound) {
+		if errors.Is(err, types.ErrKeyInfoNotFound) {
 			return nil, nil
 		}
 		return nil, xerrors.Errorf("getting from keystore: %w", err)
@@ -207,7 +209,7 @@ func (w *LocalWallet) tryFind(addr address.Address) (types.KeyInfo, error) {
 		return ki, err
 	}
 
-	if !xerrors.Is(err, types.ErrKeyInfoNotFound) {
+	if !errors.Is(err, types.ErrKeyInfoNotFound) {
 		return types.KeyInfo{}, err
 	}
 

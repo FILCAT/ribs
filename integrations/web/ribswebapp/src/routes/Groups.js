@@ -205,6 +205,9 @@ export function Group({ groupKey, headHeight, showCid }) {
 function Groups() {
     const [groupKeys, setGroupKeys] = useState([]);
     const [headHeight, setHeadHeight] = useState(0);
+    const [currentPage, setCurrentPage] = useState(0); // Added for pagination
+
+    const itemsPerPage = 30; // Number of items per page
 
     const fetchGroups = async () => {
         try {
@@ -220,19 +223,34 @@ function Groups() {
 
     useEffect(() => {
         fetchGroups();
-        const intervalId = setInterval(fetchGroups, 5000);
-
+        const intervalId = setInterval(fetchGroups, 15000);
         return () => {
             clearInterval(intervalId);
         };
     }, []);
 
+    const totalPages = Math.ceil(groupKeys.length / itemsPerPage); // Total pages
+
+    // Function to handle page change
+    const handlePageChange = (page) => {
+        setCurrentPage(page);
+    };
+
     return (
         <div className="Groups">
             <h2>Groups</h2>
-            {groupKeys.map((groupKey, index) => (
-                <Group key={groupKey} groupKey={groupKey} headHeight={headHeight} />
-            ))}
+            <div className="pagination"> {/* Added for pagination */}
+                {[...Array(totalPages)].map((_, index) => (
+                    <button class="button-sm pagination-btn" key={index} onClick={() => handlePageChange(totalPages - index - 1)}>
+                        {groupKeys[(totalPages - index - 1) * itemsPerPage]} - {groupKeys[Math.min(groupKeys.length-1, (totalPages - index) * itemsPerPage - 1)]}
+                    </button>
+                ))}
+            </div>
+            {groupKeys
+                .slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage)
+                .map((groupKey, index) => (
+                    <Group key={groupKey} groupKey={groupKey} headHeight={headHeight} />
+                ))}
         </div>
     );
 }

@@ -2,9 +2,11 @@ package bsst
 
 import (
 	"encoding/binary"
+	"path/filepath"
+	"testing"
+
 	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type testSource struct {
@@ -35,10 +37,11 @@ func TestBSSTCreate(t *testing.T) {
 
 	n := int64(13421280)
 
-	bsst, err := Create("/tmp/a.bsst", n, &testSource{n: n})
+	bsst, err := Create(filepath.Join(t.TempDir(), "/a.bsst"), n, &testSource{n: n})
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bsst.Close()) })
 
-	var got int
+	var got int64
 
 	err = (&testSource{n: n}).List(func(c mh.Multihash, offs []int64) error {
 		h, err := bsst.Has([]mh.Multihash{c})
@@ -55,4 +58,5 @@ func TestBSSTCreate(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+	require.Equal(t, n, got)
 }

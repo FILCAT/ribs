@@ -1,7 +1,10 @@
 import './Status.css';
 import React, { useState, useEffect, useRef } from "react";
 import RibsRPC from "../helpers/rpc";
+import { CopyToClipboard } from 'react-copy-to-clipboard';
 import {formatBytesBinary, formatBitsBinary, formatNum, formatNum6, calcEMA} from "../helpers/fmt";
+import content from "./Content";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 
 const oneFil = 1000000000000000000
 
@@ -52,8 +55,15 @@ function WalletInfoTile({ walletInfo }) {
                         <td>{truncateAddress(walletInfo.Addr)}</td>
                     </tr>
                     <tr>
+                        <td colSpan={2} style={{textAlign: 'center'}}>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://filfox.info/en/address/${walletInfo.Addr}`}>FilFox</a>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://datacapstats.io/clients/${walletInfo.IDAddr}`}>DcapStats</a>
+                            <a target="_blank" className="button-ish button-sm" style={{marginRight: '4px'}} href={`https://dag.parts/client/${walletInfo.IDAddr}`}>DagParts</a>
+                        </td>
+                    </tr>
+                    <tr>
                         <td>Balance:</td>
-                        <td>{walletInfo.Balance} [Send]</td>
+                        <td>{walletInfo.Balance}</td>
                     </tr>
                     <tr>
                         <td>Market Balance:</td>
@@ -695,20 +705,291 @@ function StagingStats() {
     )
 }
 
-// retrieval checker stats
+function P2PNodes() {
+    const [nodes, setNodes] = useState({});
+
+    const fetchStatus = async () => {
+        try {
+            const nodeStats = await RibsRPC.call("P2PNodes");
+            setNodes(nodeStats)
+        } catch (error) {
+            console.error("Error fetching p2p node infos:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus();
+        const intervalId = setInterval(fetchStatus, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h2>LibP2P Nodes</h2>
+            <table className="compact-table">
+                <tbody>
+                {Object.keys(nodes).map((nodeName, index) => (
+                    <tr key={index}>
+                        <td colSpan={2}><h3>{nodeName}</h3></td>
+                        <td colSpan={2}>
+                            <CopyToClipboard text={nodes[nodeName].PeerID}>
+                                <p title={`PeerID: ${nodes[nodeName].PeerID}\n\nListen Addresses: ${nodes[nodeName].Listen.join('\n')}`}>
+                                    {`${nodes[nodeName].PeerID.slice(0, 10)}...`}
+                                </p>
+                            </CopyToClipboard>
+                        </td>
+                        <td colSpan={2}>Peers: {nodes[nodeName].Peers}</td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function GoRuntimeStats() {
+    const [stats, setStats] = useState({});
+    const prevStatsRef = useRef({});
+    const prevTimeRef = useRef(Date.now());
+    const gcPausePercentEMARef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    const fetchStats = async () => {
+        try {
+            const runtimeStats = await RibsRPC.call("RuntimeStats");
+            const currentTime = Date.now();
+            const elapsedTime = currentTime - prevTimeRef.current;
+            prevTimeRef.current = currentTime;
+
+            if (prevStatsRef.current.PauseTotalNs !== undefined) {
+                const gcPauseTimeDelta = runtimeStats.PauseTotalNs - prevStatsRef.current.PauseTotalNs;
+                const gcPauseTimePercent = gcPauseTimeDelta / (elapsedTime * 1e6); // convert ms to ns
+                gcPausePercentEMARef.current = calcEMA(gcPauseTimePercent, gcPausePercentEMARef.current, smoothingFactor);
+            }
+
+            prevStatsRef.current = runtimeStats;
+            setStats(runtimeStats);
+        } catch (error) {
+            console.error("Error fetching Go runtime stats:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStats();
+        const intervalId = setInterval(fetchStats, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h2>Go Runtime Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Alloc:</td>
+                    <td>{formatBytesBinary(stats.Alloc)}</td>
+                </tr>
+                <tr>
+                    <td>TotalAlloc:</td>
+                    <td>{formatBytesBinary(stats.TotalAlloc)}</td>
+                </tr>
+                <tr>
+                    <td>HeapAlloc:</td>
+                    <td>{formatBytesBinary(stats.HeapAlloc)}</td>
+                </tr>
+                <tr>
+                    <td>HeapSys:</td>
+                    <td>{formatBytesBinary(stats.HeapSys)}</td>
+                </tr>
+                <tr>
+                    <td>HeapObjects:</td>
+                    <td>{formatNum(stats.HeapObjects)}</td>
+                </tr>
+                <tr>
+                    <td>Number of GC:</td>
+                    <td>{formatNum(stats.NumGC)}</td>
+                </tr>
+                <tr>
+                    <td>GC Pause (% of time):</td>
+                    <td>{formatNum(gcPausePercentEMARef.current * 100, 3)}%</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+
+function getPercentage(value, total) {
+    if (total === 0) {
+        return 0;
+    } else {
+        return ((value / total) * 100).toFixed(2);
+    }
+}
+
+function RetrCheckerStats({stats}) {
+    return (
+        <div>
+            <h2>Retrieval Checker</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Progress:</td>
+                    <td>{stats.Success+stats.Fail} / {stats.ToDo} ({getPercentage(stats.Success+stats.Fail, stats.ToDo)}%)</td>
+                </tr>
+                <tr>
+                    <td colSpan={2}>
+                        <div className="progress-bar">
+                            <div className="progress-bar__fill" style={{ width: `${getPercentage(stats.Success+stats.Fail, stats.ToDo)}%` }}></div>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Success (current):</td>
+                    <td>{stats.Success} ({getPercentage(stats.Success, stats.ToDo)}%)</td>
+                </tr>
+                <tr>
+                    <td>Fail (current):</td>
+                    <td>{stats.Fail} ({getPercentage(stats.Fail, stats.ToDo)}%)</td>
+                </tr><tr>
+                    <td>Success:</td>
+                    <td>{stats.SuccessAll} ({getPercentage(stats.SuccessAll, stats.ToDo)}%)</td>
+                </tr>
+                <tr>
+                    <td>Fail:</td>
+                    <td>{stats.FailAll} ({getPercentage(stats.FailAll, stats.ToDo)}%)</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+function WorkerStats({stats}) {
+    const prevStatsRef = useRef({});
+    const prevTimeRef = useRef(Date.now());
+    const commPBytesRateRef = useRef(0);
+    const smoothingFactor = 1 / 10;
+
+    useEffect(() => {
+        const prevStats = prevStatsRef.current;
+        const currentTime = Date.now();
+        const elapsedTime = (currentTime - prevTimeRef.current) / 1000; // convert ms to s
+        prevTimeRef.current = currentTime;
+
+        if (prevStats.CommPBytes !== undefined) {
+            const commPBytesRate = (stats.CommPBytes - prevStats.CommPBytes) / elapsedTime;
+            commPBytesRateRef.current = calcEMA(
+                commPBytesRate,
+                commPBytesRateRef.current,
+                smoothingFactor
+            );
+        }
+
+        prevStatsRef.current = stats;
+    }, [stats]);
+
+    return (
+        <div>
+            <h2>Worker Stats</h2>
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Use:</td>
+                    <td>{stats.InFinalize+stats.InCommP} / {stats.Available}</td>
+                </tr>
+                <tr>
+                    <td colSpan={2}>
+                        <div className="progress-bar">
+                            <div className="progress-bar__fill" style={{ width: `${(stats.InFinalize+stats.InCommP) / stats.Available * 100}%` }}></div>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Group Finalize:</td>
+                    <td>{stats.InFinalize}</td>
+                </tr>
+                <tr>
+                    <td>Compute Data CID</td>
+                    <td>{stats.InCommP}</td>
+                </tr><tr>
+                    <td>Queued Tasks:</td>
+                    <td>{stats.TaskQueue}</td>
+                </tr>
+                <tr>
+                    <td>DataCID rate:</td>
+                    <td>{formatBytesBinary(commPBytesRateRef.current)}/s</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+function DealCountsChart() {
+    const [dealCounts, setDealCounts] = useState([]);
+
+    const fetchData = async () => {
+        try {
+            const retrievableDealCounts = await RibsRPC.call('RetrievableDealCounts');
+            const sealedDealCounts = await RibsRPC.call('SealedDealCounts');
+
+            // Create a map to easily find sealed deals by count
+            const sealedMap = Object.fromEntries(sealedDealCounts.map(item => [item.Count, item.Groups]));
+
+            const data = retrievableDealCounts.map(item => ({
+                name: item.Count,
+                Retrievable: item.Groups,
+                Sealed: sealedMap[item.Count] || 0
+            }));
+            setDealCounts(data);
+        } catch (error) {
+            console.error('Error fetching deal counts:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+        const intervalId = setInterval(fetchData, 2500);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    return (
+        <div style={{height: "25em", gridColumn: "span 2"}}>
+            <h2>Deals Per Group</h2>
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                    data={dealCounts}
+                    margin={{ top: 20, right: 0, left: 0, bottom: 64 }}
+                >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="Retrievable" fill="#8884d8" />
+                    <Bar dataKey="Sealed" fill="#82ca9d" />
+                </BarChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
 
 // read/write busy time
 
-// process stats
-// - memory
+// process stats [rpc]
 // - fds
-// - gc
 // - goroutines
-
-// libp2p nodes
-// - peer ids
-// - peer counts
-// - bw
 
 // lotus rpc
 // - calls
@@ -729,7 +1010,8 @@ function Status() {
     const [reachableProviders, setReachableProviders] = useState([]);
     const [dealSummary, setDealSummary] = useState({});
     const [retrStats, setRetrStats] = useState({});
-    const [stagingStats, setStagingStats] = useState({});
+    const [retrChecker, setRetrChecker] = useState({})
+    const [workerStats, setWorkerStats] = useState({})
 
     const fetchStatus = async () => {
         try {
@@ -741,6 +1023,8 @@ function Status() {
             const reachableProviders = await RibsRPC.call("ReachableProviders");
             const dealSummary = await RibsRPC.call("DealSummary");
             const retrStats = await RibsRPC.call("RetrStats");
+            const retrCheckerStats = await RibsRPC.call("RetrChecker")
+            const workerStats = await RibsRPC.call("WorkerStats")
 
             setGroups(groups);
             setCrawlState(crawlState);
@@ -748,6 +1032,8 @@ function Status() {
             setReachableProviders(reachableProviders);
             setDealSummary(dealSummary);
             setRetrStats(retrStats);
+            setRetrChecker(retrCheckerStats);
+            setWorkerStats(workerStats);
         } catch (error) {
             console.error("Error fetching status:", error);
         }
@@ -763,18 +1049,38 @@ function Status() {
     }, []);
 
     return (
-        <div className="Status">
-            <div className="status-grid">
-                <GroupsTile groups={groups} />
-                <IoStats />
-                <TopIndexTile />
-                <DealsTile dealSummary={dealSummary} />
-                <ProvidersTile reachableProviders={reachableProviders} />
-                <CarUploadStatsTile carUploadStats={carUploadStats} />
-                <CrawlStateTile crawlState={crawlState} />
-                <WalletInfoTile walletInfo={walletInfo} />
-                <RetrStats retrStats={retrStats} />
-                <StagingStats stagingStats={stagingStats} />
+        <div className="">
+            <div className="Status">
+                <h1>Storage</h1>
+                <div className="status-grid">
+                    <GroupsTile groups={groups} />
+                    <DealsTile dealSummary={dealSummary} />
+                    <IoStats />
+                    <TopIndexTile />
+                    <DealCountsChart />
+                </div>
+
+                <h1><abbr title="Decentralized Storage Network">DSN</abbr></h1>
+                <div className="status-grid">
+                    <ProvidersTile reachableProviders={reachableProviders} />
+                    <CarUploadStatsTile carUploadStats={carUploadStats} />
+                    <CrawlStateTile crawlState={crawlState} />
+                    <WalletInfoTile walletInfo={walletInfo} />
+                </div>
+
+                <h1>External Storage</h1>
+                <div className="status-grid">
+                    <RetrStats retrStats={retrStats} />
+                    <StagingStats />
+                    <RetrCheckerStats stats={retrChecker} />
+                </div>
+
+                <h1>Internals</h1>
+                <div className="status-grid">
+                    <P2PNodes />
+                    <GoRuntimeStats />
+                    <WorkerStats stats={workerStats} />
+                </div>
             </div>
         </div>
     );

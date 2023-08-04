@@ -3,6 +3,7 @@ package rbdeal
 import (
 	"context"
 	"github.com/filecoin-project/lassie/pkg/lassie"
+	"github.com/filecoin-project/lassie/pkg/net/host"
 	"github.com/filecoin-project/lassie/pkg/types"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
@@ -203,10 +204,10 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	return nil
 }
 
-func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
+func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, error) {
 	gw, closer, err := client.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
-		panic(err)
+		return nil, xerrors.Errorf("create retrieval gateway rpc: %w", err)
 	}
 	// TODO defer closer() more better
 	go func() {
@@ -231,18 +232,26 @@ func newRetrievalProvider(ctx context.Context, r *ribs) *retrievalProvider {
 		blockCache: must.One(lru.New[mhStr, []byte](BlockCacheSize)),
 	}
 
-	lsi, err := lassie.NewLassie(ctx, lassie.WithFinder(rp),
+	retrHost, err := host.InitHost(ctx, nil)
+	if err != nil {
+		return nil, xerrors.Errorf("init lassie host: %w", err)
+	}
+	r.retrHost = retrHost
+
+	lsi, err := lassie.NewLassie(ctx,
+		lassie.WithFinder(rp),
 		lassie.WithConcurrentSPRetrievals(1000),
 		lassie.WithBitswapConcurrency(1000),
 		lassie.WithGlobalTimeout(30*time.Second),
-		lassie.WithProviderTimeout(4*time.Second))
+		lassie.WithProviderTimeout(4*time.Second),
+		lassie.WithHost(retrHost))
 	if err != nil {
-		log.Fatalw("failed to create lassie", "error", err)
+		return nil, xerrors.Errorf("failed to create lassie: %w", err)
 	}
 
 	rp.lsi = lsi
 
-	return rp
+	return rp, nil
 }
 
 var selectOne = func() ipld.Node {

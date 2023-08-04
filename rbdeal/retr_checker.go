@@ -27,7 +27,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-var retrievalCheckTimeout = 45 * time.Second
+var retrievalCheckTimeout = 7 * time.Second
 
 type ProbingRetrievalFinder struct {
 	lk      sync.Mutex
@@ -72,7 +72,9 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithProviderAllowList(map[peer.ID]bool{}),
-		lassie.WithFinder(rf))
+		lassie.WithFinder(rf),
+		lassie.WithGlobalTimeout(retrievalCheckTimeout),
+		lassie.WithProviderTimeout(retrievalCheckTimeout))
 	if err != nil {
 		log.Fatalw("failed to create lassie", "error", err)
 	}
@@ -92,6 +94,13 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 	if err != nil {
 		return xerrors.Errorf("failed to get retrieval check candidates: %w", err)
 	}
+
+	r.rckToDo.Store(int64(len(candidates)))
+	r.rckStarted.Store(0)
+	r.rckSuccess.Store(0)
+	r.rckFail.Store(0)
+
+	// last retr check candidates
 
 	groups := map[iface.GroupKey]iface.GroupDesc{}
 	samples := map[iface.GroupKey][]multihash.Multihash{}
@@ -116,6 +125,8 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 	}
 
 	for _, candidate := range candidates {
+		r.rckStarted.Add(1)
+
 		hashToGet := samples[candidate.Group][rand.Intn(len(samples[candidate.Group]))]
 		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
@@ -188,10 +199,16 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			res.Success = true
 			res.Duration = time.Since(start)
 			res.TimeToFirstByte = stat.TimeToFirstByte
+
+			r.rckSuccess.Add(1)
+			r.rckSuccessAll.Add(1)
 		} else {
 			log.Errorw("failed to fetch", "error", err)
 			res.Success = false
 			res.Error = err.Error()
+
+			r.rckFail.Add(1)
+			r.rckFailAll.Add(1)
 		}
 
 		prf.lk.Lock()

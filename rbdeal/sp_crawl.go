@@ -64,6 +64,7 @@ func (r *ribs) spCrawler() {
 	if err != nil {
 		panic(err)
 	}
+	r.crawlHost = pingP2P
 
 	for {
 		select {
@@ -148,7 +149,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 			return nil
 		default:
 		}
-		return nil
+		return err
 	}
 
 	r.setCrawlState(iface.CrawlState{State: crawlStoreMarket})

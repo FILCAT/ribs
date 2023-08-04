@@ -94,3 +94,13 @@ func (r *rbs) TopIndexStats(ctx context.Context) (iface.TopIndexStats, error) {
 		Reads:   atomic.LoadInt64(&r.index.reads),
 	}, nil
 }
+
+func (r *rbs) WorkerStats() iface.WorkerStats {
+	return iface.WorkerStats{
+		Available:  r.workersAvail.Load(),
+		InFinalize: r.workersFinalizing.Load(),
+		InCommP:    r.workersCommP.Load(),
+		TaskQueue:  int64(len(r.tasks)),
+		CommPBytes: globalCommpBytes.Load(),
+	}
+}

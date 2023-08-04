@@ -102,6 +102,15 @@ type RBSDiag interface {
 	TopIndexStats(context.Context) (TopIndexStats, error)
 	GetGroupStats() (*GroupStats, error)
 	GroupIOStats() GroupIOStats
+
+	WorkerStats() WorkerStats
+}
+
+type WorkerStats struct {
+	Available, InFinalize, InCommP int64
+	TaskQueue                      int64
+
+	CommPBytes int64
 }
 
 /* Deal diag */
@@ -147,7 +156,7 @@ type TopIndexStats struct {
 // Index is the top level index, thread safe
 type Index interface {
 	// GetGroups gets group ids for the multihashes
-	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func([][]GroupKey) (more bool, err error)) error
+	GetGroups(ctx context.Context, mh []multihash.Multihash, cb func(cidx int, gk GroupKey) (more bool, err error)) error
 	GetSizes(ctx context.Context, mh []multihash.Multihash, cb func([]int32) error) error
 
 	AddGroup(ctx context.Context, mh []multihash.Multihash, sizes []int32, group GroupKey) error

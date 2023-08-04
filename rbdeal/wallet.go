@@ -177,8 +177,14 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 		return iface.WalletInfo{}, xerrors.Errorf("get verified client status: %w", err)
 	}
 
+	id, err := gw.StateLookupID(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return iface.WalletInfo{}, xerrors.Errorf("get address id: %w", err)
+	}
+
 	wi := iface.WalletInfo{
 		Addr:          addr.String(),
+		IDAddr:        id.String(),
 		Balance:       types.FIL(b).Short(),
 		MarketBalance: types.FIL(mb.Escrow).Short(),
 		MarketLocked:  types.FIL(mb.Locked).Short(),
