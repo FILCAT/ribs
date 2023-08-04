@@ -240,8 +240,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 
 	lsi, err := lassie.NewLassie(ctx,
 		lassie.WithFinder(rp),
-		lassie.WithConcurrentSPRetrievals(1000),
-		lassie.WithBitswapConcurrency(1000),
+		lassie.WithConcurrentSPRetrievals(50),
+		lassie.WithBitswapConcurrency(50),
 		lassie.WithGlobalTimeout(30*time.Second),
 		lassie.WithProviderTimeout(4*time.Second),
 		lassie.WithHost(retrHost))
