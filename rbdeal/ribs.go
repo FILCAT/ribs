@@ -62,10 +62,10 @@ func WithLocalWalletPath(wp string) OpenOption {
 }
 
 // WithFileCoinApiEndpoint sets the FileCoin API endpoint used to probe the chain.
-// Defaults to "https://pac-l-gw.devtty.eu/rpc/v1".
+// Defaults to "https://api.chain.love/rpc/v1".
 func WithFileCoinApiEndpoint(wp string) OpenOption {
 	return func(o *openOptions) {
-		o.localWalletPath = wp
+		o.fileCoinAPIEndpoint = wp
 	}
 }
 
@@ -146,7 +146,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		hostGetter:          libp2p.New,
 		localWalletOpener:   ributil.OpenWallet,
 		localWalletPath:     "~/.ribswallet",
-		fileCoinAPIEndpoint: "https://pac-l-gw.devtty.eu/rpc/v1",
+		fileCoinAPIEndpoint: "https://api.chain.love/rpc/v1",
 	}
 
 	for _, o := range opts {
