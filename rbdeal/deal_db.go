@@ -1432,3 +1432,40 @@ func (r *ribsDB) GetSealedDealStats() ([]iface.DealCountStats, error) {
 
 	return stats, nil
 }
+
+type GroupRepair struct {
+	GroupID     iface.GroupKey
+	Retrievable int
+}
+
+func (r *ribsDB) GroupsToRepair() ([]GroupRepair, error) {
+	query := `
+    SELECT g.id, COALESCE(d.retrievable, 0) AS retrievable 
+    FROM groups g
+    LEFT JOIN (
+      SELECT group_id, COUNT(*) AS retrievable 
+      FROM deals  
+      WHERE last_retrieval_check > 0 AND last_retrieval_check < (last_retrieval_check_success + 3600*24)
+      GROUP BY group_id
+    ) d ON g.id = d.group_id
+    WHERE g.g_state = %d AND (d.retrievable <= %d OR d.retrievable IS NULL)
+    ORDER BY d.retrievable ASC
+  `
+
+	rows, err := r.db.Query(fmt.Sprintf(query, iface.GroupStateOffloaded, repairReplicaThreshold))
+	if err != nil {
+		return nil, xerrors.Errorf("query groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []GroupRepair
+	for rows.Next() {
+		var g GroupRepair
+		if err := rows.Scan(&g.GroupID, &g.Retrievable); err != nil {
+			return nil, xerrors.Errorf("scan group: %w", err)
+		}
+		groups = append(groups, g)
+	}
+
+	return groups, nil
+}

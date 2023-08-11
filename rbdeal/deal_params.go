@@ -37,6 +37,8 @@ var minDatacap = types.NewInt(192 << 30)
 var (
 	minimumReplicaCount = 5
 	targetReplicaCount  = 10
+
+	repairReplicaThreshold = 3
 )
 
 // market wallet management

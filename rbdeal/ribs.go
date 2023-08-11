@@ -266,6 +266,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 	r.subGroupChanges()
 
+	go r.repairWatcher(context.TODO())
+
 	return r, nil
 }
 
