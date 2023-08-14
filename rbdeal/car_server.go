@@ -3,6 +3,14 @@ package rbdeal
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
 	"github.com/gbrlsnchs/jwt/v3"
 	"github.com/google/uuid"
 	gostream "github.com/libp2p/go-libp2p-gostream"
@@ -12,13 +20,6 @@ import (
 	"github.com/lotus-web3/ribs/ributil"
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"golang.org/x/xerrors"
-	"io"
-	"net"
-	"net/http"
-	"strconv"
-	"strings"
-	"sync/atomic"
-	"time"
 )
 
 var bootTime = time.Now()

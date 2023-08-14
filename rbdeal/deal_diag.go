@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"context"
+
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/filecoin-project/go-jsonrpc"

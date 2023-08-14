@@ -2,9 +2,10 @@ package rbstor
 
 import (
 	"context"
+	"sync/atomic"
+
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
-	"sync/atomic"
 )
 
 func (r *rbs) StorageDiag() iface.RBSDiag {
