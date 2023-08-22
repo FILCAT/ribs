@@ -5,14 +5,15 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"github.com/minio/sha256-simd"
-	"github.com/multiformats/go-multihash"
-	"golang.org/x/xerrors"
 	"io"
 	"math"
 	"math/bits"
 	"os"
 	"sort"
+
+	"github.com/minio/sha256-simd"
+	"github.com/multiformats/go-multihash"
+	"golang.org/x/xerrors"
 )
 
 // todo monte carlo those values for best reads factor

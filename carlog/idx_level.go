@@ -2,6 +2,7 @@ package carlog
 
 import (
 	"encoding/binary"
+
 	"github.com/multiformats/go-multihash"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"

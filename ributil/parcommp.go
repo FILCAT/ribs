@@ -1,11 +1,12 @@
 package ributil
 
 import (
+	"math/bits"
+	"runtime"
+
 	"github.com/filecoin-project/go-commp-utils/nonffi"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	commp "github.com/filecoin-project/go-fil-commp-hashhash"
-	"math/bits"
-	"runtime"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"

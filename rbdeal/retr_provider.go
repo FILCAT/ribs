@@ -2,6 +2,10 @@ package rbdeal
 
 import (
 	"context"
+	"math/rand"
+	"sync"
+	"time"
+
 	"github.com/filecoin-project/lassie/pkg/lassie"
 	"github.com/filecoin-project/lassie/pkg/net/host"
 	"github.com/filecoin-project/lassie/pkg/types"
@@ -24,9 +28,6 @@ import (
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"math/rand"
-	"sync"
-	"time"
 )
 
 type mhStr string // multihash bytes in a string

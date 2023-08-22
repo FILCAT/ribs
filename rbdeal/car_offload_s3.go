@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	pool "github.com/libp2p/go-buffer-pool"
-	"go.uber.org/multierr"
 	"io"
 	"math"
 	"net/url"
@@ -15,6 +13,9 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	pool "github.com/libp2p/go-buffer-pool"
+	"go.uber.org/multierr"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"

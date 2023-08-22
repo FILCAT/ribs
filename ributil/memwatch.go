@@ -1,8 +1,9 @@
 package ributil
 
 import (
-	"github.com/raulk/go-watchdog"
 	"time"
+
+	"github.com/raulk/go-watchdog"
 )
 
 func MemoryWatchdog() (cleanup func()) {

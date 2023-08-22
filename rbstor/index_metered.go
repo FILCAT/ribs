@@ -2,9 +2,10 @@ package rbstor
 
 import (
 	"context"
+	"sync/atomic"
+
 	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
-	"sync/atomic"
 )
 
 type MeteredIndex struct {

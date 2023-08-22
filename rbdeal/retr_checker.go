@@ -2,6 +2,10 @@ package rbdeal
 
 import (
 	"context"
+	"math/rand"
+	"sync"
+	"time"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
@@ -17,9 +21,6 @@ import (
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
-	"math/rand"
-	"sync"
-	"time"
 
 	"github.com/filecoin-project/lassie/pkg/lassie"
 	"github.com/filecoin-project/lassie/pkg/types"

@@ -3,20 +3,22 @@ package rbstor
 import (
 	"context"
 	"fmt"
-	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-cid"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/carlog"
-	mh "github.com/multiformats/go-multihash"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
 
-	"golang.org/x/xerrors"
+	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	iface "github.com/lotus-web3/ribs"
+	"github.com/lotus-web3/ribs/carlog"
+	mh "github.com/multiformats/go-multihash"
+	"golang.org/x/sync/errgroup"
+
 	"os"
+
+	"golang.org/x/xerrors"
 )
 
 var (
