@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/lotus-web3/ribs/bsst"
 	"github.com/lotus-web3/ribs/carlog"
-	"os"
 
 	gen "github.com/whyrusleeping/cbor-gen"
 )

@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/fx"
-	"golang.org/x/net/webdav"
-	"golang.org/x/xerrors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -14,6 +11,10 @@ import (
 	gopath "path"
 	"strings"
 	"time"
+
+	"go.uber.org/fx"
+	"golang.org/x/net/webdav"
+	"golang.org/x/xerrors"
 
 	dag "github.com/ipfs/boxo/ipld/merkledag"
 	ft "github.com/ipfs/boxo/ipld/unixfs"

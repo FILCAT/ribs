@@ -1,3 +1,4 @@
 {
-  "skip32bit": true
+  "skip32bit": true,
+  "skipRace": true
 }

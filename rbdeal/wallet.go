@@ -2,6 +2,8 @@ package rbdeal
 
 import (
 	"context"
+	"time"
+
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
@@ -11,7 +13,6 @@ import (
 	"github.com/filecoin-project/lotus/lib/result"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
-	"time"
 
 	"github.com/ipfs/go-cid"
 
