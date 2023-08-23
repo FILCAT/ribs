@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	cborutil "github.com/filecoin-project/go-cbor-util"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"io"
 	"net/url"
 	"strings"
 	"time"
+
+	cborutil "github.com/filecoin-project/go-cbor-util"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/shared"

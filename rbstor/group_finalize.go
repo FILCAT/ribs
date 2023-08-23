@@ -2,15 +2,16 @@ package rbstor
 
 import (
 	"context"
+	"io"
+	"sync/atomic"
+	"time"
+
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/carlog"
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
-	"io"
-	"sync/atomic"
-	"time"
 )
 
 var globalCommpBytes atomic.Int64

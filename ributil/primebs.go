@@ -3,13 +3,14 @@ package ributil
 import (
 	"context"
 	"fmt"
+	"io"
+
 	"github.com/filecoin-project/lotus/blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/linking"
 	ipldstorage "github.com/ipld/go-ipld-prime/storage"
-	"io"
 )
 
 type IpldStoreWrapper struct {
