@@ -678,7 +678,7 @@ func (j *CarLog) Commit() (int64, error) {
 		j.idxLk.RUnlock()
 		return 0, nil
 	}
-	j.idxLk.RUnlock()
+	defer j.idxLk.RUnlock()
 
 	// todo log commit?
 
