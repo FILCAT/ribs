@@ -1,0 +1,193 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"github.com/cheggaaa/pb"
+	"github.com/ipfs/go-cid"
+	"github.com/ipld/go-car"
+	carutil "github.com/ipld/go-car/util"
+	"github.com/lotus-web3/ribs/carlog"
+	"github.com/urfave/cli/v2"
+	"golang.org/x/xerrors"
+	"io"
+	"math/bits"
+	"os"
+	"time"
+)
+
+var carlogCmd = &cli.Command{
+	Name:  "carlog",
+	Usage: "Carlog commands",
+	Subcommands: []*cli.Command{
+		carlogAnalyseCmd,
+	},
+}
+
+var carlogAnalyseCmd = &cli.Command{
+	Name:      "analyse",
+	Usage:     "Analyse a carlog file",
+	ArgsUsage: "[carlog file]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 1 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		carlogFile, err := os.Open(c.Args().First())
+		if err != nil {
+			return xerrors.Errorf("open carlog file: %w", err)
+		}
+		defer carlogFile.Close()
+
+		// Initialize progress bar
+		fileInfo, err := carlogFile.Stat()
+		if err != nil {
+			return xerrors.Errorf("retrieving file info: %w", err)
+		}
+		bar := pb.StartNew(int(fileInfo.Size()))
+		bar.Units = pb.U_BYTES
+
+		br := bufio.NewReader(carlogFile)
+
+		// Read the CAR header
+		header, err := car.ReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("reading car header: %w", err)
+		}
+
+		headLen, err := car.HeaderSize(header)
+		if err != nil {
+			return xerrors.Errorf("calculating car header size: %w", err)
+		}
+
+		var lastLength uint64
+		var lastByteOffset = int64(headLen)
+		var lastOffset = lastByteOffset
+		var isTruncated bool
+		entBuf := make([]byte, 1<<20)
+
+		// Record start time
+		startTime := time.Now()
+
+		for {
+			if _, err := br.Peek(1); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			entLen, err := binary.ReadUvarint(br)
+			if err != nil {
+				return err
+			}
+
+			lastLength = entLen
+			if entLen > uint64(carutil.MaxAllowedSectionSize) {
+				return xerrors.New("malformed car; header is bigger than util.MaxAllowedSectionSize")
+			}
+			if entLen > uint64(len(entBuf)) {
+				entBuf = make([]byte, 1<<bits.Len32(uint32(entLen)))
+			}
+
+			_, err = io.ReadFull(br, entBuf[:entLen])
+			if err != nil {
+				if err == io.ErrUnexpectedEOF {
+					isTruncated = true
+					break
+				} else {
+					return xerrors.Errorf("reading entry: %w", err)
+				}
+			}
+
+			_, _, err = cid.CidFromBytes(entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("parsing cid: %w", err)
+			}
+
+			lastOffset = lastByteOffset
+			lastByteOffset += int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+
+			// Update the progress bar
+			bar.Add(int(entLen))
+		}
+
+		// Finish the progress bar
+		bar.Finish()
+
+		// Output results
+		fmt.Println("Car Header (Root CID):", header.Roots[0])
+		fmt.Println("Last Object Length:", lastLength)
+		fmt.Println("Offset of the Last Object:", lastOffset)
+		fmt.Println("Offset of the Last Byte of the Last Object:", lastByteOffset)
+		if isTruncated {
+			fmt.Println("The last object is truncated.")
+		} else {
+			fmt.Println("The last object is not truncated.")
+		}
+
+		// Print time taken
+		elapsedTime := time.Since(startTime)
+		fmt.Println("Time taken for analysis:", elapsedTime)
+
+		return nil
+	},
+}
+
+// Get carlog cids
+
+// Recreate level index
+
+var headCmd = &cli.Command{
+	Name:  "head",
+	Usage: "Head commands",
+	Subcommands: []*cli.Command{
+		headToJsonCmd,
+	},
+}
+
+// head-to-json
+var headToJsonCmd = &cli.Command{
+	Name:      "to-json",
+	Usage:     "read a head file into a json file",
+	ArgsUsage: "[head file]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 1 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		headFile, err := os.Open(c.Args().First())
+		if err != nil {
+			return xerrors.Errorf("open head file: %w", err)
+		}
+
+		// read head
+		var headBuf [carlog.HeadSize]byte
+		n, err := headFile.ReadAt(headBuf[:], 0)
+		if err != nil {
+			return xerrors.Errorf("HEAD READ ERROR: %w", err)
+		}
+		if n != len(headBuf) {
+			return xerrors.Errorf("bad head read bytes (%d bytes)", n)
+		}
+
+		var h carlog.Head
+		if err := h.UnmarshalCBOR(bytes.NewBuffer(headBuf[:])); err != nil {
+			return xerrors.Errorf("unmarshal head: %w", err)
+		}
+
+		hjson, err := json.MarshalIndent(h, "", "  ")
+		if err != nil {
+			return xerrors.Errorf("marshal head: %w", err)
+		}
+
+		fmt.Println(string(hjson))
+
+		return nil
+	},
+}
+
+// head-from-json
