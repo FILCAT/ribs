@@ -25,6 +25,7 @@ var idxLevelCmd = &cli.Command{
 		toTruncateCmd,
 		findCmd,
 		matchCarlogCids,
+		checkOffsetsCmd,
 	},
 }
 
@@ -212,4 +213,96 @@ var matchCarlogCids = &cli.Command{
 
 		return nil
 	},
+}
+
+var checkOffsetsCmd = &cli.Command{
+	Name:      "check-offsets",
+	Usage:     "checks that the index offsets match entry offsets in the carlog and provides aggregate statistics",
+	ArgsUsage: "[carlog file] [leveldb file]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 2 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		li, err := carlog.OpenLevelDBIndex(c.Args().Get(1), false)
+		if err != nil {
+			return xerrors.Errorf("open leveldb index: %w", err)
+		}
+
+		carlogFile, err := os.Open(c.Args().First())
+		if err != nil {
+			return xerrors.Errorf("open carlog file: %w", err)
+		}
+		defer carlogFile.Close()
+
+		br := bufio.NewReader(carlogFile)
+
+		// Read the CAR header
+		ch, err := car.ReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("reading car header: %w", err)
+		}
+
+		hlen, err := car.HeaderSize(ch)
+		if err != nil {
+			return xerrors.Errorf("calculating car header size: %w", err)
+		}
+
+		entBuf := make([]byte, 16<<20)
+		var currOffset int64 = int64(hlen)
+		var matchedOffsets, mismatchedOffsets int64 = 0, 0
+
+		for {
+			if _, err := br.Peek(1); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			entLen, err := binary.ReadUvarint(br)
+			if err != nil {
+				return err
+			}
+
+			if entLen > uint64(carutil.MaxAllowedSectionSize) {
+				return xerrors.New("malformed car; header is bigger than util.MaxAllowedSectionSize")
+			}
+			if entLen > uint64(len(entBuf)) {
+				entBuf = make([]byte, 1<<bits.Len32(uint32(entLen)))
+			}
+
+			_, err = io.ReadFull(br, entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("reading entry: %w", err)
+			}
+
+			_, c, err := cid.CidFromBytes(entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("parsing cid: %w", err)
+			}
+
+			res, err := li.Get([]multihash.Multihash{c.Hash()})
+			if err != nil {
+				return xerrors.Errorf("get: %w", err)
+			}
+
+			idxOffset, _ := fromOffsetLen(res[0])
+			if idxOffset == currOffset {
+				matchedOffsets++
+			} else {
+				mismatchedOffsets++
+			}
+
+			// Move the current offset forward
+			currOffset += int64(entLen)
+		}
+
+		fmt.Printf("%d offsets match, %d offsets mismatched\n", matchedOffsets, mismatchedOffsets)
+		return nil
+	},
+}
+
+func fromOffsetLen(offlen int64) (int64, int) {
+	return offlen & 0xFFFF_FFFF_FF, int(offlen >> 40)
 }

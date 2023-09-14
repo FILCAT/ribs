@@ -166,6 +166,4 @@ var carlogAnalyseCmd = &cli.Command{
 	},
 }
 
-// Get carlog cids
-
 // Recreate level index
