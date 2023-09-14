@@ -13,6 +13,7 @@ func main() {
 		Commands: []*cli.Command{
 			headCmd,
 			carlogCmd,
+			idxLevelCmd,
 		},
 	}
 
