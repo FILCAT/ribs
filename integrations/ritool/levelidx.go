@@ -208,6 +208,8 @@ var matchCarlogCids = &cli.Command{
 			fmt.Println("in log not indexed:", c.String())
 		}
 
+		fmt.Printf("indexed: %d, in log: %d, not indexed: %d, not in log: %d\n", seenSet.Len(), notIndexedSet.Len(), notCarlogSet.Len(), notCarlogSet.Len())
+
 		return nil
 	},
 }
