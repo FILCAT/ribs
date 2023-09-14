@@ -235,6 +235,12 @@ var checkOffsetsCmd = &cli.Command{
 			return xerrors.Errorf("open leveldb index: %w", err)
 		}
 
+		defer func() {
+			if err := li.Close(); err != nil {
+				panic(err)
+			}
+		}()
+
 		carlogFile, err := os.Open(c.Args().First())
 		if err != nil {
 			return xerrors.Errorf("open carlog file: %w", err)
