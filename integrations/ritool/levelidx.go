@@ -295,7 +295,7 @@ var checkOffsetsCmd = &cli.Command{
 			}
 
 			// Move the current offset forward
-			currOffset += int64(entLen)
+			currOffset += int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
 		}
 
 		fmt.Printf("%d offsets match, %d offsets mismatched\n", matchedOffsets, mismatchedOffsets)
