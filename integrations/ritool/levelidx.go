@@ -311,17 +311,16 @@ var checkOffsetsCmd = &cli.Command{
 			}
 
 			idxOffset, elen := fromOffsetLen(res[0])
-			if idxOffset == currOffset || elen != int(entLen) {
+			if idxOffset != currOffset || elen != int(entLen) {
 				if repair {
 					err := li.Put([]multihash.Multihash{c.Hash()}, []int64{makeOffsetLen(currOffset, int(entLen))})
 					if err != nil {
 						return xerrors.Errorf("repairing offset: %w", err)
 					}
 				}
-
-				matchedOffsets++
-			} else {
 				mismatchedOffsets++
+			} else {
+				matchedOffsets++
 			}
 
 			// Move the current offset forward
