@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/multiformats/go-multihash"
 
 	"github.com/ipfs/go-cid"
 	"github.com/lotus-web3/ribs/carlog"
@@ -51,6 +52,38 @@ var toTruncateCmd = &cli.Command{
 
 		for _, mh := range mhs {
 			fmt.Println(cid.NewCidV1(cid.Raw, mh).String())
+		}
+
+		return nil
+	},
+}
+
+var findCmd = &cli.Command{
+	Name:      "find",
+	Usage:     "get index entry for a cid",
+	ArgsUsage: "[leveldb file] [cid]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 2 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		li, err := carlog.OpenLevelDBIndex(c.Args().First(), false)
+		if err != nil {
+			return xerrors.Errorf("open leveldb index: %w", err)
+		}
+
+		ci, err := cid.Parse(c.Args().Get(1))
+		if err != nil {
+			return xerrors.Errorf("parse cid: %w", err)
+		}
+
+		offs, err := li.Get([]multihash.Multihash{ci.Hash()})
+		if err != nil {
+			return xerrors.Errorf("get: %w", err)
+		}
+
+		for _, off := range offs {
+			fmt.Println(off)
 		}
 
 		return nil
