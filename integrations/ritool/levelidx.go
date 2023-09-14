@@ -310,10 +310,10 @@ var checkOffsetsCmd = &cli.Command{
 				return xerrors.Errorf("get: %w", err)
 			}
 
-			idxOffset, _ := fromOffsetLen(res[0])
-			if idxOffset == currOffset {
+			idxOffset, elen := fromOffsetLen(res[0])
+			if idxOffset == currOffset || elen != int(entLen) {
 				if repair {
-					err := li.Put([]multihash.Multihash{c.Hash()}, []int64{currOffset})
+					err := li.Put([]multihash.Multihash{c.Hash()}, []int64{makeOffsetLen(currOffset, int(entLen))})
 					if err != nil {
 						return xerrors.Errorf("repairing offset: %w", err)
 					}
@@ -338,4 +338,8 @@ var checkOffsetsCmd = &cli.Command{
 
 func fromOffsetLen(offlen int64) (int64, int) {
 	return offlen & 0xFFFF_FFFF_FF, int(offlen >> 40)
+}
+
+func makeOffsetLen(off int64, length int) int64 {
+	return (int64(length) << 40) | (off & 0xFFFF_FFFF_FF)
 }
