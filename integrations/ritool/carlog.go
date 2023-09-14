@@ -104,6 +104,11 @@ var carlogAnalyseCmd = &cli.Command{
 			_, err = io.ReadFull(br, entBuf[:entLen])
 			if err != nil {
 				if err == io.ErrUnexpectedEOF {
+					_, lastCID, err = cid.CidFromBytes(entBuf[:entLen])
+					if err != nil {
+						fmt.Println("last cid parse error:", err)
+					}
+
 					isTruncated = true
 					break
 				} else {
