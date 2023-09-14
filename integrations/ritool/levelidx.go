@@ -247,6 +247,11 @@ var checkOffsetsCmd = &cli.Command{
 		}
 		defer carlogFile.Close()
 
+		fileInfo, err := carlogFile.Stat()
+		if err != nil {
+			return xerrors.Errorf("retrieving file info: %w", err)
+		}
+
 		br := bufio.NewReader(carlogFile)
 
 		// Read the CAR header
@@ -255,10 +260,14 @@ var checkOffsetsCmd = &cli.Command{
 			return xerrors.Errorf("reading car header: %w", err)
 		}
 
+		bar := pb.New64(int64(fileInfo.Size())).Start()
+		bar.Units = pb.U_BYTES
+
 		hlen, err := car.HeaderSize(ch)
 		if err != nil {
 			return xerrors.Errorf("calculating car header size: %w", err)
 		}
+		bar.Add(int(hlen))
 
 		entBuf := make([]byte, 16<<20)
 		var currOffset int64 = int64(hlen)
@@ -316,7 +325,10 @@ var checkOffsetsCmd = &cli.Command{
 			}
 
 			// Move the current offset forward
-			currOffset += int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+			l := int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+			bar.Add(int(l))
+
+			currOffset += l
 		}
 
 		fmt.Printf("%d offsets match, %d offsets mismatched\n", matchedOffsets, mismatchedOffsets)
