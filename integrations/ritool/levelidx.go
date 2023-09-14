@@ -219,6 +219,12 @@ var checkOffsetsCmd = &cli.Command{
 	Name:      "check-offsets",
 	Usage:     "checks that the index offsets match entry offsets in the carlog and provides aggregate statistics",
 	ArgsUsage: "[carlog file] [leveldb file]",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "repair",
+			Usage: "repair incorrect offsets",
+		},
+	},
 	Action: func(c *cli.Context) error {
 		if c.NArg() != 2 {
 			return cli.Exit("Invalid number of arguments", 1)
@@ -251,6 +257,8 @@ var checkOffsetsCmd = &cli.Command{
 		entBuf := make([]byte, 16<<20)
 		var currOffset int64 = int64(hlen)
 		var matchedOffsets, mismatchedOffsets int64 = 0, 0
+
+		repair := c.Bool("repair")
 
 		for {
 			if _, err := br.Peek(1); err != nil {
@@ -289,6 +297,13 @@ var checkOffsetsCmd = &cli.Command{
 
 			idxOffset, _ := fromOffsetLen(res[0])
 			if idxOffset == currOffset {
+				if repair {
+					err := li.Put([]multihash.Multihash{c.Hash()}, []int64{currOffset})
+					if err != nil {
+						return xerrors.Errorf("repairing offset: %w", err)
+					}
+				}
+
 				matchedOffsets++
 			} else {
 				mismatchedOffsets++
