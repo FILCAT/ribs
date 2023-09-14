@@ -15,6 +15,7 @@ var idxLevelCmd = &cli.Command{
 	Usage: "Head commands",
 	Subcommands: []*cli.Command{
 		toTruncateCmd,
+		findCmd,
 	},
 }
 
