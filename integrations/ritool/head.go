@@ -63,24 +63,17 @@ var headToJsonCmd = &cli.Command{
 
 var fromJsonCmd = &cli.Command{
 	Name:      "from-json",
-	Usage:     "write a json file into a head file",
-	ArgsUsage: "[json file] [output head file]",
+	Usage:     "write json from stdin into a head file",
+	ArgsUsage: "[output head file]",
 	Action: func(c *cli.Context) error {
-		if c.NArg() != 2 {
-			return cli.Exit("Invalid number of arguments. Requires both input JSON file and output head file.", 1)
+		if c.NArg() != 1 {
+			return cli.Exit("Invalid number of arguments. Requires only output head file.", 1)
 		}
 
-		// Open the JSON file for reading
-		jsonFile, err := os.Open(c.Args().Get(0))
+		// Read the entire JSON from stdin
+		jsonData, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return xerrors.Errorf("open json file: %w", err)
-		}
-		defer jsonFile.Close()
-
-		// Read the entire JSON file
-		jsonData, err := io.ReadAll(jsonFile)
-		if err != nil {
-			return xerrors.Errorf("read json file: %w", err)
+			return xerrors.Errorf("read json from stdin: %w", err)
 		}
 
 		var h carlog.Head
@@ -95,7 +88,7 @@ var fromJsonCmd = &cli.Command{
 		}
 
 		// Open the head file for writing
-		headFile, err := os.Create(c.Args().Get(1))
+		headFile, err := os.Create(c.Args().Get(0))
 		if err != nil {
 			return xerrors.Errorf("open head file for writing: %w", err)
 		}
@@ -106,7 +99,7 @@ var fromJsonCmd = &cli.Command{
 			return xerrors.Errorf("write to head file: %w", err)
 		}
 
-		fmt.Printf("Successfully written to %s\n", c.Args().Get(1))
+		fmt.Printf("Successfully written to %s\n", c.Args().Get(0))
 
 		return nil
 	},
