@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cheggaaa/pb"
+	"github.com/fatih/color"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
 	carutil "github.com/ipld/go-car/util"
@@ -47,7 +48,7 @@ var carlogAnalyseCmd = &cli.Command{
 		if err != nil {
 			return xerrors.Errorf("retrieving file info: %w", err)
 		}
-		bar := pb.StartNew(int(fileInfo.Size()))
+		bar := pb.New64(int64(fileInfo.Size())).Start()
 		bar.Units = pb.U_BYTES
 
 		br := bufio.NewReader(carlogFile)
@@ -67,7 +68,14 @@ var carlogAnalyseCmd = &cli.Command{
 		var lastByteOffset = int64(headLen)
 		var lastOffset = lastByteOffset
 		var isTruncated bool
-		entBuf := make([]byte, 1<<20)
+		var lastCID cid.Cid
+
+		var lastValidCID cid.Cid
+		var lastValidOffset int64
+		var lastValidLength uint64
+		var lastValidByteOffset int64
+
+		entBuf := make([]byte, 16<<20)
 
 		// Record start time
 		startTime := time.Now()
@@ -103,9 +111,16 @@ var carlogAnalyseCmd = &cli.Command{
 				}
 			}
 
-			_, _, err = cid.CidFromBytes(entBuf[:entLen])
+			_, lastCID, err = cid.CidFromBytes(entBuf[:entLen])
 			if err != nil {
 				return xerrors.Errorf("parsing cid: %w", err)
+			}
+
+			if !isTruncated {
+				lastValidCID = lastCID
+				lastValidOffset = lastOffset
+				lastValidLength = lastLength
+				lastValidByteOffset = lastByteOffset
 			}
 
 			lastOffset = lastByteOffset
@@ -120,14 +135,25 @@ var carlogAnalyseCmd = &cli.Command{
 
 		// Output results
 		fmt.Println("Car Header (Root CID):", header.Roots[0])
+		fmt.Println("Last Object CID:", lastCID)
 		fmt.Println("Last Object Length:", lastLength)
 		fmt.Println("Offset of the Last Object:", lastOffset)
 		fmt.Println("Offset of the Last Byte of the Last Object:", lastByteOffset)
+		fmt.Println("File size:", fileInfo.Size(), "; Diff vs last byte offset:", fileInfo.Size()-lastByteOffset)
 		if isTruncated {
-			fmt.Println("The last object is truncated.")
+			color.Red("The last object is truncated.")
 		} else {
-			fmt.Println("The last object is not truncated.")
+			color.Green("The last object is not truncated.")
 		}
+
+		fmt.Println()
+
+		fmt.Println("last non-truncated object (will be the same as above in non-truncated car):")
+
+		fmt.Println("CID of the Last Non-Truncated Object:", lastValidCID)
+		fmt.Println("First Byte Offset of the Last Non-Truncated Object:", lastValidOffset)
+		fmt.Println("Length of the Last Non-Truncated Object:", lastValidLength)
+		fmt.Println("Last Byte Offset of the Last Non-Truncated Object:", lastValidByteOffset)
 
 		// Print time taken
 		elapsedTime := time.Since(startTime)
