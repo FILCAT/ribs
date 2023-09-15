@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/bits"
 	"os"
+	"strconv"
 	"time"
 
 	"encoding/binary"
@@ -14,6 +15,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
 	carutil "github.com/ipld/go-car/util"
+	"github.com/multiformats/go-multihash"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -24,6 +26,7 @@ var carlogCmd = &cli.Command{
 	Subcommands: []*cli.Command{
 		carlogAnalyseCmd,
 		carlogBottomBoundsCmd,
+		readCarEntryCmd,
 	},
 }
 
@@ -263,6 +266,70 @@ var carlogBottomBoundsCmd = &cli.Command{
 
 		// Output results
 		fmt.Println("Last Byte Offset of the Last Raw Block:", lastRawBlockByteOffset)
+
+		return nil
+	},
+}
+
+var readCarEntryCmd = &cli.Command{
+	Name:      "read-entry",
+	Usage:     "Read a single CAR entry from a given offset",
+	ArgsUsage: "[carlog file] [offset]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 2 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		carlogFile, err := os.Open(c.Args().Get(0))
+		if err != nil {
+			return xerrors.Errorf("open carlog file: %w", err)
+		}
+		defer carlogFile.Close()
+
+		offset, err := strconv.ParseInt(c.Args().Get(1), 0, 64)
+		if err != nil {
+			return xerrors.Errorf("parsing offset: %w", err)
+		}
+
+		_, err = carlogFile.Seek(offset, 0)
+		if err != nil {
+			return xerrors.Errorf("seeking to offset: %w", err)
+		}
+
+		br := bufio.NewReader(carlogFile)
+
+		entLen, err := binary.ReadUvarint(br)
+		if err != nil {
+			return err
+		}
+
+		if entLen == 0 || entLen > uint64(carutil.MaxAllowedSectionSize) {
+			return xerrors.New("invalid entry length from varint header")
+		}
+
+		entBuf := make([]byte, entLen)
+		_, err = io.ReadFull(br, entBuf)
+		if err != nil {
+			return xerrors.Errorf("reading entry: %w", err)
+		}
+
+		_, currentCID, err := cid.CidFromBytes(entBuf)
+		if err != nil {
+			return xerrors.Errorf("parsing cid: %w", err)
+		}
+
+		// Output results
+		fmt.Println("Entry Length:", entLen)
+		fmt.Println("CID:", currentCID)
+		fmt.Println("Multihash:", currentCID.Hash())
+		fmt.Println("CID Codec (Int):", currentCID.Type())
+		fmt.Println("CID Codec (String):", currentCID.String())
+		mhash, err := multihash.Decode(currentCID.Hash())
+		if err != nil {
+			return xerrors.Errorf("decoding multihash: %w", err)
+		}
+		fmt.Println("Multihash Type (Int):", mhash.Code)
+		fmt.Println("Multihash Type (String):", mhash.Name)
 
 		return nil
 	},
