@@ -175,6 +175,10 @@ var matchCarlogCids = &cli.Command{
 				return xerrors.Errorf("parsing cid: %w", err)
 			}
 
+			if c.Prefix().Codec != cid.Raw {
+				return xerrors.Errorf("non-raw cid %s", c)
+			}
+
 			res, err := li.Get([]multihash.Multihash{c.Hash()})
 			if err != nil {
 				return xerrors.Errorf("get: %w", err)
