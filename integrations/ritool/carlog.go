@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/multiformats/go-multicodec"
 	"io"
 	"math/bits"
 	"os"
@@ -323,7 +324,7 @@ var readCarEntryCmd = &cli.Command{
 		fmt.Println("CID:", currentCID)
 		fmt.Println("Multihash:", currentCID.Hash())
 		fmt.Println("CID Codec (Int):", currentCID.Type())
-		fmt.Println("CID Codec (String):", currentCID.String())
+		fmt.Println("CID Codec (String):", multicodec.Code(currentCID.Type()).String())
 		mhash, err := multihash.Decode(currentCID.Hash())
 		if err != nil {
 			return xerrors.Errorf("decoding multihash: %w", err)
