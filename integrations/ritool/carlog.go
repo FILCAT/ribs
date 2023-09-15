@@ -23,6 +23,7 @@ var carlogCmd = &cli.Command{
 	Usage: "Carlog commands",
 	Subcommands: []*cli.Command{
 		carlogAnalyseCmd,
+		carlogBottomBoundsCmd,
 	},
 }
 
@@ -127,10 +128,11 @@ var carlogAnalyseCmd = &cli.Command{
 			}
 
 			lastOffset = lastByteOffset
-			lastByteOffset += int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+			carEntLen := int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+			lastByteOffset += carEntLen
 
 			// Update the progress bar
-			bar.Add(int(entLen))
+			bar.Add(int(carEntLen))
 		}
 
 		// Finish the progress bar
@@ -161,6 +163,106 @@ var carlogAnalyseCmd = &cli.Command{
 		// Print time taken
 		elapsedTime := time.Since(startTime)
 		fmt.Println("Time taken for analysis:", elapsedTime)
+
+		return nil
+	},
+}
+
+var carlogBottomBoundsCmd = &cli.Command{
+	Name:      "bottom-bounds",
+	Usage:     "find bottom layer byte offset bounds (recover from failed top-tree gen)",
+	ArgsUsage: "[carlog file]",
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 1 {
+			return cli.Exit("Invalid number of arguments", 1)
+		}
+
+		carlogFile, err := os.Open(c.Args().First())
+		if err != nil {
+			return xerrors.Errorf("open carlog file: %w", err)
+		}
+		defer carlogFile.Close()
+
+		// Initialize progress bar
+		fileInfo, err := carlogFile.Stat()
+		if err != nil {
+			return xerrors.Errorf("retrieving file info: %w", err)
+		}
+		bar := pb.New64(int64(fileInfo.Size())).Start()
+		bar.Units = pb.U_BYTES
+
+		br := bufio.NewReader(carlogFile)
+
+		// Read the CAR header
+		header, err := car.ReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("reading car header: %w", err)
+		}
+
+		headLen, err := car.HeaderSize(header)
+		if err != nil {
+			return xerrors.Errorf("calculating car header size: %w", err)
+		}
+
+		bar.Add(int(headLen))
+
+		// iterate and find the last byte offset of the last block with cid.Raw codec
+		// carlogs are written with leaf nodes first, so blocks are
+		// [raw][raw][raw][raw][raw][pb][pb][pb]
+		// We want to find the last byte of the last raw block (offset of the first pb block)
+
+		var lastRawBlockByteOffset int64
+		var currentByteOffset = int64(headLen)
+		var entBuf = make([]byte, 16<<20)
+
+		for {
+			if _, err := br.Peek(1); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			entLen, err := binary.ReadUvarint(br)
+			if err != nil {
+				return err
+			}
+
+			if entLen > uint64(carutil.MaxAllowedSectionSize) {
+				return xerrors.New("malformed car; header is bigger than util.MaxAllowedSectionSize")
+			}
+			if entLen > uint64(len(entBuf)) {
+				entBuf = make([]byte, 1<<bits.Len32(uint32(entLen)))
+			}
+
+			_, err = io.ReadFull(br, entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("reading entry: %w", err)
+			}
+
+			_, currentCID, err := cid.CidFromBytes(entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("parsing cid: %w", err)
+			}
+
+			// Check if the CID has a Raw codec
+			if currentCID.Type() != cid.Raw {
+				break
+			}
+
+			// Update the last raw block byte offset
+			carEntLen := int64(binary.PutUvarint(entBuf, entLen)) + int64(entLen)
+			lastRawBlockByteOffset = currentByteOffset + carEntLen
+			currentByteOffset = lastRawBlockByteOffset
+
+			// Update the progress bar
+			bar.Add(int(carEntLen))
+		}
+
+		bar.Finish()
+
+		// Output results
+		fmt.Println("Last Byte Offset of the Last Raw Block:", lastRawBlockByteOffset)
 
 		return nil
 	},

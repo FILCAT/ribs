@@ -176,6 +176,7 @@ var matchCarlogCids = &cli.Command{
 			}
 
 			if c.Prefix().Codec != cid.Raw {
+				// todo: allow non-raw flag
 				return xerrors.Errorf("non-raw cid %s", c)
 			}
 
