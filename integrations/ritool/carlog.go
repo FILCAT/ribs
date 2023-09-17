@@ -144,6 +144,7 @@ var carlogAnalyseCmd = &cli.Command{
 
 		// Output results
 		fmt.Println("Car Header (Root CID):", header.Roots[0])
+		fmt.Println("Car Header Length:", headLen)
 		fmt.Println("Last Object CID:", lastCID)
 		fmt.Println("Last Object Length:", lastLength)
 		fmt.Println("Offset of the Last Object:", lastOffset)
@@ -212,8 +213,8 @@ var carlogBottomBoundsCmd = &cli.Command{
 
 		// iterate and find the last byte offset of the last block with cid.Raw codec
 		// carlogs are written with leaf nodes first, so blocks are
-		// [raw][raw][raw][raw][raw][pb][pb][pb]
-		// We want to find the last byte of the last raw block (offset of the first pb block)
+		// [raw][raw][raw][raw][raw][cbor][cbor]
+		// We want to find the last byte of the last raw block (offset of the first cbor block)
 
 		var lastRawBlockByteOffset int64
 		var currentByteOffset = int64(headLen)
@@ -276,6 +277,12 @@ var readCarEntryCmd = &cli.Command{
 	Name:      "read-entry",
 	Usage:     "Read a single CAR entry from a given offset",
 	ArgsUsage: "[carlog file] [offset]",
+	Flags: []cli.Flag{
+		&cli.Int64Flag{
+			Name:  "block-offset",
+			Usage: "seek this many blocks before/after the block at the given offset (seek back is expensive)",
+		},
+	},
 	Action: func(c *cli.Context) error {
 		if c.NArg() != 2 {
 			return cli.Exit("Invalid number of arguments", 1)
@@ -308,19 +315,119 @@ var readCarEntryCmd = &cli.Command{
 			return xerrors.New("invalid entry length from varint header")
 		}
 
-		entBuf := make([]byte, entLen)
-		_, err = io.ReadFull(br, entBuf)
+		entBuf := make([]byte, carutil.MaxAllowedSectionSize)
+
+		_, err = io.ReadFull(br, entBuf[:entLen])
 		if err != nil {
 			return xerrors.Errorf("reading entry: %w", err)
 		}
 
 		_, currentCID, err := cid.CidFromBytes(entBuf)
 		if err != nil {
-			return xerrors.Errorf("parsing cid: %w", err)
+			return xerrors.Errorf("parsing cid (target offset): %w", err)
+		}
+
+		foundOff := offset
+
+		blockOff := c.Int64("block-offset")
+		if blockOff > 0 {
+			foundOff += int64(entLen) + int64(binary.PutUvarint(entBuf, entLen))
+
+			for i := int64(0); i < blockOff; i++ {
+				entLen, err = binary.ReadUvarint(br)
+				if err != nil {
+					return err
+				}
+
+				if i+1 < blockOff {
+					foundOff += int64(entLen) + int64(binary.PutUvarint(entBuf, entLen))
+				}
+
+				_, err = io.ReadFull(br, entBuf[:entLen])
+				if err != nil {
+					return xerrors.Errorf("reading entry: %w", err)
+				}
+
+				_, currentCID, err = cid.CidFromBytes(entBuf)
+				if err != nil {
+					return xerrors.Errorf("parsing cid (block +%d): %w", i+1, err)
+				}
+			}
+		} else if blockOff < 0 { // If block offset is negative, start from the beginning and track offsets
+			blockOff = -blockOff
+
+			// Seek to the start of the file
+			_, err := carlogFile.Seek(0, 0)
+			if err != nil {
+				return xerrors.Errorf("seek start: %w", err)
+			}
+
+			br.Reset(carlogFile)
+
+			// Read the CAR header
+			ch, err := car.ReadHeader(br)
+			if err != nil {
+				return xerrors.Errorf("read header: %w", err)
+			}
+
+			hsize, err := car.HeaderSize(ch)
+			if err != nil {
+				return xerrors.Errorf("calc header size: %w", err)
+			}
+
+			// Maintain a list of past offsets with a length equal to the absolute value of blockOff
+			offs := make([]int64, blockOff)
+			readBlocks := 0
+
+			for at := int64(hsize); at < offset; {
+				entLen, err = binary.ReadUvarint(br)
+				if err != nil {
+					return err
+				}
+
+				at += int64(entLen) + int64(binary.PutUvarint(entBuf, entLen))
+				offs[readBlocks%int(blockOff)] = at
+				readBlocks++
+
+				_, err = io.ReadFull(br, entBuf[:entLen])
+				if err != nil {
+					return xerrors.Errorf("reading entry: %w", err)
+				}
+			}
+
+			if offs[readBlocks%int(blockOff)] != offset {
+				return xerrors.Errorf("block %d is at offset %d and falls past specified offset %d", readBlocks, offs[readBlocks%int(blockOff)], offset)
+			}
+
+			// Seek to the desired block after moving back by the specified block offset
+			foundOff = offs[(readBlocks-int(blockOff))%int(blockOff)]
+
+			_, err = carlogFile.Seek(foundOff, 0)
+			if err != nil {
+				return xerrors.Errorf("seek to entry at block offset: %w", err)
+			}
+
+			// Read the entry at the found offset
+			entLen, err = binary.ReadUvarint(br)
+			if err != nil {
+				return err
+			}
+
+			_, err = io.ReadFull(br, entBuf[:entLen])
+			if err != nil {
+				return xerrors.Errorf("reading entry: %w", err)
+			}
+
+			_, currentCID, err = cid.CidFromBytes(entBuf)
+			if err != nil {
+				return xerrors.Errorf("parsing cid: %w", err)
+			}
 		}
 
 		// Output results
 		fmt.Println("Entry Length:", entLen)
+		fmt.Println("Entry Offset:", foundOff)
+
 		fmt.Println("CID:", currentCID)
 		fmt.Println("Multihash:", currentCID.Hash())
 		fmt.Println("CID Codec (Int):", currentCID.Type())
