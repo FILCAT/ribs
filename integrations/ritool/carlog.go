@@ -379,14 +379,16 @@ var readCarEntryCmd = &cli.Command{
 			offs := make([]int64, blockOff)
 			readBlocks := 0
 
-			for at := int64(hsize); at < offset; {
+			var at int64
+			for at = int64(hsize); at < offset; {
+				offs[readBlocks%int(blockOff)] = at
+
 				entLen, err = binary.ReadUvarint(br)
 				if err != nil {
 					return err
 				}
 
 				at += int64(entLen) + int64(binary.PutUvarint(entBuf, entLen))
-				offs[readBlocks%int(blockOff)] = at
 				readBlocks++
 
 				_, err = io.ReadFull(br, entBuf[:entLen])
@@ -395,8 +397,8 @@ var readCarEntryCmd = &cli.Command{
 				}
 			}
 
-			if offs[readBlocks%int(blockOff)] != offset {
-				return xerrors.Errorf("block %d is at offset %d and falls past specified offset %d", readBlocks, offs[readBlocks%int(blockOff)], offset)
+			if at != offset {
+				return xerrors.Errorf("block %d is at offset %d and falls past specified offset %d", readBlocks, at, offset)
 			}
 
 			// Seek to the desired block after moving back by the specified block offset
@@ -406,6 +408,8 @@ var readCarEntryCmd = &cli.Command{
 			if err != nil {
 				return xerrors.Errorf("seek to entry at block offset: %w", err)
 			}
+
+			br.Reset(carlogFile)
 
 			// Read the entry at the found offset
 			entLen, err = binary.ReadUvarint(br)
