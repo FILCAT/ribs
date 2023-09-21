@@ -99,6 +99,16 @@ var fromJsonCmd = &cli.Command{
 			return xerrors.Errorf("write to head file: %w", err)
 		}
 
+		pad := 512 - buf.Len()
+		if pad < 0 {
+			return xerrors.Errorf("head file too large")
+		}
+
+		// Pad the head file to 512 bytes
+		if _, err := headFile.Write(make([]byte, pad)); err != nil {
+			return xerrors.Errorf("pad head file: %w", err)
+		}
+
 		fmt.Printf("Successfully written to %s\n", c.Args().Get(0))
 
 		return nil
