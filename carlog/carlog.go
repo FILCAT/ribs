@@ -388,6 +388,12 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 		}
 	}
 
+	if h.DataEnd > 0 && len(h.LayerOffsets) == 0 {
+		// todo truncate the file to DataEnd
+		// at this point DataEnt should equal RetiredAt, dataFile may be longer than RetiredAt
+		return nil, xerrors.Errorf("data end is set but layer offsets are not, top car generation likely failed (recovery strategy not implemented yet)")
+	}
+
 	// todo right now we're calling this on every startup when writable
 	//  a better way to do that would be to have a track that we're in a "clean"
 	//  state, or even to have two indexes, one for clean and one for dirty data
@@ -678,7 +684,7 @@ func (j *CarLog) Commit() (int64, error) {
 		j.idxLk.RUnlock()
 		return 0, nil
 	}
-	j.idxLk.RUnlock()
+	defer j.idxLk.RUnlock()
 
 	// todo log commit?
 
@@ -1152,6 +1158,14 @@ func (j *CarLog) genTopCar() error {
 	}
 	j.dataEnd = j.dataLen
 
+	err := j.mutHead(func(h *Head) error {
+		h.DataEnd = j.dataEnd
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("updating head, setting data end: %w", err)
+	}
+
 	var layerOffsets = []int64{0, j.dataLen}
 
 	var curLinks, nextLinks []cid.Cid
@@ -1173,7 +1187,7 @@ func (j *CarLog) genTopCar() error {
 		return nil
 	}
 
-	err := j.iterate(j.dataEnd, func(off int64, length uint64, c cid.Cid, data []byte) error {
+	err = j.iterate(j.dataEnd, func(off int64, length uint64, c cid.Cid, data []byte) error {
 		curLinks = append(curLinks, c)
 
 		if len(curLinks) == arity {
