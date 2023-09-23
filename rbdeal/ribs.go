@@ -151,6 +151,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		fileCoinAPIEndpoint: "https://api.chain.love/rpc/v1",
 	}
 
+	if os.Getenv("RIBS_FILECOIN_API_ENDPOINT") != "" {
+		opt.fileCoinAPIEndpoint = os.Getenv("RIBS_FILECOIN_API_ENDPOINT")
+	}
+
 	for _, o := range opts {
 		o(opt)
 	}
