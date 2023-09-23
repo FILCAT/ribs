@@ -90,7 +90,7 @@ type DealMeta struct {
 
 	Sealed, Failed, Rejected bool
 
-	StartEpoch, EndEpoch int64
+	StartEpoch, EndEpoch, StartTime int64
 
 	Status     string
 	SealStatus string

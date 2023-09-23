@@ -125,7 +125,7 @@ function GroupsTile() {
     }, []);
 
     return (
-        <div>
+        <div style={{background: '#DEFCFF'}}>
             <h2>Data Stats</h2>
             <table className="compact-table">
                 <tbody>
@@ -237,7 +237,7 @@ function TopIndexTile() {
 
 function DealsTile({ dealSummary }) {
     return (
-        <div>
+        <div style={{background: '#FFF4DD'}}>
             <h2>Deals: {dealSummary.InProgress + dealSummary.Done}</h2>
             <table className="compact-table">
                 <tbody>
@@ -564,7 +564,7 @@ function IoStats() {
 
 function RetrStats({retrStats}) {
     return (
-        <div>
+        <div style={{background: '#f6f0ff'}}>
             <h2>Retrieval Stats</h2>
             <table className="compact-table">
                 <tbody>
@@ -727,7 +727,7 @@ function P2PNodes() {
     }, []);
 
     return (
-        <div>
+        <div style={{background: '#FFEDDD'}}>
             <h2>LibP2P Nodes</h2>
             <table className="compact-table">
                 <tbody>
@@ -1054,14 +1054,14 @@ function Status() {
                 <h1>Storage</h1>
                 <div className="status-grid">
                     <GroupsTile groups={groups} />
-                    <DealsTile dealSummary={dealSummary} />
                     <IoStats />
                     <TopIndexTile />
-                    <DealCountsChart />
                 </div>
 
                 <h1><abbr title="Decentralized Storage Network">DSN</abbr></h1>
                 <div className="status-grid">
+                    <DealsTile dealSummary={dealSummary} />
+                    <DealCountsChart />
                     <ProvidersTile reachableProviders={reachableProviders} />
                     <CarUploadStatsTile carUploadStats={carUploadStats} />
                     <CrawlStateTile crawlState={crawlState} />

@@ -52,7 +52,7 @@ function Deal({ deal, headHeight, pieceCid, dataCid }) {
                     <a href={`https://dag.parts/view/f0${Provider}/${pieceCid}/${dataCid}/?view=ipld`} target="_blank" rel="noopener noreferrer">[dagparts ipld]</a>
                 </span>
             )}
-            {!Sealed && (
+            {(!Sealed && !PubCid) && (
                 <>
                     {BytesRecv > 0 && <>
                         <span>{formatBytesBinary(BytesRecv)} / {formatBytesBinary(TxSize)}</span>

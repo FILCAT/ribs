@@ -98,3 +98,37 @@ export function epochToDate(epochs, referenceDate = new Date(Date.UTC(2020, 9, 1
 
 export const avgMonthDays = 30.436875;
 export const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;
+
+export function formatTimestamp(unixTimestamp) {
+    const date = new Date(unixTimestamp * 1000);
+    const formattedDate = date.toISOString().split('T')[0];
+
+    const now = new Date();
+    let diff = date - now;
+    let prefix = '', suffix = '';
+
+    if (diff < 0) {
+        suffix = " ago";
+        diff = -diff;
+    } else {
+        prefix = "in ";
+    }
+
+    const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const isLeapYear = (year) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    if (isLeapYear(date.getFullYear())) daysInMonth[1] = 29;
+
+    const months = Math.floor(diff / (daysInMonth[date.getMonth()] * 24 * 60 * 60 * 1000));
+    diff -= months * daysInMonth[date.getMonth()] * 24 * 60 * 60 * 1000;
+
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    diff -= days * 24 * 60 * 60 * 1000;
+
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    diff -= hours * 60 * 60 * 1000;
+
+    const minutes = Math.floor(diff / (60 * 1000));
+
+    return `${formattedDate}, ${prefix}${months ? `${months}mo ` : ''}${days ? `${days}d ` : ''}${hours}h ${minutes}m${suffix}`;
+}
+

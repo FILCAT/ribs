@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import RibsRPC from "../helpers/rpc";
-import {formatBytesBinary, formatFil, epochToMonth, epochToDate, epochToDuration} from "../helpers/fmt";
+import {
+    formatBytesBinary,
+    formatFil,
+    epochToMonth,
+    epochToDate,
+    epochToDuration,
+    formatTimestamp
+} from "../helpers/fmt";
 import "./Status.css";
 import "./Provider.css";
 
@@ -125,8 +132,7 @@ function Provider() {
                         <tr>
                             <th>UUID</th>
                             <th>Status</th>
-                            <th>Start Epoch</th>
-                            <th>End Epoch</th>
+                            <th>Timing</th>
                             <th>Error</th>
                             <th>Deal ID</th>
                             <th>Transferred</th>
@@ -135,15 +141,34 @@ function Provider() {
                         </thead>
                         <tbody>
                         {provider.RecentDeals && provider.RecentDeals.map((deal) => (
-                            <tr key={deal.UUID}>
+                            <tr key={deal.UUID} style={{background: (deal.Rejected ? '#fff7cc' : (deal.Failed ? '#f5c4c4' : (deal.Sealed ? '#caffcd' : '#d9dbff')))}}>
 
                                 <td><abbr title={deal.UUID}>{deal.UUID.substring(0, 8)}... </abbr></td>
                                 <td>{deal.Status}</td>
-                                <td>{epochToDate(deal.StartEpoch)}, {epochToDuration(deal.StartEpoch-headHeight)}</td>
-                                <td>{epochToDate(deal.EndEpoch)}, {epochToDuration(deal.EndEpoch-headHeight)}</td>
+                                <td className="provider-deals-nowrap">
+                                    <div>
+                                        <div>Proposed: <b>{formatTimestamp(deal.StartTime)}</b></div>
+                                        <div>Start: <b>{epochToDate(deal.StartEpoch)}</b>, {epochToDuration(deal.StartEpoch-headHeight)}</div>
+                                        <div>End: <b>{epochToDate(deal.EndEpoch)}</b>, {epochToDuration(deal.EndEpoch-headHeight)}</div>
+                                    </div>
+                                </td>
                                 <td className="provider-deals-error-col">{deal.Error && <pre>{deal.Error}</pre>}</td>
                                 <td>{deal.DealID && <a href={`https://filfox.info/en/deal/${deal.DealID}`} target="_blank" rel="noopener noreferrer">{deal.DealID}</a> || <></>}</td>
-                                <td>{deal.BytesRecv && <>{formatBytesBinary(deal.BytesRecv)}/{formatBytesBinary(deal.TxSize)}</> || <></>}</td>
+                                <td>
+                                    {!(!deal.BytesRecv || deal.Status == 'Transferred' || deal.PubCid) && (
+                                        <div className="prov-progress-container">
+                                            <div className="prov-text-with-progress">
+                                                {formatBytesBinary(deal.BytesRecv)}/{formatBytesBinary(deal.TxSize)}
+                                            </div>
+                                            <div className="progress-bar thin-bar">
+                                                <div
+                                                    className="progress-bar__fill"
+                                                    style={{width: `${(deal.BytesRecv / deal.TxSize) * 100}%`}}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    ) || <></>}
+                                </td>
                                 <td>{deal.PubCid && <a href={`https://filfox.info/en/message/${deal.PubCid}`} target="_blank" rel="noopener noreferrer">bafy..{deal.PubCid.substr(-16)}</a>}</td>
                             </tr>
                         ))}

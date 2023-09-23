@@ -4,6 +4,26 @@
 
 .provider-deals-error-col {
     color: #f44336;
-    max-width: 40ex;
-    overflow-x: scroll;
+
+    overflow: hidden;       /* Hides overflow */
+}
+
+.provider-deals-error-col pre {
+    white-space: pre-wrap; /* Allows the content to wrap */
+    word-wrap: break-word; /* Breaks words if they're too long */
+    overflow: auto;        /* Adds a scrollbar if content overflows */
+    max-height: 100%;      /* Ensures the pre doesn't grow beyond its container */
+}
+
+.prov-progress-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.provider-deals-nowrap {
+    white-space: nowrap;
+}
+
+.prov-text-with-progress {
+    margin-bottom: 1px;  /* Adjust as needed for spacing between text and progress bar */
 }
