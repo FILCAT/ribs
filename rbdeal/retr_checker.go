@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"context"
+	trustlessutils "github.com/ipld/go-trustless-utils"
 	"math/rand"
 	"sync"
 	"time"
@@ -13,8 +14,6 @@ import (
 	"github.com/filecoin-project/lotus/lib/must"
 	"github.com/ipfs/go-unixfsnode"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
-	"github.com/ipld/go-ipld-prime/node/basicnode"
-	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"github.com/ipni/go-libipni/metadata"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/ributil"
@@ -166,18 +165,21 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		linkSystem.TrustedStorage = true
 		unixfsnode.AddUnixFSReificationToLinkSystem(&linkSystem)
 
-		ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
-		rsn := ssb.Matcher().Node()
-
 		request := types.RetrievalRequest{
 			RetrievalID:       must.One(types.NewRetrievalID()),
-			Cid:               cidToGet,
 			LinkSystem:        linkSystem,
 			PreloadLinkSystem: linkSystem,
-			Selector:          rsn,
 			Protocols:         []multicodec.Code{multicodec.TransportGraphsyncFilecoinv1},
 			MaxBlocks:         10,
 			FixedPeers:        []peer.AddrInfo{*addrInfo},
+
+			Request: trustlessutils.Request{
+				Root:       cidToGet,
+				Path:       "",
+				Scope:      trustlessutils.DagScopeBlock,
+				Bytes:      nil,
+				Duplicates: false,
+			},
 		}
 
 		/*request.PreloadLinkSystem = cidlink.DefaultLinkSystem()
@@ -188,9 +190,9 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		start := time.Now()
 		ctx, done := context.WithTimeout(ctx, retrievalCheckTimeout)
 
-		stat, err := lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
+		stat, err := lsi.Fetch(ctx, request, types.WithEventsCallback(func(event types.RetrievalEvent) {
 			//log.Errorw("retr event", "event", event.String())
-		})
+		}))
 
 		done()
 

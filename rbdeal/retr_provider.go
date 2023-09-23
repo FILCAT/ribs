@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"context"
+	trustlessutils "github.com/ipld/go-trustless-utils"
 	"math/rand"
 	"sync"
 	"time"
@@ -16,11 +17,8 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-unixfsnode"
-	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
-	"github.com/ipld/go-ipld-prime/node/basicnode"
-	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"github.com/ipni/go-libipni/metadata"
 	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/lotus-web3/ribs"
@@ -255,11 +253,6 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 	return rp, nil
 }
 
-var selectOne = func() ipld.Node {
-	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
-	return ssb.Matcher().Node()
-}()
-
 func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error {
 	var cacheHits int
 	var bytesServed int64
@@ -378,15 +371,21 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 
 	request := types.RetrievalRequest{
 		RetrievalID:       must.One(types.NewRetrievalID()),
-		Cid:               cidToGet,
 		LinkSystem:        linkSystem,
 		PreloadLinkSystem: linkSystem,
-		Selector:          selectOne,
 		Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1},
 		MaxBlocks:         10,
+
+		Request: trustlessutils.Request{
+			Root:       cidToGet,
+			Path:       "",
+			Scope:      trustlessutils.DagScopeBlock,
+			Bytes:      nil,
+			Duplicates: false,
+		},
 	}
 
-	stat, err := r.lsi.Fetch(ctx, request, func(event types.RetrievalEvent) {
+	stat, err := r.lsi.Fetch(ctx, request, types.WithEventsCallback(func(event types.RetrievalEvent) {
 		log.Errorw("retrieval event", "cid", cidToGet, "event", event)
 
 		/*if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
@@ -405,7 +404,7 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 			r.success[event.StorageProviderId()]++
 			r.statLk.Unlock()
 		}*/
-	})
+	}))
 	if err != nil {
 		log.Errorw("retrieval failed", "cid", cidToGet, "error", err)
 

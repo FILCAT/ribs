@@ -141,7 +141,7 @@ function Provider() {
                         </thead>
                         <tbody>
                         {provider.RecentDeals && provider.RecentDeals.map((deal) => (
-                            <tr key={deal.UUID} style={{background: (deal.Rejected ? '#fff7cc' : (deal.Failed ? '#f5c4c4' : (deal.Sealed ? '#caffcd' : '#d9dbff')))}}>
+                            <tr key={deal.UUID} style={{background: (deal.Rejected ? '#fff7cc' : (deal.Failed ? '#f5c4c4' : (deal.Sealed ? '#caffcd' : '#f2f3ff')))}}>
 
                                 <td><abbr title={deal.UUID}>{deal.UUID.substring(0, 8)}... </abbr></td>
                                 <td>{deal.Status}</td>
