@@ -2,6 +2,7 @@ package mlru
 
 import (
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
 )
@@ -281,8 +282,7 @@ func TestMergeAndEvict(t *testing.T) {
 	assert.Error(t, err) // "k1" should have been evicted
 
 	value, err := cache1.Get("k2")
-	assert.NoError(t, err)
-	assert.Equal(t, "v2", value)
+	assert.Error(t, err) // "k2" should have been evicted
 
 	value, err = cache1.Get("k3")
 	assert.NoError(t, err)
@@ -291,6 +291,17 @@ func TestMergeAndEvict(t *testing.T) {
 	value, err = cache1.Get("k4")
 	assert.NoError(t, err)
 	assert.Equal(t, "v4", value)
+
+	// validate entry chain
+	require.Equal(t, "k4", cache1.newest.key)
+	require.Equal(t, "k3", cache1.newest.older.key)
+	require.Nil(t, cache1.newest.newer)
+	require.Equal(t, "k3", cache1.oldest.key)
+	require.Equal(t, "k4", cache1.oldest.newer.key)
+	require.Nil(t, cache1.oldest.older)
+
+	require.Nil(t, cache1.newest.older.older)
+	require.Nil(t, cache1.oldest.newer.newer)
 }
 
 func TestMergeWithInvalidCache(t *testing.T) {

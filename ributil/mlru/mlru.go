@@ -19,14 +19,14 @@ type MLRU[K comparable, V any] struct {
 	valid bool       // Flag to check if the cache is valid
 
 	currentSize, capacity int64
-	first, last           *entry[K, V]
+	newest, oldest        *entry[K, V]
 	keys                  map[K]*entry[K, V]
 }
 
 // entry represents an entry in the LRU cache.
 type entry[K comparable, V any] struct {
-	key        K
-	prev, next *entry[K, V]
+	key          K
+	newer, older *entry[K, V]
 
 	index int64
 	value V
@@ -42,17 +42,17 @@ func NewMLRU[K comparable, V any](group *LRUGroup, capacity int64) *MLRU[K, V] {
 	}
 }
 
-// evictLast removes the last entry from the cache.
+// evictLast removes the oldest entry from the cache.
 func (l *MLRU[K, V]) evictLast() {
-	if l.last != nil {
-		delete(l.keys, l.last.key)
+	if l.oldest != nil {
+		delete(l.keys, l.oldest.key)
 		if l.currentSize == 1 {
-			// If size is one, set first and last to nil after eviction.
-			l.first, l.last = nil, nil // TODO NOT COVERED
+			// If size is one, set newest and oldest to nil after eviction.
+			l.newest, l.oldest = nil, nil // TODO NOT COVERED
 		} else {
-			l.last = l.last.prev
-			if l.last != nil {
-				l.last.next = nil
+			l.oldest = l.oldest.newer
+			if l.oldest != nil {
+				l.oldest.older = nil
 			}
 		}
 		l.currentSize--
@@ -60,7 +60,7 @@ func (l *MLRU[K, V]) evictLast() {
 }
 
 // Put adds a new entry to the cache or updates an existing entry.
-// It evicts the last entry if the cache is at full capacity.
+// It evicts the oldest entry if the cache is at full capacity.
 func (l *MLRU[K, V]) Put(key K, value V) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -72,15 +72,15 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	if existing, ok := l.keys[key]; ok {
 		// Allow updating the value and move the entry to the front.
 		existing.value = value
-		if existing.prev != nil {
-			existing.prev.next = existing.next
+		if existing.newer != nil {
+			existing.newer.older = existing.older
 		}
-		if existing.next != nil {
-			existing.next.prev = existing.prev // TODO NOT COVERED
+		if existing.older != nil {
+			existing.older.newer = existing.newer // TODO NOT COVERED
 		}
-		existing.next = l.first
-		l.first.prev = existing
-		l.first = existing
+		existing.older = l.newest
+		l.newest.newer = existing
+		l.newest = existing
 		return nil
 	}
 
@@ -90,12 +90,12 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	index := l.group.counter.Add(1)
 	newEntry := &entry[K, V]{key: key, index: index, value: value}
 	l.keys[key] = newEntry
-	if l.first == nil {
-		l.first, l.last = newEntry, newEntry
+	if l.newest == nil {
+		l.newest, l.oldest = newEntry, newEntry
 	} else {
-		newEntry.next = l.first
-		l.first.prev = newEntry
-		l.first = newEntry
+		newEntry.older = l.newest
+		l.newest.newer = newEntry
+		l.newest = newEntry
 	}
 	l.currentSize++
 	return nil
@@ -118,18 +118,18 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 		return zero, errors.New("key does not exist")
 	}
 	// Move the accessed entry to the front.
-	if entry.prev != nil {
-		entry.prev.next = entry.next
+	if entry.newer != nil {
+		entry.newer.older = entry.older
 	}
-	if entry.next != nil {
-		entry.next.prev = entry.prev
+	if entry.older != nil {
+		entry.older.newer = entry.newer
 	} else {
-		// If the entry was the last, update l.last.
-		l.last = entry.prev
+		// If the entry was the oldest, update l.oldest.
+		l.oldest = entry.newer
 	}
-	entry.next = l.first
-	l.first.prev = entry
-	l.first = entry
+	entry.older = l.newest
+	l.newest.newer = entry
+	l.newest = entry
 	return entry.value, nil
 }
 
@@ -137,6 +137,13 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 // The other cache is invalidated after merging.
 // Returns an error if either cache is invalid.
 func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
+	if other == nil {
+		return errors.New("invalid cache")
+	}
+	if l == other {
+		return errors.New("cannot merge cache with itself")
+	}
+
 	l.mu.Lock()
 	other.mu.Lock()
 	defer l.mu.Unlock()
@@ -146,60 +153,66 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 		return errors.New("invalid cache")
 	}
 
+	if l.capacity == 0 {
+		return nil // wat
+	}
+
 	// Invalidating the other cache after merging.
 	other.valid = false
 
-	curEntOther := other.first
-	curEntHere := l.first
+	newestEntOther := other.newest
+	newestEntHere := l.newest
 
-	for curEntOther != nil {
-		if curEntHere == nil || curEntHere.index > curEntOther.index {
-			if curEntHere == nil {
-				// if curEntHere is nil, assume the list is empty and populate it with curEntOther
-				l.first = curEntOther
-				l.last = curEntOther
-				curEntOther = curEntOther.next
+	for newestEntOther != nil {
+		if newestEntHere == nil || newestEntHere.index > newestEntOther.index {
+			if newestEntHere == nil {
+				// if newestEntHere is nil, assume the list is empty and populate it with newestEntOther
+				l.newest = newestEntOther
+				l.oldest = newestEntOther
 				// Update the keys map with the new entry.
-				l.keys[curEntOther.key] = curEntOther
+				l.keys[newestEntOther.key] = newestEntOther
+
+				newestEntHere = newestEntOther
+				newestEntOther = newestEntOther.older
 				continue
 			}
-			if curEntHere.next == nil {
+			if newestEntHere.older == nil {
 				// At the end of the list, append the rest of the other list until at capacity.
-				for l.currentSize < l.capacity && curEntOther != nil {
+				for l.currentSize < l.capacity && newestEntOther != nil {
 					l.currentSize++
-					curEntHere.next = curEntOther
-					curEntOther.prev = curEntHere
-					// Update the last pointer and the keys map.
-					l.last = curEntOther
-					l.keys[curEntOther.key] = curEntOther
-					curEntHere = curEntOther
-					curEntOther = curEntOther.next
+					newestEntHere.older = newestEntOther
+					newestEntOther.newer = newestEntHere
+					// Update the oldest pointer and the keys map.
+					l.oldest = newestEntOther
+					l.keys[newestEntOther.key] = newestEntOther
+					newestEntHere = newestEntOther
+					newestEntOther = newestEntOther.older
 				}
 				break
 			}
-			// Move to the next here, which will have a lower index.
-			curEntHere = curEntHere.next
+			// Move to the older here, which will have a lower index.
+			newestEntHere = newestEntHere.older
 			continue
 		}
 
 		// Here the other entry has a higher index, insert it before the current entry in this list.
 		if l.currentSize >= l.capacity {
-			// If already at capacity, evict the last entry to make room.
+			// If already at capacity, evict the oldest entry to make room.
 			l.evictLast()
 		}
-		newEntry := curEntOther
-		curEntOther = curEntOther.next // move to the next in other list.
+		newEntry := newestEntOther
+		newestEntOther = newestEntOther.older // move to the older in other list.
 
-		// Insert newEntry before curEntHere in this list.
-		newEntry.next = curEntHere
-		newEntry.prev = curEntHere.prev
-		if curEntHere.prev != nil {
-			curEntHere.prev.next = newEntry
+		// Insert newEntry before newestEntHere in this list.
+		newEntry.older = newestEntHere
+		newEntry.newer = newestEntHere.newer
+		if newestEntHere.newer != nil {
+			newestEntHere.newer.older = newEntry
 		} else {
-			// Updating the first entry if needed.
-			l.first = newEntry
+			// Updating the newest entry if needed.
+			l.newest = newEntry
 		}
-		curEntHere.prev = newEntry
+		newestEntHere.newer = newEntry
 		l.currentSize++
 		// Update the keys map with the new entry.
 		l.keys[newEntry.key] = newEntry
