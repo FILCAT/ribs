@@ -43,8 +43,10 @@ func NewMLRU[K comparable, V any](group *LRUGroup, capacity int64) *MLRU[K, V] {
 }
 
 // evictLast removes the oldest entry from the cache.
-func (l *MLRU[K, V]) evictLast() {
+func (l *MLRU[K, V]) evictLast() (evicted *entry[K, V]) {
 	if l.oldest != nil {
+		evicted = l.oldest
+
 		delete(l.keys, l.oldest.key)
 		if l.currentSize == 1 {
 			// If size is one, set newest and oldest to nil after eviction.
@@ -57,6 +59,8 @@ func (l *MLRU[K, V]) evictLast() {
 		}
 		l.currentSize--
 	}
+
+	return
 }
 
 // Put adds a new entry to the cache or updates an existing entry.
@@ -120,6 +124,9 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 	// Move the accessed entry to the front.
 	if entry.newer != nil {
 		entry.newer.older = entry.older
+	} else {
+		// already newest
+		return entry.value, nil
 	}
 	if entry.older != nil {
 		entry.older.newer = entry.newer
@@ -128,6 +135,7 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 		l.oldest = entry.newer
 	}
 	entry.older = l.newest
+	entry.newer = nil
 	l.newest.newer = entry
 	l.newest = entry
 	return entry.value, nil
@@ -160,62 +168,86 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 	// Invalidating the other cache after merging.
 	other.valid = false
 
-	newestEntOther := other.newest
-	newestEntHere := l.newest
+	entOther := other.newest
+	entHere := l.newest
 
-	for newestEntOther != nil {
-		if newestEntHere == nil || newestEntHere.index > newestEntOther.index {
-			if newestEntHere == nil {
-				// if newestEntHere is nil, assume the list is empty and populate it with newestEntOther
-				l.newest = newestEntOther
-				l.oldest = newestEntOther
-				// Update the keys map with the new entry.
-				l.keys[newestEntOther.key] = newestEntOther
+	toIter := l.capacity // tracks how many entries have been processed
 
-				newestEntHere = newestEntOther
-				newestEntOther = newestEntOther.older
-				continue
+	for entOther != nil && toIter > 0 {
+		// rewind to entOther.index
+		// atIndex will be decreasing as we iterate because we're viewing older-and-older entries
+		atIndex := int64(-1)
+		if entHere != nil {
+			atIndex = entHere.index
+		}
+
+		if entOther.index < atIndex {
+			// need to rewind entHere more
+			if entHere == nil {
+				// wut
+				return errors.New("somehow other ent counter is lt -1")
 			}
-			if newestEntHere.older == nil {
-				// At the end of the list, append the rest of the other list until at capacity.
-				for l.currentSize < l.capacity && newestEntOther != nil {
-					l.currentSize++
-					newestEntHere.older = newestEntOther
-					newestEntOther.newer = newestEntHere
-					// Update the oldest pointer and the keys map.
-					l.oldest = newestEntOther
-					l.keys[newestEntOther.key] = newestEntOther
-					newestEntHere = newestEntOther
-					newestEntOther = newestEntOther.older
-				}
-				break
-			}
-			// Move to the older here, which will have a lower index.
-			newestEntHere = newestEntHere.older
+
+			// basically we accept the entry from the cache at this position
+			entHere = entHere.older
+			toIter--
 			continue
 		}
 
-		// Here the other entry has a higher index, insert it before the current entry in this list.
 		if l.currentSize >= l.capacity {
-			// If already at capacity, evict the oldest entry to make room.
-			l.evictLast()
-		}
-		newEntry := newestEntOther
-		newestEntOther = newestEntOther.older // move to the older in other list.
 
-		// Insert newEntry before newestEntHere in this list.
-		newEntry.older = newestEntHere
-		newEntry.newer = newestEntHere.newer
-		if newestEntHere.newer != nil {
-			newestEntHere.newer.older = newEntry
-		} else {
-			// Updating the newest entry if needed.
-			l.newest = newEntry
+			// If already at capacity, evict the oldest entry to make room.
+			evicted := l.evictLast()
+
+			if evicted == entHere {
+				// now we're inserting the oldest element
+				entHere = nil
+			}
 		}
-		newestEntHere.newer = newEntry
+
+		olderOther := entOther.older
+
+		l.keys[entOther.key] = entOther
 		l.currentSize++
-		// Update the keys map with the new entry.
-		l.keys[newEntry.key] = newEntry
+		toIter--
+
+		// now the entHere is OLDER than entOther, so we need to insert entOther
+		// as the newer element to entHere
+
+		// first make sure that entOther pointers aren't pointing at anything we really
+		// don't want them to point at
+		entOther.older, entOther.newer = entHere, nil
+
+		if entHere == nil {
+			// if entHere is nil, we are inserting the oldest element
+			entOther.newer = l.oldest
+			l.oldest = entOther
+			if entOther.newer != nil {
+				// there may not have been any older elements
+				// (this probably means that we're also inserting the newest element,
+				//  and this probably could be in the if body below)
+				entOther.newer.older = entOther
+			}
+			if l.newest == nil {
+				// and apparently this is also the newest element
+				l.newest = entOther
+			}
+		} else {
+			if entHere.key == entOther.key {
+				return errors.New("can't merge caches with duplicate keys")
+			}
+
+			// we are inserting an element newer to entHere
+			entOther.newer = entHere.newer
+			entHere.newer = entOther
+			if l.newest == entHere {
+				l.newest = entOther
+			}
+		}
+
+		// take next entOther
+		entOther = olderOther
 	}
+
 	return nil
 }

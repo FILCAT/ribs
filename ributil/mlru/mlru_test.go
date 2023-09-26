@@ -277,6 +277,14 @@ func TestMergeAndEvict(t *testing.T) {
 	err = cache1.Merge(cache2)
 	assert.NoError(t, err)
 
+	// validate entry chain
+	require.Equal(t, "k4", cache1.newest.key)
+	require.Equal(t, "k3", cache1.newest.older.key)
+	require.Nil(t, cache1.newest.newer)
+	require.Equal(t, "k3", cache1.oldest.key)
+	require.Equal(t, "k4", cache1.oldest.newer.key)
+	require.Nil(t, cache1.oldest.older)
+
 	// cache1 should have the most recent values from both caches
 	_, err = cache1.Get("k1")
 	assert.Error(t, err) // "k1" should have been evicted
