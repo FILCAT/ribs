@@ -1,3 +1,4 @@
+// Package mlru provides a thread-safe, mergeable least recently used (LRU) cache.
 package mlru
 
 import (
@@ -6,10 +7,12 @@ import (
 	"sync/atomic"
 )
 
+// LRUGroup contains a shared counter used for indexing entries.
 type LRUGroup struct {
 	counter atomic.Int64
 }
 
+// MLRU represents a mergeable least recently used (LRU) cache.
 type MLRU[K comparable, V any] struct {
 	group *LRUGroup
 	mu    sync.Mutex // Mutex to ensure thread safety
@@ -20,6 +23,7 @@ type MLRU[K comparable, V any] struct {
 	keys                  map[K]*entry[K, V]
 }
 
+// entry represents an entry in the LRU cache.
 type entry[K comparable, V any] struct {
 	key        K
 	prev, next *entry[K, V]
@@ -28,6 +32,7 @@ type entry[K comparable, V any] struct {
 	value V
 }
 
+// NewMLRU creates a new MLRU cache with the specified group and capacity.
 func NewMLRU[K comparable, V any](group *LRUGroup, capacity int64) *MLRU[K, V] {
 	return &MLRU[K, V]{
 		group:    group,
@@ -37,11 +42,12 @@ func NewMLRU[K comparable, V any](group *LRUGroup, capacity int64) *MLRU[K, V] {
 	}
 }
 
+// evictLast removes the last entry from the cache.
 func (l *MLRU[K, V]) evictLast() {
 	if l.last != nil {
 		delete(l.keys, l.last.key)
 		if l.currentSize == 1 {
-			// If size is one, set first and last to nil after eviction
+			// If size is one, set first and last to nil after eviction.
 			l.first, l.last = nil, nil
 		} else {
 			l.last = l.last.prev
@@ -53,6 +59,8 @@ func (l *MLRU[K, V]) evictLast() {
 	}
 }
 
+// Put adds a new entry to the cache or updates an existing entry.
+// It evicts the last entry if the cache is at full capacity.
 func (l *MLRU[K, V]) Put(key K, value V) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -62,7 +70,7 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	}
 
 	if existing, ok := l.keys[key]; ok {
-		// Allow updating the value and move the entry to the front
+		// Allow updating the value and move the entry to the front.
 		existing.value = value
 		if existing.prev != nil {
 			existing.prev.next = existing.next
@@ -93,6 +101,8 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	return nil
 }
 
+// Get retrieves an entry from the cache and moves it to the front.
+// Returns an error if the key does not exist or the cache is invalid.
 func (l *MLRU[K, V]) Get(key K) (V, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -114,7 +124,7 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 	if entry.next != nil {
 		entry.next.prev = entry.prev
 	} else {
-		// If the entry was the last, update l.last
+		// If the entry was the last, update l.last.
 		l.last = entry.prev
 	}
 	entry.next = l.first
@@ -123,6 +133,9 @@ func (l *MLRU[K, V]) Get(key K) (V, error) {
 	return entry.value, nil
 }
 
+// Merge merges another MLRU cache into the current cache.
+// The other cache is invalidated after merging.
+// Returns an error if either cache is invalid.
 func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 	l.mu.Lock()
 	other.mu.Lock()
@@ -142,7 +155,7 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 	for {
 		if curEntHere.index > curEntOther.index {
 			if curEntHere.next == nil {
-				// At the end of the list, append the rest of the other list until at capacity
+				// At the end of the list, append the rest of the other list until at capacity.
 				for l.currentSize < l.capacity && curEntOther != nil {
 					l.currentSize++
 					curEntHere.next = curEntOther
@@ -153,26 +166,26 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 				break
 			}
 
-			// Move to the next here, which will have a lower index
+			// Move to the next here, which will have a lower index.
 			curEntHere = curEntHere.next
 			continue
 		}
 
-		// Here the other entry has a higher index, insert it before the current entry in this list
+		// Here the other entry has a higher index, insert it before the current entry in this list.
 		if l.currentSize >= l.capacity {
-			// If already at capacity, evict the last entry to make room
+			// If already at capacity, evict the last entry to make room.
 			l.evictLast()
 		}
 		newEntry := curEntOther
-		curEntOther = curEntOther.next // move to the next in other list
+		curEntOther = curEntOther.next // move to the next in other list.
 
-		// Insert newEntry before curEntHere in this list
+		// Insert newEntry before curEntHere in this list.
 		newEntry.next = curEntHere
 		newEntry.prev = curEntHere.prev
 		if curEntHere.prev != nil {
 			curEntHere.prev.next = newEntry
 		} else {
-			// Updating the first entry if needed
+			// Updating the first entry if needed.
 			l.first = newEntry
 		}
 		curEntHere.prev = newEntry
