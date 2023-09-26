@@ -48,7 +48,7 @@ func (l *MLRU[K, V]) evictLast() {
 		delete(l.keys, l.last.key)
 		if l.currentSize == 1 {
 			// If size is one, set first and last to nil after eviction.
-			l.first, l.last = nil, nil
+			l.first, l.last = nil, nil // TODO NOT COVERED
 		} else {
 			l.last = l.last.prev
 			if l.last != nil {
@@ -66,7 +66,7 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	defer l.mu.Unlock()
 
 	if !l.valid {
-		return errors.New("invalid cache")
+		return errors.New("invalid cache") // TODO NOT COVERED
 	}
 
 	if existing, ok := l.keys[key]; ok {
@@ -76,7 +76,7 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 			existing.prev.next = existing.next
 		}
 		if existing.next != nil {
-			existing.next.prev = existing.prev
+			existing.next.prev = existing.prev // TODO NOT COVERED
 		}
 		existing.next = l.first
 		l.first.prev = existing
@@ -152,20 +152,31 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 	curEntOther := other.first
 	curEntHere := l.first
 
-	for {
-		if curEntHere.index > curEntOther.index {
+	for curEntOther != nil {
+		if curEntHere == nil || curEntHere.index > curEntOther.index {
+			if curEntHere == nil {
+				// if curEntHere is nil, assume the list is empty and populate it with curEntOther
+				l.first = curEntOther
+				l.last = curEntOther
+				curEntOther = curEntOther.next
+				// Update the keys map with the new entry.
+				l.keys[curEntOther.key] = curEntOther
+				continue
+			}
 			if curEntHere.next == nil {
 				// At the end of the list, append the rest of the other list until at capacity.
 				for l.currentSize < l.capacity && curEntOther != nil {
 					l.currentSize++
 					curEntHere.next = curEntOther
 					curEntOther.prev = curEntHere
+					// Update the last pointer and the keys map.
+					l.last = curEntOther
+					l.keys[curEntOther.key] = curEntOther
 					curEntHere = curEntOther
 					curEntOther = curEntOther.next
 				}
 				break
 			}
-
 			// Move to the next here, which will have a lower index.
 			curEntHere = curEntHere.next
 			continue
@@ -190,11 +201,8 @@ func (l *MLRU[K, V]) Merge(other *MLRU[K, V]) error {
 		}
 		curEntHere.prev = newEntry
 		l.currentSize++
+		// Update the keys map with the new entry.
 		l.keys[newEntry.key] = newEntry
-
-		if curEntOther == nil {
-			break
-		}
 	}
 	return nil
 }

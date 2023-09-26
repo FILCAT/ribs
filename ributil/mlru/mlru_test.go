@@ -122,3 +122,252 @@ func TestOrderedMerge(t *testing.T) {
 	_, err = cache2.Get(3)
 	assert.Error(t, err)
 }
+
+func TestEvictLastWithOneElement(t *testing.T) {
+	group := &LRUGroup{counter: atomic.Int64{}}
+	cache := NewMLRU[int, int](group, 1)
+
+	err := cache.Put(1, 100)
+	assert.NoError(t, err)
+	err = cache.Put(2, 200) // This should evict key 1
+	assert.NoError(t, err)
+
+	_, err = cache.Get(1)
+	assert.Error(t, err) // The key 1 should have been evicted
+}
+
+func TestInvalidCachePut(t *testing.T) {
+	group := &LRUGroup{counter: atomic.Int64{}}
+	cache1 := NewMLRU[int, int](group, 2)
+	cache2 := NewMLRU[int, int](group, 2)
+
+	err := cache1.Merge(cache2) // This will invalidate cache2
+	assert.NoError(t, err)
+
+	err = cache2.Put(1, 100)
+	assert.Error(t, err) // Should return error as the cache is invalid
+	assert.Equal(t, "invalid cache", err.Error())
+}
+
+func TestMergeWithMovingToNext(t *testing.T) {
+	group := &LRUGroup{counter: atomic.Int64{}}
+	cache1 := NewMLRU[int, int](group, 2)
+	err := cache1.Put(2, 200) // most recent entry in cache1
+	assert.NoError(t, err)
+
+	cache2 := NewMLRU[int, int](group, 2)
+	err = cache2.Put(1, 100) // older entry in cache2
+	assert.NoError(t, err)
+
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	_, err = cache1.Get(2)
+	assert.NoError(t, err) // The key 2 should be in cache1
+
+	_, err = cache1.Get(1)
+	assert.NoError(t, err) // The key 1 should be in cache1
+}
+
+func TestMergeWithIncreasingCurrentSize(t *testing.T) {
+	group := &LRUGroup{counter: atomic.Int64{}}
+	cache1 := NewMLRU[int, int](group, 4)
+	err := cache1.Put(3, 300) // fresh entry in cache1
+	assert.NoError(t, err)
+	err = cache1.Put(4, 400) // fresh entry in cache1
+	assert.NoError(t, err)
+
+	cache2 := NewMLRU[int, int](group, 2)
+	err = cache2.Put(1, 100) // older entry in cache2
+	assert.NoError(t, err)
+	err = cache2.Put(2, 200) // older entry in cache2
+	assert.NoError(t, err)
+
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	_, err = cache1.Get(3)
+	assert.NoError(t, err) // The key 3 should be in cache1
+
+	_, err = cache1.Get(4)
+	assert.NoError(t, err) // The key 4 should be in cache1
+
+	_, err = cache1.Get(1)
+	assert.NoError(t, err) // The key 1 should be in cache1
+
+	_, err = cache1.Get(2)
+	assert.NoError(t, err) // The key 2 should be in cache1
+
+	assert.Equal(t, int64(4), cache1.currentSize) // The currentSize should be 4
+}
+
+func TestMergeWithNilCurrentEntry(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+	cache2 := NewMLRU[string, string](group, 2)
+
+	// Put some values in cache2
+	err := cache2.Put("k1", "v1")
+	assert.NoError(t, err)
+	err = cache2.Put("k2", "v2")
+	assert.NoError(t, err)
+
+	// Merging empty cache1 with cache2
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	// cache1 should have the values from cache2
+	value, err := cache1.Get("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", value)
+
+	value, err = cache1.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", value)
+}
+
+func TestMergeAndUpdatePointers(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 3)
+	cache2 := NewMLRU[string, string](group, 3)
+
+	// Put some values in both caches
+	err := cache1.Put("k1", "v1")
+	assert.NoError(t, err)
+	err = cache1.Put("k2", "v2")
+	assert.NoError(t, err)
+	err = cache2.Put("k3", "v3")
+	assert.NoError(t, err)
+
+	// Merging cache1 with cache2
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	// cache1 should have the values from both caches
+	value, err := cache1.Get("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", value)
+
+	value, err = cache1.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", value)
+
+	value, err = cache1.Get("k3")
+	assert.NoError(t, err)
+	assert.Equal(t, "v3", value)
+}
+
+func TestMergeAndEvict(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+	cache2 := NewMLRU[string, string](group, 2)
+
+	// Put some values in both caches
+	err := cache1.Put("k1", "v1")
+	assert.NoError(t, err)
+	err = cache1.Put("k2", "v2")
+	assert.NoError(t, err)
+	err = cache2.Put("k3", "v3")
+	assert.NoError(t, err)
+	err = cache2.Put("k4", "v4")
+	assert.NoError(t, err)
+
+	// Merging cache1 with cache2
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	// cache1 should have the most recent values from both caches
+	_, err = cache1.Get("k1")
+	assert.Error(t, err) // "k1" should have been evicted
+
+	value, err := cache1.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", value)
+
+	value, err = cache1.Get("k3")
+	assert.NoError(t, err)
+	assert.Equal(t, "v3", value)
+
+	value, err = cache1.Get("k4")
+	assert.NoError(t, err)
+	assert.Equal(t, "v4", value)
+}
+
+func TestMergeWithInvalidCache(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+	cache2 := NewMLRU[string, string](group, 2)
+
+	// Put some values in cache2
+	err := cache2.Put("k1", "v1")
+	assert.NoError(t, err)
+	err = cache2.Put("k2", "v2")
+	assert.NoError(t, err)
+
+	// Invalidate cache2
+	cache2.valid = false
+
+	// Merging cache1 with invalid cache2 should result in an error
+	err = cache1.Merge(cache2)
+	assert.Error(t, err)
+	assert.Equal(t, "invalid cache", err.Error())
+}
+
+func TestMergeWithNilCache(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+
+	// Merging cache1 with nil cache should result in an error
+	err := cache1.Merge(nil)
+	assert.Error(t, err)
+	assert.Equal(t, "invalid cache", err.Error())
+}
+
+func TestMergeWithMoreRecentOther(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+	cache2 := NewMLRU[string, string](group, 2)
+
+	// Put some values in both caches
+	err := cache1.Put("k1", "v1")
+	assert.NoError(t, err)
+	err = cache2.Put("k2", "v2")
+	assert.NoError(t, err)
+	err = cache2.Put("k3", "v3")
+	assert.NoError(t, err)
+
+	// Merging cache1 with cache2
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	// cache1 should have the most recent values from cache2
+	_, err = cache1.Get("k1")
+	assert.Error(t, err) // "k1" should have been evicted
+
+	value, err := cache1.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", value)
+
+	value, err = cache1.Get("k3")
+	assert.NoError(t, err)
+	assert.Equal(t, "v3", value)
+}
+
+func TestMergeWithEmptyOther(t *testing.T) {
+	group := &LRUGroup{}
+	cache1 := NewMLRU[string, string](group, 2)
+	cache2 := NewMLRU[string, string](group, 2)
+
+	// Put some values in cache1
+	err := cache1.Put("k1", "v1")
+	assert.NoError(t, err)
+
+	// Merging cache1 with empty cache2
+	err = cache1.Merge(cache2)
+	assert.NoError(t, err)
+
+	// cache1 should still have the values from before
+	value, err := cache1.Get("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", value)
+}
