@@ -3,6 +3,7 @@ package logcache
 import (
 	"encoding/binary"
 	"github.com/ipfs/go-cid"
+	"github.com/ipld/go-car"
 	"github.com/lotus-web3/ribs/carlog"
 	"golang.org/x/xerrors"
 	"io"
@@ -25,6 +26,9 @@ type ReaderAtWriter interface {
 	io.Writer
 }
 
+// LogCache is a cache of logs, backed by a car file and an index file
+// The car file contains a dummy header, and a sequence of blocks stored with raw cids
+// the index is in-memory + on disk, contains a set of dataLen/offset/multihash entries
 type LogCache struct {
 	carFile *os.File
 
@@ -52,28 +56,52 @@ func Open(basePath string) (lc *LogCache, err error) {
 	dir, base := filepath.Split(basePath)
 
 	// open car file
-	lc.carFile, err = os.Open(filepath.Join(dir, base+carExt))
+	lc.carFile, err = os.OpenFile(filepath.Join(dir, base+carExt), os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, xerrors.Errorf("open cache car: %w", err)
 	}
+	lc.carBuf = lc.carFile
 
-	// todo if this is a newly created car, write a dummy header
+	st, err := lc.carFile.Stat()
+	if err != nil {
+		return nil, xerrors.Errorf("stat cache car: %w", err)
+	}
 
-	lc.carAt
+	if st.Size() == 0 {
+		// new car, write a dummy header
+
+		head := &car.CarHeader{
+			Roots:   nil,
+			Version: 1,
+		}
+
+		err = car.WriteHeader(head, lc.carFile)
+		if err != nil {
+			return nil, xerrors.Errorf("write cache car header: %w", err)
+		}
+
+		st, err = lc.carFile.Stat()
+		if err != nil {
+			return nil, xerrors.Errorf("stat cache car: %w", err)
+		}
+	}
+
+	lc.carAt = st.Size()
 
 	// open index file
-	idxFile, err := os.Open(filepath.Join(dir, base+idxExt))
+	lc.indexFile, err = os.OpenFile(filepath.Join(dir, base+idxExt), os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, xerrors.Errorf("open cache index: %w", err)
 	}
-	lc.idxBuf = idxFile
+	lc.idxBuf = lc.indexFile
 
 	var entBuf [512]byte
+	var lastOffLen uint64
 
 	// load index file into index
 	for {
-		// read the 9 header bytes
-		n, err := idxFile.Read(entBuf[:9])
+		// read the 9 entry bytes
+		n, err := lc.indexFile.Read(entBuf[:9])
 		if err != nil {
 			if err == io.EOF && n == 0 {
 				break
@@ -83,24 +111,40 @@ func Open(basePath string) (lc *LogCache, err error) {
 			return nil, xerrors.Errorf("reading index header entry: %w", err)
 		}
 
-		offLen := binary.LittleEndian.Uint64(entBuf[:8])
+		lastOffLen = binary.LittleEndian.Uint64(entBuf[:8])
 
 		hlen := entBuf[8]
 
 		// read hash
-		n, err = idxFile.Read(entBuf[:hlen])
+		n, err = lc.indexFile.Read(entBuf[:hlen])
 		if err != nil {
 			return nil, xerrors.Errorf("read index entry key: %w", err)
 		}
 
-		lc.index[mhStr(entBuf[:hlen])] = offLen
+		lc.index[mhStr(entBuf[:hlen])] = lastOffLen
 	}
 
-	// check that last index file points to a valid car entry, and that there's no
-	// data at the end of carFile
-	// - if there is trailer data in the car, truncate it
-	// - if the index points beyond the end of the car file, scan the index for the
-	//   last entry which is within the car, truncate the index, then read the car (if last entry is truncated, do truncate it)
+	if lastOffLen > 0 { // first entry is never at 0 because that's where the car header is
+		offset, length := carlog.FromOffsetLen(int64(lastOffLen))
+
+		expectedLen := offset + int64(length) + int64(binary.PutUvarint(entBuf[:], uint64(length)))
+		if st.Size() != expectedLen {
+			// todo truncate car file (or the index.. or both)
+			return nil, xerrors.Errorf("car file is truncated, expected %d bytes, got %d", expectedLen, st.Size())
+		}
+	}
+
+	_, err = lc.carFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, xerrors.Errorf("seek to end of car file: %w", err)
+	}
+
+	_, err = lc.indexFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, xerrors.Errorf("seek to end of index file: %w", err)
+	}
+
+	return lc, nil
 }
 
 // Put returns an error if the multihash is already stored in the cache, otherwise
@@ -125,9 +169,9 @@ func (lc *LogCache) Put(mh multihash.Multihash, data []byte) (err error) {
 
 	var idxBuf [512]byte
 	binary.LittleEndian.PutUint64(idxBuf[:8], offLen)
-	idxBuf[9] = byte(len(mh))
+	idxBuf[8] = byte(len(mh))
 	n := copy(idxBuf[9:], mh)
-	if n != int(idxBuf[9]) {
+	if n != int(idxBuf[8]) {
 		return xerrors.Errorf("copied unexpected number of bytes when writing cache entry multihash; max hash len is 255 bytes")
 	}
 
@@ -177,13 +221,60 @@ func (lc *LogCache) Get(mh multihash.Multihash, cb func([]byte) error) error {
 	off, length := carlog.FromOffsetLen(int64(atOffLen))
 
 	buf := make([]byte, length+binary.MaxVarintLen64) // todo pool!
+	vlen := binary.PutUvarint(buf, uint64(length))
 
-	_, err := lc.carBuf.ReadAt(buf, off)
+	_, err := lc.carBuf.ReadAt(buf[:length+vlen], off)
 	if err != nil {
 		return xerrors.Errorf("read cache car data: %w", err)
 	}
+
+	// buf is [len:varint][cid][data]
+
+	// read length
+	n, l := binary.Uvarint(buf) // todo skip this
+	if uint64(length) != n {
+		return xerrors.Errorf("index entry len mismatch")
+	}
+
+	cl, _, err := cid.CidFromBytes(buf[l:]) // todo more optimized skip read
+	if err != nil {
+		return xerrors.Errorf("read cache car cid: %w", err)
+	}
+
+	return cb(buf[cl+l : l+int(n)])
 }
 
 func (lc *LogCache) Flush() error {
+	lc.writeLk.Lock()
+	defer lc.writeLk.Unlock()
 
+	// todo sync idx / car Bufs once those are actually buffers
+
+	if err := lc.carFile.Sync(); err != nil {
+		return xerrors.Errorf("sync car: %w", err)
+	}
+
+	if err := lc.indexFile.Sync(); err != nil {
+		return xerrors.Errorf("sync index: %w", err)
+	}
+
+	return nil
+}
+
+// Close closes the opened car and index files.
+func (lc *LogCache) Close() error {
+	lc.writeLk.Lock()
+	defer lc.writeLk.Unlock()
+
+	// todo sync idx / car Bufs once those are actually buffers
+
+	if err := lc.carFile.Close(); err != nil {
+		return xerrors.Errorf("close car file: %w", err)
+	}
+
+	if err := lc.indexFile.Close(); err != nil {
+		return xerrors.Errorf("close index file: %w", err)
+	}
+
+	return nil
 }
