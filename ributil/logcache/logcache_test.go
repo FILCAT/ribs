@@ -1,11 +1,12 @@
 package logcache
 
 import (
-	"github.com/multiformats/go-multihash"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestOpen(t *testing.T) {
