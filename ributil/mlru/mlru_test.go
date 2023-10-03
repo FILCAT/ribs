@@ -27,18 +27,18 @@ func TestEvictLast(t *testing.T) {
 	err = cache.Put(2, 200)
 	assert.NoError(t, err)
 	err = cache.Put(3, 300)
-	assert.NoError(t, err)
+	assert.Equal(t, ErrCacheFull, err)
 
-	_, err = cache.Get(1)
-	assert.Error(t, err) // The key 1 should have been evicted
+	_, err = cache.Get(3)
+	assert.Error(t, err) // The key 3 should not have been put
 
 	val, err := cache.Get(2)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, val)
 
-	val, err = cache.Get(3)
+	val, err = cache.Get(1)
 	assert.NoError(t, err)
-	assert.Equal(t, 300, val)
+	assert.Equal(t, 100, val)
 }
 
 func TestUpdateExistingKey(t *testing.T) {
@@ -130,11 +130,8 @@ func TestEvictLastWithOneElement(t *testing.T) {
 
 	err := cache.Put(1, 100)
 	assert.NoError(t, err)
-	err = cache.Put(2, 200) // This should evict key 1
-	assert.NoError(t, err)
-
-	_, err = cache.Get(1)
-	assert.Error(t, err) // The key 1 should have been evicted
+	err = cache.Put(2, 200) // This should say the cache is full
+	assert.EqualError(t, err, ErrCacheFull.Error())
 }
 
 func TestInvalidCachePut(t *testing.T) {

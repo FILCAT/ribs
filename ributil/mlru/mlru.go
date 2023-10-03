@@ -63,6 +63,11 @@ func (l *MLRU[K, V]) evictLast() (evicted *entry[K, V]) {
 	return
 }
 
+// normal lru would just evict the oldest entry. This is part of levelcache,
+// where instead of evicting on put, we will merge this layer into the lower layer
+// which is where the eviction happens.
+var ErrCacheFull = errors.New("cache is full")
+
 // Put adds a new entry to the cache or updates an existing entry.
 // It evicts the oldest entry if the cache is at full capacity.
 func (l *MLRU[K, V]) Put(key K, value V) error {
@@ -89,7 +94,7 @@ func (l *MLRU[K, V]) Put(key K, value V) error {
 	}
 
 	if l.currentSize >= l.capacity {
-		l.evictLast()
+		return ErrCacheFull
 	}
 	index := l.group.counter.Add(1)
 	newEntry := &entry[K, V]{key: key, index: index, value: value}
