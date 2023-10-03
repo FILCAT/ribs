@@ -33,6 +33,7 @@ require (
 	github.com/ipfs/go-unixfsnode v1.8.1
 	github.com/ipld/go-car v0.6.1
 	github.com/ipld/go-ipld-prime v0.21.0
+	github.com/ipld/go-trustless-utils v0.3.0
 	github.com/ipni/go-libipni v0.5.0
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-libp2p v0.31.0
@@ -147,7 +148,6 @@ require (
 	github.com/ipld/go-car/v2 v2.13.1 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1 // indirect
-	github.com/ipld/go-trustless-utils v0.3.0 // indirect
 	github.com/ipsn/go-secp256k1 v0.0.0-20180726113642-9d62b9f0bc52 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
