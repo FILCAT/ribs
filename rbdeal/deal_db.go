@@ -16,7 +16,6 @@ import (
 	"github.com/ipfs/go-cid"
 	iface "github.com/lotus-web3/ribs"
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
-	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 )
 
@@ -1353,26 +1352,26 @@ func (r *ribsDB) LastTotalUploadedBytes() (int64, error) {
 }
 
 func (r *ribsDB) GetRetrievableDealStats() ([]iface.DealCountStats, error) {
-	query := `
-	SELECT
-		retrievable_count AS "X retrievable deals",
-		COUNT(*) AS "Number of groups"
-	FROM
-		(
-			SELECT
-				d.group_id,
-				COUNT(*) AS retrievable_count
-			FROM
-				deals d
-			WHERE
-				d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
-			GROUP BY
-				d.group_id
-		) AS retrievable_deals_per_group
-	GROUP BY
-		retrievable_count
-	ORDER BY
-		retrievable_count;`
+	query := `SELECT
+    COALESCE(retrievable_count, 0) AS "X retrievable deals",
+    COUNT(*) AS "Number of groups"
+FROM
+    (
+        SELECT
+            all_groups.group_id,
+            COUNT(d.group_id) AS retrievable_count
+        FROM
+            (SELECT DISTINCT group_id FROM deals) AS all_groups
+        LEFT JOIN
+            deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+        GROUP BY
+            all_groups.group_id
+    ) AS retrievable_deals_per_group
+GROUP BY
+    retrievable_count
+ORDER BY
+    retrievable_count;
+`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -1398,26 +1397,25 @@ func (r *ribsDB) GetRetrievableDealStats() ([]iface.DealCountStats, error) {
 }
 
 func (r *ribsDB) GetSealedDealStats() ([]iface.DealCountStats, error) {
-	query := `
-	SELECT
-		retrievable_count AS "X sealed deals",
-		COUNT(*) AS "Number of groups"
-	FROM
-		(
-			SELECT
-				d.group_id,
-				COUNT(*) AS retrievable_count
-			FROM
-				deals d
-			WHERE
-				d.sealed = 1
-			GROUP BY
-				d.group_id
-		) AS retrievable_deals_per_group
-	GROUP BY
-		retrievable_count
-	ORDER BY
-		retrievable_count;`
+	query := `SELECT
+    COALESCE(retrievable_count, 0) AS "X sealed deals",
+    COUNT(*) AS "Number of groups"
+FROM
+    (
+        SELECT
+            all_groups.group_id,
+            COUNT(d.group_id) AS retrievable_count
+        FROM
+            (SELECT DISTINCT group_id FROM deals) AS all_groups
+        LEFT JOIN
+            deals d ON all_groups.group_id = d.group_id AND d.sealed = 1
+        GROUP BY
+            all_groups.group_id
+    ) AS retrievable_deals_per_group
+GROUP BY
+    retrievable_count
+ORDER BY
+    retrievable_count;`
 
 	rows, err := r.db.Query(query)
 	if err != nil {

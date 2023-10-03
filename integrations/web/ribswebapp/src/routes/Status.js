@@ -942,12 +942,12 @@ function DealCountsChart() {
             const sealedDealCounts = await RibsRPC.call('SealedDealCounts');
 
             // Create a map to easily find sealed deals by count
-            const sealedMap = Object.fromEntries(sealedDealCounts.map(item => [item.Count, item.Groups]));
+            const retrievableMap = Object.fromEntries(retrievableDealCounts.map(item => [item.Count, item.Groups]));
 
-            const data = retrievableDealCounts.map(item => ({
+            const data = sealedDealCounts.map(item => ({
                 name: item.Count,
-                Retrievable: item.Groups,
-                Sealed: sealedMap[item.Count] || 0
+                Sealed: item.Groups,
+                Retrievable: retrievableMap[item.Count] || 0
             }));
             setDealCounts(data);
         } catch (error) {
