@@ -136,7 +136,7 @@ func (l *LevelDBIndex) ToTruncate(atOrAbove int64) ([]multihash.Multihash, error
 		if len(it.Value()) != 8 {
 			return nil, xerrors.Errorf("invalid value length")
 		}
-		offs, _ := fromOffsetLen(int64(binary.LittleEndian.Uint64(it.Value())))
+		offs, _ := FromOffsetLen(int64(binary.LittleEndian.Uint64(it.Value())))
 		if offs >= atOrAbove {
 			keyCopy := make([]byte, len(it.Key()))
 			copy(keyCopy, it.Key())

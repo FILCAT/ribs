@@ -485,7 +485,7 @@ func (j *CarLog) fixLevelIndex(h Head, w WritableIndex) error {
 
 	err := j.iterate(h.RetiredAt, func(off int64, length uint64, c cid.Cid, data []byte) error {
 		mhsBuf = append(mhsBuf, c.Hash())
-		offsBuf = append(offsBuf, makeOffsetLen(off, int(length)))
+		offsBuf = append(offsBuf, MakeOffsetLen(off, int(length)))
 
 		done++
 
@@ -625,7 +625,7 @@ func (j *CarLog) Put(c []mh.Multihash, b []blocks.Block) error {
 		// todo use a buffer with fixed cid prefix to avoid allocs
 		bcid := cid.NewCidV1(cid.Raw, c[i]).Bytes()
 
-		offsets[i] = makeOffsetLen(j.dataLen, len(bcid)+len(blk.RawData()))
+		offsets[i] = MakeOffsetLen(j.dataLen, len(bcid)+len(blk.RawData()))
 
 		n, err := j.ldWrite(bcid, blk.RawData())
 		if err != nil {
@@ -773,7 +773,7 @@ func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byt
 			continue
 		}
 
-		off, entLen := fromOffsetLen(locs[i])
+		off, entLen := FromOffsetLen(locs[i])
 
 		if entLen > len(entBuf) {
 			// expand buffer to next power of two if needed
@@ -855,7 +855,7 @@ func (j *CarLog) viewExternal(c []mh.Multihash, cb func(cidx int, found bool, da
 			continue
 		}
 
-		off, entLen := fromOffsetLen(locs[i])
+		off, entLen := FromOffsetLen(locs[i])
 
 		if entLen > len(entBuf) {
 			// expand buffer to next power of two if needed
@@ -1478,7 +1478,7 @@ func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
 			return xerrors.Errorf("decode block cid: %w", err)
 		}
 
-		err = f(c.Hash(), []int64{makeOffsetLen(at, len(d))})
+		err = f(c.Hash(), []int64{MakeOffsetLen(at, len(d))})
 		if err != nil {
 			return err
 		}
@@ -1736,11 +1736,11 @@ func (rs *readSeekerFromReaderAt) Seek(offset int64, whence int) (int64, error) 
 
 const MaxEntryLen = 1 << (64 - 40)
 
-func makeOffsetLen(off int64, length int) int64 {
+func MakeOffsetLen(off int64, length int) int64 {
 	return (int64(length) << 40) | (off & 0xFFFF_FFFF_FF)
 }
 
-func fromOffsetLen(offlen int64) (int64, int) {
+func FromOffsetLen(offlen int64) (int64, int) {
 	return offlen & 0xFFFF_FFFF_FF, int(offlen >> 40)
 }
 
