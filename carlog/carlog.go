@@ -389,9 +389,24 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 	}
 
 	if h.DataEnd > 0 && len(h.LayerOffsets) == 0 {
-		// todo truncate the file to DataEnd
-		// at this point DataEnt should equal RetiredAt, dataFile may be longer than RetiredAt
-		return nil, xerrors.Errorf("data end is set but layer offsets are not, top car generation likely failed (recovery strategy not implemented yet)")
+		if err := dataFile.Truncate(h.DataEnd); err != nil {
+			return nil, xerrors.Errorf("truncate data file (cut unfinished top tree): %w", err)
+		}
+
+		h.DataEnd = 0
+
+		err := jb.mutHead(func(h *Head) error {
+			h.DataEnd = 0
+			return nil
+		})
+		if err != nil {
+			return nil, xerrors.Errorf("mutating head: %w", err)
+		}
+
+		dataInfo, err = dataFile.Stat()
+		if err != nil {
+			return nil, xerrors.Errorf("stat top-trunc data len: %w", err)
+		}
 	}
 
 	// todo right now we're calling this on every startup when writable
