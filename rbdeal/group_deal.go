@@ -152,13 +152,6 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		price := big.Zero()
 		pricef.Int(price.Int)
 
-		if price.GreaterThan(big.NewInt(int64(maxToPay))) {
-			// todo store reject
-
-			// this check is probably redundant, buuut..
-			return fmt.Errorf("price %d is greater than max price %f", price, maxToPay)
-		}
-
 		dealProposal, err := dealProposal(ctx, w, walletAddr, dealInfo.Root, abi.PaddedPieceSize(dealInfo.PieceSize), pieceCid, maddr, startEpoch, duration, verified, providerCollateral, price)
 		if err != nil {
 			return fmt.Errorf("failed to create a deal proposal: %w", err)
@@ -217,8 +210,18 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return fmt.Errorf("saving deal info: %w", err)
 		}
 
+		if price.GreaterThan(big.NewInt(int64(maxToPay))) {
+			err = r.db.StoreRejectedDeal(dealUuid.String(), fmt.Sprintf("price %d is greater than max price %f", price, maxToPay), 0)
+			if err != nil {
+				return fmt.Errorf("saving rejected deal info: %w", err)
+			}
+
+			// this check is probably redundant, buuut..
+			return fmt.Errorf("price %d is greater than max price %f", price, maxToPay)
+		}
+
 		if err := h.Connect(ctx, *addrInfo); err != nil {
-			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err), 0)
+			err = r.db.StoreRejectedDeal(di.DealUUID, fmt.Sprintf("failed to connect to miner: %s", err), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -228,7 +231,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
 		if err != nil {
-			err = r.db.StoreRejectedDeal(di, fmt.Sprintf("failed to connect to miner: %s", err), 0)
+			err = r.db.StoreRejectedDeal(di.DealUUID, fmt.Sprintf("failed to connect to miner: %s", err), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -239,7 +242,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		if len(x) == 0 {
 			err := fmt.Errorf("boost client cannot make a deal with storage provider %s because it does not support protocol version 1.2.0", maddr)
 
-			if err := r.db.StoreRejectedDeal(di, err.Error(), 0); err != nil {
+			if err := r.db.StoreRejectedDeal(di.DealUUID, err.Error(), 0); err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
 
@@ -250,7 +253,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
 		if err != nil {
-			err = r.db.StoreRejectedDeal(di, xerrors.Errorf("opening deal proposal stream: %w", err).Error(), 0)
+			err = r.db.StoreRejectedDeal(di.DealUUID, xerrors.Errorf("opening deal proposal stream: %w", err).Error(), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -261,7 +264,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		var resp types.DealResponse
 		if err := doRpc(ctx, s, &dealParams, &resp); err != nil {
-			err = r.db.StoreRejectedDeal(di, xerrors.Errorf("sending deal proposal rpc: %w", err).Error(), 0)
+			err = r.db.StoreRejectedDeal(di.DealUUID, xerrors.Errorf("sending deal proposal rpc: %w", err).Error(), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}
@@ -270,7 +273,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		}
 
 		if !resp.Accepted {
-			err = r.db.StoreRejectedDeal(di, resp.Message, 1)
+			err = r.db.StoreRejectedDeal(di.DealUUID, resp.Message, 1)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
 			}

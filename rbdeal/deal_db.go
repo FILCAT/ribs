@@ -243,7 +243,12 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 	var withBitswap []dealProvider
 	var random []dealProvider
 
-	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 15`, group, pieceSize, pieceSize)
+	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+									WHERE id NOT IN (
+										SELECT provider_addr FROM deals	WHERE group_id = ?
+										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+									) and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 15`,
+		group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
@@ -272,7 +277,11 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_http = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+									WHERE id NOT IN (
+										SELECT provider_addr FROM deals	WHERE group_id = ?
+										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+									) and booster_http = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
@@ -295,7 +304,11 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view where id not in (select provider_addr from deals where group_id = ?) and booster_bitswap = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+									WHERE id NOT IN (
+										SELECT provider_addr FROM deals	WHERE group_id = ?
+										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+									) and booster_bitswap = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
@@ -504,12 +517,12 @@ func (r *ribsDB) StoreSuccessfullyProposedDeal(d dbDealInfo) error {
 	return nil
 }
 
-func (r *ribsDB) StoreRejectedDeal(d dbDealInfo, emsg string, proposed int) error {
+func (r *ribsDB) StoreRejectedDeal(duuid string, emsg string, proposed int) error {
 	failed, rejected := 1, 1
 	state := "Rejected"
 
 	_, err := r.db.Exec(`update deals set failed = ?, rejected = ?, sp_status = ?, error_msg = ?, proposed = ? where uuid = ?`,
-		failed, rejected, state, emsg, proposed, d.DealUUID)
+		failed, rejected, state, emsg, proposed, duuid)
 	if err != nil {
 		return xerrors.Errorf("updating deal: %w", err)
 	}
