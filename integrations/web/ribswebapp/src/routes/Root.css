@@ -101,7 +101,6 @@ body {
     padding: 20px;
 }
 
-
 button, .button-ish {
     background-color: #4caf50;
     border: none;
@@ -127,4 +126,14 @@ button:hover, .button-ish {
     font-size: 0.9rem;
     margin-bottom: 0;
     margin-left: 1px;
+}
+
+a {
+    color: #333;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    color: #4CAF50;
 }

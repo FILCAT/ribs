@@ -30,17 +30,6 @@
     background: #99ff99;
 }
 
-
-.Deal a {
-    color: #333;
-    text-decoration: none;
-    transition: color 0.3s ease;
-}
-
-.Deal a:hover {
-    color: #4CAF50;
-}
-
 .deal-err {
     text-overflow: ellipsis;
     overflow: hidden;

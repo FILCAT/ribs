@@ -39,6 +39,7 @@ function Providers() {
             <table className="providers-table">
                 <thead>
                 <tr>
+                    <th></th>
                     <th>Address</th>
                     <th>
                         <div>Piece Sizes</div>
@@ -54,8 +55,9 @@ function Providers() {
                 </tr>
                 </thead>
                 <tbody>
-                {providers.map((provider) => (
+                {providers.map((provider, i) => (
                     <tr key={provider.ID}>
+                        <td className="providers-ask">{i+1}.</td>
                         <td><Link to={`/provider/f0${provider.ID}`}>f0{provider.ID}</Link></td>
                         <td className="providers-ask">
                             <div>{`${formatBytesBinary(provider.AskMinPieceSize)} to ${formatBytesBinary(provider.AskMaxPieceSize)}`}</div>
