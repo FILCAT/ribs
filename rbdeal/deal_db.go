@@ -347,9 +347,8 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	res, err := r.db.Query(`select id, ping_ok, boost_deals, booster_http, booster_bitswap,
        indexed_success, indexed_fail,
-       retrprobe_success, retrprobe_fail, retrprobe_blocks, retrprobe_bytes,
        ask_price, ask_verif_price, ask_min_piece_size, ask_max_piece_size
-    from good_providers_view`)
+    from providers where in_market=1 and ping_ok=1`)
 
 	if err != nil {
 		log.Errorw("querying providers", "error", err)
@@ -362,7 +361,6 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 		var pm iface.ProviderMeta
 		err := res.Scan(&pm.ID, &pm.PingOk, &pm.BoostDeals, &pm.BoosterHttp, &pm.BoosterBitswap,
 			&pm.IndexedSuccess, &pm.IndexedFail, // &pm.DealAttempts, &pm.DealSuccess, &pm.DealFail,
-			&pm.RetrProbeSuccess, &pm.RetrProbeFail, &pm.RetrProbeBlocks, &pm.RetrProbeBytes,
 			&pm.AskPrice, &pm.AskVerifiedPrice, &pm.AskMinPieceSize, &pm.AskMaxPieceSize)
 		if err != nil {
 			log.Errorw("scanning provider", "error", err)
@@ -384,7 +382,8 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 	res, err = r.db.Query(`select provider_addr, count(*),
        sum(case when sealed = 1 then 1 else 0 end),
        sum(case when rejected != 1 and failed = 1 then 1 else 0 end),
-       sum(case when rejected = 1 then 1 else 0 end) from deals group by provider_addr`)
+       sum(case when rejected = 1 then 1 else 0 end),
+       max(start_time) from deals group by provider_addr`)
 	if err != nil {
 		log.Errorw("querying deals", "error", err)
 		return nil
@@ -392,24 +391,60 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 
 	for res.Next() {
 		var id int64
-		var dealStarted, dealSuccess, dealFail, dealRejected int64
-		err := res.Scan(&id, &dealStarted, &dealSuccess, &dealFail, &dealRejected)
+		var dealStarted, dealSuccess, dealFail, dealRejected, maxStart int64
+		err := res.Scan(&id, &dealStarted, &dealSuccess, &dealFail, &dealRejected, &maxStart)
 		if err != nil {
 			log.Errorw("scanning deal", "error", err)
 			return nil
 		}
 
-		for i := range out {
+		for i := range out { // todo O(n^2)
 			if out[i].ID == id {
 				out[i].DealStarted = dealStarted
 				out[i].DealSuccess = dealSuccess
 				out[i].DealFail = dealFail
 				out[i].DealRejected = dealRejected
+				out[i].MostRecentDealStart = maxStart
+			}
+		}
+	}
+
+	res, err = r.db.Query(`select sp_id, retrievable_deals, unretrievable_deals from sp_retr_stats_view`)
+	if err != nil {
+		log.Errorw("querying deals", "error", err)
+		return nil
+	}
+	for res.Next() {
+		var id int64
+		var retr, unretr int64
+		err := res.Scan(&id, &retr, &unretr)
+		if err != nil {
+			log.Errorw("scanning deal retr stats", "error", err)
+			return nil
+		}
+
+		for i := range out { // todo O(n^2)
+			if out[i].ID == id {
+				out[i].RetrievDeals = retr
+				out[i].UnretrievDeals = unretr
 			}
 		}
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
+		iRejectAll := out[i].DealRejected == out[i].DealStarted
+		jRejectAll := out[j].DealRejected == out[j].DealStarted
+		if iRejectAll != jRejectAll {
+			return iRejectAll
+		}
+
+		iRetrSuccess := (out[i].RetrievDeals+out[i].UnretrievDeals) > 0 && float64(out[i].RetrievDeals) >= 0.7*float64(out[i].RetrievDeals+out[i].UnretrievDeals)
+		jRetrSuccess := (out[j].RetrievDeals+out[j].UnretrievDeals) > 0 && float64(out[j].RetrievDeals) >= 0.7*float64(out[j].RetrievDeals+out[j].UnretrievDeals)
+
+		if iRetrSuccess != jRetrSuccess {
+			return !iRetrSuccess
+		}
+
 		if out[i].DealSuccess == out[j].DealSuccess {
 			return out[i].DealStarted < out[j].DealStarted
 		}
@@ -747,14 +782,12 @@ func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 	var pInfo iface.ProviderInfo
 	err := r.db.QueryRow(`
 		SELECT id, ping_ok, boost_deals, booster_http, booster_bitswap,
-		indexed_success, indexed_fail, retrprobe_success, retrprobe_fail,
-		retrprobe_blocks, retrprobe_bytes, ask_price, ask_verif_price,
+		indexed_success, indexed_fail, ask_price, ask_verif_price,
 		ask_min_piece_size, ask_max_piece_size
 		FROM providers WHERE id = ?`, providerID).Scan(
 		&pInfo.Meta.ID, &pInfo.Meta.PingOk, &pInfo.Meta.BoostDeals,
 		&pInfo.Meta.BoosterHttp, &pInfo.Meta.BoosterBitswap, &pInfo.Meta.IndexedSuccess,
-		&pInfo.Meta.IndexedFail, &pInfo.Meta.RetrProbeSuccess, &pInfo.Meta.RetrProbeFail,
-		&pInfo.Meta.RetrProbeBlocks, &pInfo.Meta.RetrProbeBytes,
+		&pInfo.Meta.IndexedFail,
 		&pInfo.Meta.AskPrice, &pInfo.Meta.AskVerifiedPrice, &pInfo.Meta.AskMinPieceSize, &pInfo.Meta.AskMaxPieceSize)
 	if err != nil {
 		return pInfo, xerrors.Errorf("querying provider metadata: %w", err)

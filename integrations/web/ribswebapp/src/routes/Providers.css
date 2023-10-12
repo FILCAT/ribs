@@ -28,3 +28,12 @@
 .stat-gray {
     color: #777;
 }
+
+.providers-ask {
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.providers-nodeal-longtime {
+    color: #f44336;
+}

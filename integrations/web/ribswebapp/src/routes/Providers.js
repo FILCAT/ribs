@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import RibsRPC from "../helpers/rpc";
-import { formatBytesBinary, formatFil, epochToMonth } from "../helpers/fmt";
+import { formatBytesBinary, formatFil, epochToMonth, formatTimestamp } from "../helpers/fmt";
 import "./Providers.css";
 import {Link} from "react-router-dom";
 
@@ -18,7 +18,7 @@ function Providers() {
 
     useEffect(() => {
         fetchProviders();
-        const intervalId = setInterval(fetchProviders, 500);
+        const intervalId = setInterval(fetchProviders, 5000);
 
         return () => {
             clearInterval(intervalId);
@@ -40,22 +40,27 @@ function Providers() {
                 <thead>
                 <tr>
                     <th>Address</th>
-                    <th>Piece Sizes</th>
-                    <th>Price</th>
+                    <th>
+                        <div>Piece Sizes</div>
+                        <div>Price</div>
+                    </th>
                     <th>Features</th>
                     <th>Started</th>
                     <th>Rejected</th>
                     <th>Failed</th>
                     <th>Sealed</th>
                     <th>Retriev</th>
+                    <th>Last Deal Start</th>
                 </tr>
                 </thead>
                 <tbody>
                 {providers.map((provider) => (
                     <tr key={provider.ID}>
                         <td><Link to={`/provider/f0${provider.ID}`}>f0{provider.ID}</Link></td>
-                        <td>{`${formatBytesBinary(provider.AskMinPieceSize)} to ${formatBytesBinary(provider.AskMaxPieceSize)}`}</td>
-                        <td>{`${formatFil(provider.AskPrice * epochToMonth)} (${formatFil(provider.AskVerifiedPrice * epochToMonth)})`}</td>
+                        <td className="providers-ask">
+                            <div>{`${formatBytesBinary(provider.AskMinPieceSize)} to ${formatBytesBinary(provider.AskMaxPieceSize)}`}</div>
+                            <div>{`${formatFil(provider.AskPrice * epochToMonth)} (${formatFil(provider.AskVerifiedPrice * epochToMonth)})`}</div>
+                        </td>
                         <td>
                             {`${provider.BoosterHttp ? "http " : ""} ${provider.BoosterBitswap ? "bitswap" : ""}`.trim()}
                         </td>
@@ -79,10 +84,13 @@ function Providers() {
                             </div>
                         </td>
                         <td>
-                            0  {/* Placeholder for Retrievable */}
+                            {provider.RetrievDeals} ({calculateDealPercentage(provider.RetrievDeals, provider.UnretrievDeals+provider.RetrievDeals)}%)
                             <div className="progress-bar thin-bar">
-                                <div className="progress-bar__fill" style={{ width: `${calculateDealPercentage(0, provider.DealStarted)}%` }}></div>
+                                <div className="progress-bar__fill" style={{ width: `${calculateDealPercentage(provider.RetrievDeals, provider.UnretrievDeals+provider.RetrievDeals)}%` }}></div>
                             </div>
+                        </td>
+                        <td className={"providers-ask" + (((new Date()) - provider.MostRecentDealStart*1000) > 80000000 ? " providers-nodeal-longtime" : "") }>
+                            {provider.MostRecentDealStart === 0 ? "Never" : formatTimestamp(provider.MostRecentDealStart)}
                         </td>
                     </tr>
                 ))}

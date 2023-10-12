@@ -159,10 +159,7 @@ type ProviderMeta struct {
 	DealFail     int64
 	DealRejected int64
 
-	RetrProbeSuccess int64
-	RetrProbeFail    int64
-	RetrProbeBlocks  int64
-	RetrProbeBytes   int64
+	MostRecentDealStart int64
 
 	// price in fil/gib/epoch
 	AskPrice         float64
@@ -170,4 +167,6 @@ type ProviderMeta struct {
 
 	AskMinPieceSize float64
 	AskMaxPieceSize float64
+
+	RetrievDeals, UnretrievDeals int64
 }

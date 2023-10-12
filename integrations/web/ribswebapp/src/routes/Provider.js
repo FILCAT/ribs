@@ -121,6 +121,12 @@ function Provider() {
                             <td>Retr Probe Bytes</td>
                             <td>{formatBytesBinary(provider.Meta.RetrProbeBytes)}</td>
                         </tr>
+                        <tr>
+                            <td>Links</td>
+                            <td>
+                                <a href={`https://filfox.info/en/address/${providerID}`} target="_blank">FilFox</a>
+                            </td>
+                        </tr>
 
                         </tbody>
                     </table>
