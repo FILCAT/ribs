@@ -942,13 +942,17 @@ function DealCountsChart() {
             const sealedDealCounts = await RibsRPC.call('SealedDealCounts');
 
             // Create a map to easily find sealed deals by count
-            const retrievableMap = Object.fromEntries(retrievableDealCounts.map(item => [item.Count, item.Groups]));
+            let allMap = Object.fromEntries(retrievableDealCounts.map(item => [item.Count, {Retrievable: item.Groups}]));
+            allMap = sealedDealCounts.reduce((acc, item) => {
+                acc[item.Count] = {...acc[item.Count], Sealed: item.Groups};
+                return acc;
+            }, allMap);
 
-            const data = sealedDealCounts.map(item => ({
-                name: item.Count,
-                Sealed: item.Groups,
-                Retrievable: retrievableMap[item.Count] || 0
+            const data = Object.entries(allMap).map(([count, groups]) => ({
+                name: count,
+                ...groups
             }));
+
             setDealCounts(data);
         } catch (error) {
             console.error('Error fetching deal counts:', error);
@@ -983,6 +987,31 @@ function DealCountsChart() {
             </ResponsiveContainer>
         </div>
     );
+}
+
+function RepairRetrievals() {
+    return (
+        <div>
+            <h2>Repair Retrievals</h2>
+
+            <table className="compact-table">
+                <tbody>
+                <tr>
+                    <td>Queue</td>
+                    <td>0 Deals</td>
+                </tr>
+                <tr>
+                    <td>Active</td>
+                    <td>0 Deals</td>
+                </tr>
+                <tr>
+                    <td>Retrieval rate</td>
+                    <td>0 B/s</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    )
 }
 
 // read/write busy time
@@ -1073,6 +1102,11 @@ function Status() {
                     <RetrStats retrStats={retrStats} />
                     <StagingStats />
                     <RetrCheckerStats stats={retrChecker} />
+                </div>
+
+                <h1>Replication Repair</h1>
+                <div className="status-grid">
+                    <RepairRetrievals />
                 </div>
 
                 <h1>Internals</h1>

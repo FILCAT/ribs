@@ -1417,6 +1417,9 @@ FROM
             (SELECT DISTINCT group_id FROM deals) AS all_groups
         LEFT JOIN
             deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+        JOIN groups g on g.id = all_groups.group_id
+        WHERE
+            g.g_state = 4
         GROUP BY
             all_groups.group_id
     ) AS retrievable_deals_per_group
@@ -1462,6 +1465,9 @@ FROM
             (SELECT DISTINCT group_id FROM deals) AS all_groups
         LEFT JOIN
             deals d ON all_groups.group_id = d.group_id AND d.sealed = 1
+        JOIN groups g on g.id = all_groups.group_id
+        WHERE
+            g.g_state = 4
         GROUP BY
             all_groups.group_id
     ) AS retrievable_deals_per_group
