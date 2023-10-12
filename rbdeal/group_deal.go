@@ -153,6 +153,8 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		pricef.Int(price.Int)
 
 		if price.GreaterThan(big.NewInt(int64(maxToPay))) {
+			// todo store reject
+
 			// this check is probably redundant, buuut..
 			return fmt.Errorf("price %d is greater than max price %f", price, maxToPay)
 		}

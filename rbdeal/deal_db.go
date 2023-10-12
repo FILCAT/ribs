@@ -135,6 +135,20 @@ create table if not exists offloads_s3
 drop view if exists good_providers_view;
 drop view if exists sp_deal_stats_view;
 drop view if exists sp_retr_stats_view;
+drop view if exists bad_providers_new_reject_view;
+
+CREATE VIEW IF NOT EXISTS bad_providers_new_reject_view AS
+    SELECT 
+        d.provider_addr AS sp_id
+    FROM 
+        deals d
+    WHERE 
+        d.start_time >= strftime('%%s', 'now', '-2 hours')
+    GROUP BY
+        d.provider_addr
+    HAVING 
+        COUNT(*) > 2
+        AND COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) = COUNT(*);
 
 CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
     SELECT
@@ -145,7 +159,10 @@ CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
         COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) AS failed_deals,
         COUNT(CASE WHEN d.rejected = 1 THEN 1 ELSE NULL END) AS rejected_deals,
         CASE
-            WHEN COUNT(*) >= 4 AND COUNT(*) * 4 < COUNT(CASE WHEN d.failed = 1 THEN 1 ELSE NULL END) * 5 THEN 1
+            WHEN COUNT(CASE WHEN d.rejected = 0 THEN 1 ELSE NULL END) >= 4 
+                AND COUNT(CASE WHEN d.rejected = 0 THEN 1 ELSE NULL END) * 4 
+                    < COUNT(CASE WHEN d.failed = 1 AND d.rejected = 0 THEN 1 ELSE NULL END) * 5 
+            THEN 1
             ELSE 0
             END AS failed_all
     FROM
@@ -179,6 +196,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         providers p
         LEFT JOIN sp_deal_stats_view ds ON p.id = ds.sp_id
         LEFT JOIN sp_retr_stats_view rs ON p.id = rs.sp_id
+        LEFT JOIN bad_providers_new_reject_view bp ON p.id = bp.sp_id
     WHERE 
         p.in_market = 1
         AND p.ping_ok = 1
@@ -187,6 +205,7 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         AND p.ask_max_piece_size >= %d
         AND (ds.failed_all IS NULL OR ds.failed_all = 0)
         AND (rs.unretrievable_deals IS NULL OR (rs.unretrievable_deals <= 1 OR rs.retrievable_deals >= 0.7 * (rs.retrievable_deals + rs.unretrievable_deals) )) /* has up to 1 unretrievable deals, or most are retrievable  */
+        AND bp.sp_id IS NULL  -- Excludes bad providers
     ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
 
