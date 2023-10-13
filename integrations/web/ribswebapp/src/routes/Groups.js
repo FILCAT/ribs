@@ -4,8 +4,9 @@ import { formatBytesBinary, formatNum, epochToDate, epochToDuration } from "../h
 import "./Groups.css";
 import "./Deal.css";
 import {Link} from "react-router-dom";
+import {Line} from "recharts";
 
-function Deal({ deal, headHeight, pieceCid, dataCid }) {
+export function Deal({ deal, headHeight, pieceCid, dataCid }) {
     const {
         UUID,
         Provider,
@@ -76,7 +77,7 @@ function isSealingStatus(status) {
     return status != "Accepted"
 }
 
-const groupStateText = [
+export const groupStateText = [
     "Writable",
     "Full",
     "VRCAR Done",
@@ -84,8 +85,8 @@ const groupStateText = [
     "Offloaded"
 ];
 
-const GroupStateWritable = 0;
-const GroupStateOffloaded = 4;
+export const GroupStateWritable = 0;
+export const GroupStateOffloaded = 4;
 
 export function Group({ groupKey, headHeight, showCid }) {
     const [group, setGroup] = useState({
@@ -190,6 +191,7 @@ export function Group({ groupKey, headHeight, showCid }) {
                     {dealCounts.errors > 0 && <span><span className="deal-counts-err">{dealCounts.errors} Errored</span></span>}
                 </div>
                 {group.Deals.length > 0 && (<button onClick={toggleShowFailedDeals}>{showFailedDeals ? "Hide" : "Show"} Failed Deals</button>)}
+                <Link to={`/groups/${groupKey}`}><button style={{marginLeft: "1em"}}>More</button></Link>
             </div>
                 {dealsToDisplay.length > 0 && (
                     <>

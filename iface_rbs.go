@@ -127,7 +127,7 @@ type GroupMeta struct {
 	ReadBlocks, ReadBytes   int64
 	WriteBlocks, WriteBytes int64
 
-	PieceCID string
+	PieceCID, RootCID string
 
 	DealCarSize *int64 // todo move to DescribeGroup
 }

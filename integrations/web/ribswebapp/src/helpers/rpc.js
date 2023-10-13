@@ -28,11 +28,35 @@ class RibsRPC {
     }
 
     static async call(method, params) {
-        return await RibsRPC.get().call('RIBS.' + method, params);
+        const maxRetries = 5;
+        let delay = 1000; // 1 second in milliseconds
+
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                return await RibsRPC.get().call('RIBS.' + method, params);
+            } catch (error) {
+                if (i === maxRetries - 1) {
+                    throw error; // Re-throw the error if we've reached the maximum number of retries
+                }
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
     }
 
     static async callFil(method, params) {
-        return await RibsRPC.get().call('Filecoin.' + method, params);
+        const maxRetries = 5;
+        let delay = 1000; // 1 second in milliseconds
+
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                return await RibsRPC.get().call('Filecoin.' + method, params);
+            } catch (error) {
+                if (i === maxRetries - 1) {
+                    throw error; // Re-throw the error if we've reached the maximum number of retries
+                }
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
     }
 
     static onConnect(callback) {

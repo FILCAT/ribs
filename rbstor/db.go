@@ -274,7 +274,7 @@ func (r *rbsDB) Groups() ([]iface.GroupKey, error) {
 }
 
 func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
-	res, err := r.db.Query("select blocks, bytes, g_state, car_size, commp from groups where id = ?", gk)
+	res, err := r.db.Query("select blocks, bytes, g_state, car_size, commp, root from groups where id = ?", gk)
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
@@ -284,10 +284,10 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	var state iface.GroupState
 	var found bool
 	var carSize *int64
-	var commp []byte
+	var commp, root []byte
 
 	if res.Next() {
-		err := res.Scan(&blocks, &bytes, &state, &carSize, &commp)
+		err := res.Scan(&blocks, &bytes, &state, &carSize, &commp, &root)
 		if err != nil {
 			return iface.GroupMeta{}, xerrors.Errorf("scanning group: %w", err)
 		}
@@ -307,7 +307,7 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		return iface.GroupMeta{}, xerrors.Errorf("group %d not found", gk)
 	}
 
-	var pcid string
+	var pcid, rcid string
 	if len(commp) > 0 {
 		c, err := commcid.PieceCommitmentV1ToCID(commp)
 		if err != nil {
@@ -315,6 +315,14 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		}
 
 		pcid = c.String()
+	}
+	if len(root) > 0 {
+		c, err := cid.Cast(root)
+		if err != nil {
+			return iface.GroupMeta{}, xerrors.Errorf("parsing root: %w", err)
+		}
+
+		rcid = c.String()
 	}
 
 	return iface.GroupMeta{
@@ -329,6 +337,7 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 		DealCarSize: carSize,
 
 		PieceCID: pcid,
+		RootCID:  rcid,
 	}, nil
 }
 
