@@ -2,6 +2,7 @@ package rbdeal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -188,12 +189,16 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	log := log.With("peer", pid, "deal", reqToken.DealUUID)
+
 	// Protect the libp2p connection for the lifetime of the transfer
 	tag := uuid.New().String()
 	r.host.ConnManager().Protect(pid, tag)
 	defer r.host.ConnManager().Unprotect(pid, tag)
 
 	var toDiscard int64
+	var toLimit int64 = -1 // -1 means no limit, read to the end
+
 	if req.Header.Get("Range") != "" {
 		s1 := strings.Split(req.Header.Get("Range"), "=")
 		if len(s1) != 2 {
@@ -222,9 +227,12 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if s2[1] != "" {
-			log.Errorw("invalid content range (5)", "range", req.Header.Get("Content-Range"), "s2", s2)
-			http.Error(w, "invalid content range", http.StatusBadRequest)
-			return
+			toLimit, err = strconv.ParseInt(s2[1], 10, 64)
+			if err != nil {
+				log.Errorw("invalid content range (5)", "range", req.Header.Get("Content-Range"), "s2", s2)
+				http.Error(w, "invalid content range", http.StatusBadRequest)
+				return
+			}
 		}
 	}
 
@@ -343,11 +351,26 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 	defer rateWriter.Done()
 
 	respLen := *gm.DealCarSize - toDiscard
+	if toLimit != -1 {
+		respLen = toLimit - toDiscard + 1
+	}
 
 	w.Header().Set("Content-Length", strconv.FormatInt(respLen, 10))
 	w.Header().Set("Content-Type", "application/vnd.ipld.car")
 
-	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, func(int64) {}, rateWriter)
+	// limit writer in case we have a range request
+	var errLimitReached = errors.New("byte limit reached")
+	var writerToUse io.Writer = rateWriter
+
+	if toLimit != -1 {
+		writerToUse = &LimitWriter{
+			W:   rateWriter,
+			N:   toLimit - toDiscard + 1,
+			Err: errLimitReached,
+		}
+	}
+
+	err = r.RBS.Storage().ReadCar(req.Context(), reqToken.Group, func(int64) {}, writerToUse)
 
 	defer func() {
 		if err := r.db.UpdateTransferStats(reqToken.DealUUID, sw.wrote, rateWriter.WriteError()); err != nil {
@@ -361,4 +384,32 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+type LimitWriter struct {
+	W       io.Writer
+	N       int64
+	Err     error
+	Reached bool // flag to indicate whether the limit has been reached
+}
+
+func (lw *LimitWriter) Write(p []byte) (n int, err error) {
+	if lw.Reached {
+		return 0, lw.Err
+	}
+	if lw.N <= 0 {
+		lw.Reached = true
+		return 0, lw.Err
+	}
+	if int64(len(p)) > lw.N {
+		p = p[0:lw.N]
+		lw.Reached = true
+	}
+	n, err = lw.W.Write(p)
+	lw.N -= int64(n)
+	if lw.N <= 0 {
+		lw.Reached = true
+		lw.Err = err
+	}
+	return
 }
