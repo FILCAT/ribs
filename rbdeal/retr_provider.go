@@ -3,7 +3,12 @@ package rbdeal
 import (
 	"context"
 	trustlessutils "github.com/ipld/go-trustless-utils"
+	pool "github.com/libp2p/go-buffer-pool"
+	"github.com/lotus-web3/ribs/carlog"
+	"io"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -64,8 +69,30 @@ type requestPromise struct {
 	err  error
 }
 
+func (p *requestPromise) Done() bool {
+	return p.done == nil
+}
+
 func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
 	return nil, xerrors.Errorf("is this used?")
+}
+
+func (r *retrievalProvider) getAddrInfoCached(provider int64) (ProviderAddrInfo, error) {
+	r.addrLk.Lock()
+	defer r.addrLk.Unlock()
+
+	if _, ok := r.addrs[provider]; !ok {
+		// todo optimization: don't hold the lock here
+		ai, err := r.r.db.GetProviderAddrs(provider)
+		if err != nil {
+			return ProviderAddrInfo{}, xerrors.Errorf("failed to get provider addrs: %w", err)
+		}
+
+		r.addrs[provider] = ai
+	}
+
+	addrInfo := r.addrs[provider]
+	return addrInfo, nil
 }
 
 func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
@@ -98,20 +125,11 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	cs := make([]types.RetrievalCandidate, 0, len(candidates))
 
 	for _, candidate := range candidates {
-		var addrInfo ProviderAddrInfo
-		r.addrLk.Lock()
-		if _, ok := r.addrs[candidate.Provider]; !ok {
-			ai, err := r.r.db.GetProviderAddrs(candidate.Provider)
-			if err != nil {
-				r.addrLk.Unlock()
-				log.Errorw("failed to get provider addrs", "provider", candidate.Provider, "err", err)
-				continue
-			}
-
-			r.addrs[candidate.Provider] = ai
+		addrInfo, err := r.getAddrInfoCached(candidate.Provider)
+		if err != nil {
+			log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+			continue
 		}
-		addrInfo = r.addrs[candidate.Provider]
-		r.addrLk.Unlock()
 
 		if len(addrInfo.BitswapMaddrs) > 0 {
 			log.Errorw("candidate has bitswap addrs", "provider", candidate.Provider)
@@ -254,6 +272,7 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 }
 
 func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKey, mh []multihash.Multihash, cb func(cidx int, data []byte)) error {
+	// try cache
 	var cacheHits int
 	var bytesServed int64
 
@@ -278,6 +297,78 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		return nil
 	}
 
+	httpHits := 0
+
+	// try http gateway
+	{
+		candidates, err := r.r.db.GetRetrievalCandidates(group) // todo cache
+		if err != nil {
+			return xerrors.Errorf("failed to get retrieval candidates: %w", err)
+		}
+
+		for _, candidate := range candidates {
+			addrInfo, err := r.getAddrInfoCached(candidate.Provider)
+			if err != nil {
+				log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+				continue
+			}
+
+			if len(addrInfo.HttpMaddrs) == 0 {
+				continue
+			}
+
+			u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
+			if err != nil {
+				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				continue
+			}
+
+			log.Errorw("attempting http retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
+			r.r.retrHttpTries.Add(1)
+
+			for i, hashToGet := range mh {
+				if hashToGet == nil {
+					continue
+				}
+
+				cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
+
+				promise, err := r.retrievalPromise(ctx, cidToGet, i, cb)
+				if err != nil {
+					return err
+				}
+				if promise.Done() {
+					continue
+				}
+
+				// todo could do in goroutines once FetchBlocks actually calls with multiple hashes
+
+				err = r.doHttpRetrieval(ctx, group, candidate.Provider, u, cidToGet, func(data []byte) {
+					promise.res = data
+					close(promise.done)
+				})
+				if err != nil {
+					promise.err = err
+					close(promise.done)
+					continue
+				}
+
+				cb(i, promise.res)
+				bytesServed += int64(len(promise.res))
+				mh[i] = nil
+				httpHits++
+				r.r.retrHttpSuccess.Add(1)
+				r.r.retrHttpBytes.Add(int64(len(promise.res)))
+			}
+		}
+	}
+
+	if cacheHits+httpHits == len(mh) {
+		log.Errorw("http retrieval success before lassie!", "group", group, "cacheHits", cacheHits, "httpHits", httpHits)
+		return nil
+	}
+
+	// fallback to lassie
 	r.reqSourcesLk.Lock()
 	for _, m := range mh {
 		if m == nil {
@@ -338,25 +429,83 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 	return nil
 }
 
-func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Multihash, i int, linkSystem linking.LinkSystem, wstor *ributil.IpldStoreWrapper, cb func(cidx int, data []byte), bytesServed *int64) error {
-	cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
+func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.GroupKey, prov int64, u *url.URL, cidToGet cid.Cid, cb func([]byte)) error {
+	// make a request
+	// like curl -H "Accept:application/vnd.ipld.raw;" http://{SP's http retrieval URL}/ipfs/bafySomeBlockCID -o bafySomeBlockCID
 
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second) // todo make tunable, use mostly for ttfb
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String()+"/ipfs/"+cidToGet.String(), nil)
+	if err != nil {
+		cancel()
+		return xerrors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.ipld.raw;")
+	req.Header.Set("User-Agent", "ribs/0.0.0")
+
+	resp, err := http.DefaultClient.Do(req) // todo use a tuned client
+	if err != nil {
+		log.Errorw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("failed to do request: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		log.Errorw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("non-200 response: %d", resp.StatusCode)
+	}
+
+	// read and validate block
+	if carlog.MaxEntryLen < resp.ContentLength {
+		log.Errorw("http retrieval failed (response too large)", "size", resp.ContentLength, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("response too large: %d", resp.ContentLength)
+	}
+
+	bbuf := pool.Get(int(resp.ContentLength))
+
+	if _, err := io.ReadFull(resp.Body, bbuf); err != nil {
+		log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("failed to read response: %w", err)
+	}
+
+	if err := resp.Body.Close(); err != nil {
+		log.Errorw("http retrieval failed (failed to close response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("failed to close response: %w", err)
+	}
+
+	checkCid, err := cidToGet.Prefix().Sum(bbuf)
+	if err != nil {
+		log.Errorw("http retrieval failed (failed to hash response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("failed to hash response: %w", err)
+	}
+
+	if !checkCid.Equals(cidToGet) {
+		log.Errorw("http retrieval failed (response hash mismatch!!!)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov, "expected", cidToGet, "actual", checkCid)
+		return xerrors.Errorf("response hash mismatch")
+	}
+
+	cb(bbuf)
+	return nil
+}
+
+func (r *retrievalProvider) retrievalPromise(ctx context.Context, cidToGet cid.Cid, i int, cb func(cidx int, data []byte)) (requestPromise, error) {
 	r.ongoingRequestsLk.Lock()
 
 	if or, ok := r.ongoingRequests[cidToGet]; ok {
 		r.ongoingRequestsLk.Unlock()
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return requestPromise{}, ctx.Err()
 		case <-or.done:
 		}
 
 		if or.err != nil {
-			return xerrors.Errorf("retr promise error: %w", or.err)
+			return requestPromise{}, xerrors.Errorf("retr promise error: %w", or.err)
 		}
 
 		cb(i, or.res)
-		return nil
+		return requestPromise{}, nil
 	}
 
 	promise := requestPromise{
@@ -365,6 +514,17 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 
 	r.ongoingRequests[cidToGet] = promise
 	r.ongoingRequestsLk.Unlock()
+
+	return promise, nil
+}
+
+func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Multihash, i int, linkSystem linking.LinkSystem, wstor *ributil.IpldStoreWrapper, cb func(cidx int, data []byte), bytesServed *int64) error {
+	cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
+
+	promise, err := r.retrievalPromise(ctx, cidToGet, i, cb)
+	if err != nil || promise.Done() {
+		return err
+	}
 
 	r.r.retrActive.Add(1)
 	defer r.r.retrActive.Add(-1)

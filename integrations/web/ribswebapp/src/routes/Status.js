@@ -592,6 +592,18 @@ function RetrStats({retrStats}) {
                     <td>Active Retrievals:</td>
                     <td>{formatNum(retrStats.Active)}</td>
                 </tr>
+                <tr>
+                    <td>HTTP Tries:</td>
+                    <td>{formatNum(retrStats.HTTPTries)}</td>
+                </tr>
+                <tr>
+                    <td>HTTP Success:</td>
+                    <td>{formatNum(retrStats.HTTPSuccess)}</td>
+                </tr>
+                <tr>
+                    <td>HTTP Bytes:</td>
+                    <td>{formatBytesBinary(retrStats.HTTPBytes)}</td>
+                </tr>
                 </tbody>
             </table>
         </div>

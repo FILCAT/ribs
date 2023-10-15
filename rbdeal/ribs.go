@@ -127,7 +127,7 @@ type ribs struct {
 	/* retrieval */
 	retrHost host.Host
 
-	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss, retrActive atomic.Int64
+	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss, retrHttpTries, retrHttpSuccess, retrHttpBytes, retrActive atomic.Int64
 
 	/* retrieval checker */
 	rckToDo, rckStarted, rckSuccess, rckFail, rckSuccessAll, rckFailAll atomic.Int64
@@ -304,12 +304,18 @@ func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
 
 func (r *ribs) RetrStats() (iface.RetrStats, error) {
 	return iface.RetrStats{
-		Success:   r.retrSuccess.Load(),
-		Bytes:     r.retrBytes.Load(),
-		Fail:      r.retrFail.Load(),
+		Success: r.retrSuccess.Load(),
+		Bytes:   r.retrBytes.Load(),
+		Fail:    r.retrFail.Load(),
+
 		CacheHit:  r.retrCacheHit.Load(),
 		CacheMiss: r.retrCacheMiss.Load(),
-		Active:    r.retrActive.Load(),
+
+		Active: r.retrActive.Load(),
+
+		HTTPTries:   r.retrHttpTries.Load(),
+		HTTPSuccess: r.retrHttpSuccess.Load(),
+		HTTPBytes:   r.retrHttpBytes.Load(),
 	}, nil
 }
 

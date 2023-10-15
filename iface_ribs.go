@@ -71,6 +71,7 @@ type StagingStats struct {
 
 type RetrStats struct {
 	Success, Bytes, Fail, CacheHit, CacheMiss, Active int64
+	HTTPTries, HTTPSuccess, HTTPBytes                 int64
 }
 
 type UploadStats struct {
