@@ -2,8 +2,12 @@ package rbdeal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lotus-web3/ribs/ributil"
+	"net/http"
+	"path"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -167,7 +171,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 	var stlk sync.Mutex
 
-	var started, reachable, boost, bitswap, http int64
+	var started, reachable, boost, bitswap, bhttp int64
 
 	for n, actor := range actors {
 		select {
@@ -187,7 +191,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				Total:     int64(len(actors)),
 				Boost:     atomic.LoadInt64(&boost),
 				BBswap:    atomic.LoadInt64(&bitswap),
-				BHttp:     atomic.LoadInt64(&http),
+				BHttp:     atomic.LoadInt64(&bhttp),
 			})
 		}
 
@@ -237,13 +241,15 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				return
 			}
 
+			log.Errorw("got boost tpt", "tpt", boostTpt, "provider", maddr)
+
 			res.BoostDeals = true // todo this is technically not necesarily true, but for now it is good enough
 			atomic.AddInt64(&boost, 1)
 
 			for _, protocol := range boostTpt.Protocols {
 				publicAddrs := make([]multiaddr.Multiaddr, 0, len(protocol.Addresses))
 				for _, ma := range protocol.Addresses {
-					if manet.IsPublicAddr(ma) {
+					if IsPublicOrDNSAddr(ma) {
 						publicAddrs = append(publicAddrs, ma)
 					}
 				}
@@ -272,12 +278,57 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 					}
 
 				case "http":
-					res.BoosterHttp = true
-					res.HttpMaddrs = protocol.Addresses
+					u, err := ributil.MaddrsToUrl(protocol.Addresses)
+					if err != nil {
+						log.Errorw("error parsing http addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
+						continue
+					}
 
-					// todo validation
+					// query {url}/info, which returns json like {"Version":"0.3.0"}
 
-					atomic.AddInt64(&http, 1)
+					ctx, cancel := context.WithTimeout(ctx, timeout)
+
+					var qres struct {
+						Version string
+					}
+					qurl := *u
+					qurl.Path = path.Join(qurl.Path, "info")
+
+					req, err := http.NewRequestWithContext(ctx, "GET", qurl.String(), nil)
+					if err != nil {
+						log.Errorw("error creating http request", "err", err, "provider", maddr, "url", qurl.String())
+						cancel()
+						continue
+					}
+
+					log.Errorw("pinging http", "provider", maddr, "url", qurl.String())
+
+					resp, err := http.DefaultClient.Do(req)
+					if err != nil {
+						log.Errorw("error querying http", "err", err, "provider", maddr, "url", qurl.String())
+						cancel()
+						continue
+					}
+
+					if resp.ContentLength > 1024 {
+						log.Errorw("http response too large", "provider", maddr, "url", qurl.String(), "size", resp.ContentLength)
+						cancel()
+						continue
+					}
+
+					if err := json.NewDecoder(resp.Body).Decode(&qres); err != nil {
+						log.Errorw("error decoding http response", "err", err, "provider", maddr, "url", qurl.String())
+						cancel()
+						continue
+					}
+
+					cancel()
+
+					if qres.Version != "" {
+						res.BoosterHttp = true
+						res.HttpMaddrs = protocol.Addresses
+						atomic.AddInt64(&bhttp, 1)
+					}
 				case "bitswap":
 					bswapPIs, err := peer.AddrInfosFromP2pAddrs(protocol.Addresses...)
 					if err != nil {
@@ -431,4 +482,20 @@ func doRpc(ctx context.Context, s inet.Stream, req interface{}, resp interface{}
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func IsPublicOrDNSAddr(a multiaddr.Multiaddr) bool {
+	if manet.IsPublicAddr(a) {
+		return true
+	}
+
+	isPublic := false
+	multiaddr.ForEach(a, func(c multiaddr.Component) bool {
+		switch c.Protocol().Code {
+		case multiaddr.P_DNS, multiaddr.P_DNS4, multiaddr.P_DNS6:
+			isPublic = true
+		}
+		return false
+	})
+	return isPublic
 }
