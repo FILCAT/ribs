@@ -3,7 +3,6 @@ package rbdeal
 import (
 	"context"
 	trustlessutils "github.com/ipld/go-trustless-utils"
-	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/carlog"
 	"io"
 	"math/rand"
@@ -54,7 +53,7 @@ type retrievalProvider struct {
 	success  map[peer.ID]int64
 
 	ongoingRequestsLk sync.Mutex
-	ongoingRequests   map[cid.Cid]requestPromise
+	ongoingRequests   map[cid.Cid]*requestPromise
 
 	blockCache *lru.Cache[mhStr, []byte] // todo 2q with large ghost cache?
 }
@@ -64,13 +63,10 @@ const AvgBlockSize = 256 << 10
 const BlockCacheSize = BlockCacheSizeMiB << 20 / AvgBlockSize
 
 type requestPromise struct {
-	done chan struct{}
-	res  []byte
-	err  error
-}
-
-func (p *requestPromise) Done() bool {
-	return p.done == nil
+	done    chan struct{}
+	res     []byte
+	err     error
+	claimed bool
 }
 
 func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
@@ -244,7 +240,7 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 
 		addrs: map[int64]ProviderAddrInfo{},
 
-		ongoingRequests: map[cid.Cid]requestPromise{},
+		ongoingRequests: map[cid.Cid]*requestPromise{},
 
 		blockCache: must.One(lru.New[mhStr, []byte](BlockCacheSize)),
 	}
@@ -306,6 +302,8 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 			return xerrors.Errorf("failed to get retrieval candidates: %w", err)
 		}
 
+		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
+
 		for _, candidate := range candidates {
 			addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 			if err != nil {
@@ -337,7 +335,8 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				if err != nil {
 					return err
 				}
-				if promise.Done() {
+				if promise == nil {
+					// already done
 					continue
 				}
 
@@ -348,8 +347,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 					close(promise.done)
 				})
 				if err != nil {
-					promise.err = err
-					close(promise.done)
+					promise.claimed = false // lassie fetch will take over the promise
 					continue
 				}
 
@@ -462,7 +460,8 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 		return xerrors.Errorf("response too large: %d", resp.ContentLength)
 	}
 
-	bbuf := pool.Get(int(resp.ContentLength))
+	//bbuf := pool.Get(int(resp.ContentLength)) todo not easy because promise stuff
+	bbuf := make([]byte, resp.ContentLength)
 
 	if _, err := io.ReadFull(resp.Body, bbuf); err != nil {
 		log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
@@ -489,27 +488,34 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 	return nil
 }
 
-func (r *retrievalProvider) retrievalPromise(ctx context.Context, cidToGet cid.Cid, i int, cb func(cidx int, data []byte)) (requestPromise, error) {
+func (r *retrievalProvider) retrievalPromise(ctx context.Context, cidToGet cid.Cid, i int, cb func(cidx int, data []byte)) (*requestPromise, error) {
 	r.ongoingRequestsLk.Lock()
 
 	if or, ok := r.ongoingRequests[cidToGet]; ok {
+		if !or.claimed {
+			or.claimed = true
+			r.ongoingRequestsLk.Unlock()
+			return or, nil
+		}
+
 		r.ongoingRequestsLk.Unlock()
 		select {
 		case <-ctx.Done():
-			return requestPromise{}, ctx.Err()
+			return nil, ctx.Err()
 		case <-or.done:
 		}
 
 		if or.err != nil {
-			return requestPromise{}, xerrors.Errorf("retr promise error: %w", or.err)
+			return nil, xerrors.Errorf("retr promise error: %w", or.err)
 		}
 
 		cb(i, or.res)
-		return requestPromise{}, nil
+		return nil, nil
 	}
 
-	promise := requestPromise{
-		done: make(chan struct{}),
+	promise := &requestPromise{
+		done:    make(chan struct{}),
+		claimed: true,
 	}
 
 	r.ongoingRequests[cidToGet] = promise
@@ -522,7 +528,7 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 	cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
 
 	promise, err := r.retrievalPromise(ctx, cidToGet, i, cb)
-	if err != nil || promise.Done() {
+	if err != nil || promise == nil {
 		return err
 	}
 
