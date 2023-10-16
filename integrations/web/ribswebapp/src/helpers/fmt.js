@@ -99,9 +99,13 @@ export function epochToDate(epochs, referenceDate = new Date(Date.UTC(2020, 9, 1
 export const avgMonthDays = 30.436875;
 export const epochToMonth = (60/30) * 60 * 24 * avgMonthDays;
 
-export function formatTimestamp(unixTimestamp) {
+export function formatTimestamp(unixTimestamp, dateOnly) {
     const date = new Date(unixTimestamp * 1000);
     const formattedDate = date.toISOString().split('T')[0];
+
+    if (dateOnly) {
+        return formattedDate;
+    }
 
     const now = new Date();
     let diff = date - now;

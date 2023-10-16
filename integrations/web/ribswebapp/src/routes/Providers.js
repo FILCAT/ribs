@@ -33,9 +33,38 @@ function Providers() {
         return Math.round((part / total) * 100);
     };
 
+    const generateCSVData = (providers) => {
+        let csvRows = [];
+        // Add headers
+        csvRows.push("ID,DealStarted,DealSuccess,DealFail,DealRejected,MostRecentDealStart,RetrievPercent");
+
+        // Add data
+        providers.forEach((provider) => {
+            csvRows.push(
+                `f0${provider.ID},${provider.DealStarted},${provider.DealSuccess},${provider.DealFail},${provider.DealRejected},${formatTimestamp(provider.MostRecentDealStart, true)},${calculateDealPercentage(provider.RetrievDeals,provider.UnretrievDeals+provider.RetrievDeals)}`
+            );
+        });
+
+        return csvRows.join("\n");
+    };
+
+    const downloadCSV = () => {
+        const csvData = generateCSVData(providers);
+        const blob = new Blob([csvData], { type: "text/csv" });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.setAttribute("hidden", "");
+        a.setAttribute("href", url);
+        a.setAttribute("download", "providers.csv");
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
     return (
         <div className="Providers">
             <h2>Providers</h2>
+            <button onClick={downloadCSV}>Download CSV</button>
             <table className="providers-table">
                 <thead>
                 <tr>
