@@ -132,6 +132,16 @@ create table if not exists offloads_s3
             primary key
 );
 
+create table if not exists repairs
+(
+    group_id          integer           not null
+        constraint repairs_pk
+            primary key,
+    retrievable_deals integer           not null,
+    worker            integer,
+    last_attempt      integer default 0 not null
+);
+
 drop view if exists good_providers_view;
 drop view if exists sp_deal_stats_view;
 drop view if exists sp_retr_stats_view;
@@ -1510,4 +1520,52 @@ ORDER BY
 	}
 
 	return stats, nil
+}
+
+// todo untested
+func (r *ribsDB) AddRepairsForLowRetrievableDeals() error {
+	query := `
+        INSERT INTO repairs (group_id, retrievable_deals, last_attempt)
+        SELECT
+            all_groups.group_id,
+            COALESCE(COUNT(d.group_id), 0)
+        FROM
+            (SELECT DISTINCT group_id FROM deals) AS all_groups
+        LEFT JOIN
+            deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+        WHERE
+            COALESCE(COUNT(d.group_id), 0) < 5
+        GROUP BY
+            all_groups.group_id
+        ON CONFLICT (group_id) DO UPDATE
+        SET retrievable_deals = EXCLUDED.retrievable_deals;
+    `
+	_, err := r.db.Exec(query)
+	return err
+}
+
+func (r *ribsDB) AssignRepairToWorker(workerID int) (int, error) {
+	query := `
+        UPDATE repairs
+        SET worker = $1
+        WHERE group_id = (
+            SELECT group_id FROM repairs
+            WHERE worker IS NULL
+            ORDER BY last_attempt ASC, retrievable_deals ASC
+            LIMIT 1
+        )
+        RETURNING group_id;
+    `
+	var groupID int
+	err := r.db.QueryRow(query, workerID).Scan(&groupID)
+	return groupID, err
+}
+
+func (r *ribsDB) GetRepairTableStats() (total int, assigned int, err error) {
+	query := `
+        SELECT COUNT(*), COUNT(CASE WHEN worker IS NOT NULL THEN 1 END)
+        FROM repairs;
+    `
+	err = r.db.QueryRow(query).Scan(&total, &assigned)
+	return total, assigned, err
 }
