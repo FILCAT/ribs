@@ -56,11 +56,20 @@ type retrievalProvider struct {
 	ongoingRequests   map[cid.Cid]*requestPromise
 
 	blockCache *lru.Cache[mhStr, []byte] // todo 2q with large ghost cache?
+
+	candidateCache *lru.Cache[iface.GroupKey, cachedRetrCandidates]
+}
+
+type cachedRetrCandidates struct {
+	candidates []RetrCandidate
+	readTime   time.Time
 }
 
 const BlockCacheSizeMiB = 512
 const AvgBlockSize = 256 << 10
 const BlockCacheSize = BlockCacheSizeMiB << 20 / AvgBlockSize
+const RetrievalCandidateCacheSize = 10000
+const RetrievalCandidateTimeout = 5 * time.Minute
 
 type requestPromise struct {
 	done    chan struct{}
@@ -91,6 +100,24 @@ func (r *retrievalProvider) getAddrInfoCached(provider int64) (ProviderAddrInfo,
 	return addrInfo, nil
 }
 
+func (r *retrievalProvider) retrievalCandidatesForGroupCached(source iface.GroupKey) (cachedRetrCandidates, error) {
+	if v, ok := r.candidateCache.Get(source); ok {
+		if time.Since(v.readTime) < RetrievalCandidateTimeout {
+			return v, nil
+		}
+	}
+
+	candidates, err := r.r.db.GetRetrievalCandidates(source)
+	if err != nil {
+		return cachedRetrCandidates{}, xerrors.Errorf("failed to get retrieval candidates: %w", err)
+	}
+
+	v := cachedRetrCandidates{candidates, time.Now()}
+	// this can technically race on expired entries, but the duplicate work should be minimal
+	r.candidateCache.Add(source, v)
+	return v, nil
+}
+
 func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
 	var source iface.GroupKey
 
@@ -106,10 +133,11 @@ func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid
 	}
 	r.reqSourcesLk.Unlock()
 
-	candidates, err := r.r.db.GetRetrievalCandidates(source)
+	cc, err := r.retrievalCandidatesForGroupCached(source)
 	if err != nil {
 		return xerrors.Errorf("failed to get retrieval candidates: %w", err)
 	}
+	candidates := cc.candidates
 
 	gm, err := r.r.Storage().DescibeGroup(ctx, source) // todo cache
 	if err != nil {
@@ -242,7 +270,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 
 		ongoingRequests: map[cid.Cid]*requestPromise{},
 
-		blockCache: must.One(lru.New[mhStr, []byte](BlockCacheSize)),
+		blockCache:     must.One(lru.New[mhStr, []byte](BlockCacheSize)),
+		candidateCache: must.One(lru.New[iface.GroupKey, cachedRetrCandidates](RetrievalCandidateCacheSize)),
 	}
 
 	retrHost, err := host.InitHost(ctx, nil)
@@ -297,10 +326,11 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 	// try http gateway
 	{
-		candidates, err := r.r.db.GetRetrievalCandidates(group) // todo cache
+		cc, err := r.retrievalCandidatesForGroupCached(group)
 		if err != nil {
 			return xerrors.Errorf("failed to get retrieval candidates: %w", err)
 		}
+		candidates := cc.candidates
 
 		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 
