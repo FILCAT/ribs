@@ -1525,29 +1525,29 @@ ORDER BY
 // todo untested
 func (r *ribsDB) AddRepairsForLowRetrievableDeals() error {
 	query := `
-        INSERT INTO repairs (group_id, retrievable_deals, last_attempt)
-        SELECT
-            all_groups.group_id,
-            COALESCE(COUNT(d.group_id), 0)
-        FROM
-            (SELECT DISTINCT group_id FROM deals) AS all_groups
-        LEFT JOIN
-            deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
-        WHERE
-            COALESCE(COUNT(d.group_id), 0) < 5
-        GROUP BY
-            all_groups.group_id
-        ON CONFLICT (group_id) DO UPDATE
-        SET retrievable_deals = EXCLUDED.retrievable_deals;
+        INSERT INTO repairs (group_id, retrievable_deals)
+			SELECT
+				all_groups.group_id,
+				COALESCE(COUNT(d.group_id), 0)
+			FROM
+				(SELECT DISTINCT d.group_id FROM deals d JOIN groups g ON d.group_id = g.id WHERE g.g_state = 4) AS all_groups
+			LEFT JOIN
+				deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
+			GROUP BY
+				all_groups.group_id
+			HAVING
+				COALESCE(COUNT(d.group_id), 0) < 3
+		ON CONFLICT (group_id) DO UPDATE
+		SET retrievable_deals = EXCLUDED.retrievable_deals;
     `
 	_, err := r.db.Exec(query)
 	return err
 }
 
-func (r *ribsDB) AssignRepairToWorker(workerID int) (int, error) {
+func (r *ribsDB) AssignRepairToWorker(workerID int) (*iface.GroupKey, error) {
 	query := `
         UPDATE repairs
-        SET worker = $1
+        SET worker = ?
         WHERE group_id = (
             SELECT group_id FROM repairs
             WHERE worker IS NULL
@@ -1556,9 +1556,17 @@ func (r *ribsDB) AssignRepairToWorker(workerID int) (int, error) {
         )
         RETURNING group_id;
     `
-	var groupID int
+	var groupID iface.GroupKey
 	err := r.db.QueryRow(query, workerID).Scan(&groupID)
-	return groupID, err
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No rows were updated, return nil
+			return nil, nil
+		}
+		// Other errors
+		return nil, err
+	}
+	return &groupID, nil
 }
 
 func (r *ribsDB) GetRepairTableStats() (total int, assigned int, err error) {
@@ -1568,4 +1576,32 @@ func (r *ribsDB) GetRepairTableStats() (total int, assigned int, err error) {
     `
 	err = r.db.QueryRow(query).Scan(&total, &assigned)
 	return total, assigned, err
+}
+
+func (r *ribsDB) GetAssignedWorkByWorkerID(workerID int) ([]iface.GroupKey, error) {
+	query := `
+        SELECT group_id FROM repairs
+        WHERE worker = ?;
+    `
+
+	rows, err := r.db.Query(query, workerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groupIDs []iface.GroupKey
+	for rows.Next() {
+		var groupID iface.GroupKey
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, err
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return groupIDs, nil
 }

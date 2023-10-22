@@ -344,7 +344,7 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.GroupDesc, error) {
 	var out iface.GroupDesc
 
-	res, err := r.db.QueryContext(ctx, "SELECT root, commp FROM groups WHERE id = ?", group)
+	res, err := r.db.QueryContext(ctx, "SELECT root, commp, car_size FROM groups WHERE id = ?", group)
 	if err != nil {
 		return iface.GroupDesc{}, xerrors.Errorf("finding group: %w", err)
 	}
@@ -354,7 +354,7 @@ func (r *rbsDB) DescibeGroup(ctx context.Context, group iface.GroupKey) (iface.G
 
 	if res.Next() {
 		var root, commp []byte
-		err := res.Scan(&root, &commp)
+		err := res.Scan(&root, &commp, &out.CarSize)
 		if err != nil {
 			return iface.GroupDesc{}, xerrors.Errorf("scanning group: %w", err)
 		}

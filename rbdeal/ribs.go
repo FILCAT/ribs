@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -107,6 +108,10 @@ type ribs struct {
 
 	rateCounters *ributil.RateCounters[peer.ID]
 
+	repairDir     string
+	repairStats   map[int]*iface.RepairJob // workerid -> repair job
+	repairStatsLk sync.Mutex
+
 	/* car upload offload (S3) */
 
 	s3          *s3.S3
@@ -126,6 +131,7 @@ type ribs struct {
 
 	/* retrieval */
 	retrHost host.Host
+	retrProv *retrievalProvider
 
 	retrSuccess, retrBytes, retrFail, retrCacheHit, retrCacheMiss, retrHttpTries, retrHttpSuccess, retrHttpBytes, retrActive atomic.Int64
 
@@ -182,6 +188,9 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		s3Uploads: map[iface.GroupKey]struct{}{},
 
+		repairDir:   filepath.Join(root, "repair"),
+		repairStats: map[int]*iface.RepairJob{},
+
 		close: make(chan struct{}),
 		//workerClosed: make(chan struct{}),
 		spCrawlClosed:     make(chan struct{}),
@@ -194,6 +203,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("creating retrieval provider: %w", err)
 	}
+
+	r.retrProv = rp
 
 	{
 		wallet, err := opt.localWalletOpener(opt.localWalletPath)

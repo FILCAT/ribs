@@ -112,6 +112,8 @@ func (r *retrievalProvider) retrievalCandidatesForGroupCached(source iface.Group
 		return cachedRetrCandidates{}, xerrors.Errorf("failed to get retrieval candidates: %w", err)
 	}
 
+	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
+
 	v := cachedRetrCandidates{candidates, time.Now()}
 	// this can technically race on expired entries, but the duplicate work should be minimal
 	r.candidateCache.Add(source, v)
@@ -332,8 +334,6 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		}
 		candidates := cc.candidates
 
-		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
-
 		for _, candidate := range candidates {
 			addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 			if err != nil {
@@ -385,6 +385,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				bytesServed += int64(len(promise.res))
 				mh[i] = nil
 				httpHits++
+				r.r.retrSuccess.Add(1)
 				r.r.retrHttpSuccess.Add(1)
 				r.r.retrHttpBytes.Add(int64(len(promise.res)))
 			}

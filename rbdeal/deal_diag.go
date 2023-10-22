@@ -97,3 +97,15 @@ func (r *ribs) RetrievableDealCounts() ([]iface.DealCountStats, error) {
 func (r *ribs) SealedDealCounts() ([]iface.DealCountStats, error) {
 	return r.db.GetSealedDealStats()
 }
+
+func (r *ribs) RepairStats() (map[int]iface.RepairJob, error) {
+	r.repairStatsLk.Lock()
+	defer r.repairStatsLk.Unlock()
+
+	out := map[int]iface.RepairJob{}
+	for k, v := range r.repairStats {
+		out[k] = *v
+	}
+
+	return out, nil
+}

@@ -87,6 +87,7 @@ type Storage interface {
 
 type GroupDesc struct {
 	RootCid, PieceCid cid.Cid
+	CarSize           int64
 }
 
 type OffloadLoader interface {

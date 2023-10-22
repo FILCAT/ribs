@@ -41,7 +41,27 @@ type RIBSDiag interface {
 
 	RetrievableDealCounts() ([]DealCountStats, error)
 	SealedDealCounts() ([]DealCountStats, error)
+
+	RepairStats() (map[int]RepairJob, error)
 }
+
+type RepairJob struct {
+	GroupKey GroupKey
+
+	State RepairJobState
+
+	FetchProgress, FetchSize int64
+	FetchUrl                 string
+}
+
+type RepairJobState string
+
+const (
+	RepairJobStateFetching   RepairJobState = "fetching"
+	RepairJobStateVerifying  RepairJobState = "verifying"
+	RepairJobStateIndexing   RepairJobState = "indexing"
+	RepairJobStateFinalizing RepairJobState = "finalizing"
+)
 
 type DealCountStats struct {
 	Count  int
