@@ -262,6 +262,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
 	}
+	defer res.Close()
 
 	for res.Next() {
 		var id dealProvider
@@ -432,6 +433,15 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 		}
 	}
 
+	if err := res.Err(); err != nil {
+		log.Errorw("scanning providers", "error", err)
+		return nil
+	}
+	if err := res.Close(); err != nil {
+		log.Errorw("closing providers", "error", err)
+		return nil
+	}
+
 	res, err = r.db.Query(`select sp_id, retrievable_deals, unretrievable_deals from sp_retr_stats_view`)
 	if err != nil {
 		log.Errorw("querying deals", "error", err)
@@ -452,6 +462,15 @@ func (r *ribsDB) ReachableProviders() []iface.ProviderMeta {
 				out[i].UnretrievDeals = unretr
 			}
 		}
+	}
+
+	if err := res.Err(); err != nil {
+		log.Errorw("scanning providers", "error", err)
+		return nil
+	}
+	if err := res.Close(); err != nil {
+		log.Errorw("closing providers", "error", err)
+		return nil
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -615,6 +634,7 @@ func (r *ribsDB) InactiveDealsToCheck() ([]inactiveDealMeta, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
 	}
+	defer res.Close()
 
 	out := make([]inactiveDealMeta, 0)
 
@@ -644,6 +664,7 @@ func (r *ribsDB) PublishingDeals() ([]publishingDealMeta, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
 	}
+	defer res.Close()
 
 	out := make([]publishingDealMeta, 0)
 
@@ -683,6 +704,7 @@ func (r *ribsDB) PublishedDeals() ([]publishedDealMeta, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("querying deals: %w", err)
 	}
+	defer res.Close()
 
 	out := make([]publishedDealMeta, 0)
 
@@ -786,6 +808,7 @@ FROM
 	if err != nil {
 		return iface.DealSummary{}, xerrors.Errorf("finding writable groups: %w", err)
 	}
+	defer res.Close()
 
 	var ds iface.DealSummary
 
@@ -820,6 +843,7 @@ func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 	if err != nil {
 		return pInfo, xerrors.Errorf("getting group meta: %w", err)
 	}
+	defer res.Close()
 
 	for res.Next() {
 		var dealUuid string
@@ -858,6 +882,13 @@ func (r *ribsDB) ProviderInfo(providerID int64) (iface.ProviderInfo, error) {
 		})
 	}
 
+	if err := res.Err(); err != nil {
+		return iface.ProviderInfo{}, err
+	}
+	if err := res.Close(); err != nil {
+		return iface.ProviderInfo{}, err
+	}
+
 	return pInfo, nil
 }
 
@@ -873,6 +904,7 @@ func (r *ribsDB) GetDealParams(ctx context.Context, id iface.GroupKey) (out deal
 	if err != nil {
 		return dealParams{}, xerrors.Errorf("finding writable groups: %w", err)
 	}
+	defer res.Close()
 
 	var found bool
 
@@ -1015,6 +1047,7 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("getting group meta: %w", err)
 	}
+	defer res.Close()
 
 	for res.Next() {
 		var dealUuid string

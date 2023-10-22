@@ -127,6 +127,7 @@ func (r *rbsDB) GetWritableGroup() (selected iface.GroupKey, blocks, bytes, jbhe
 	if err != nil {
 		return 0, 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
 	}
+	defer res.Close()
 
 	selectedGroup := iface.UndefGroupKey
 
@@ -161,6 +162,7 @@ func (r *rbsDB) OpenGroup(gid iface.GroupKey) (blocks, bytes, jbhead int64, stat
 	if err != nil {
 		return 0, 0, 0, 0, xerrors.Errorf("finding writable groups: %w", err)
 	}
+	defer res.Close()
 
 	var found bool
 
@@ -191,6 +193,7 @@ func (r *rbsDB) GroupStates() (gs map[iface.GroupKey]iface.GroupState, err error
 	if err != nil {
 		return nil, xerrors.Errorf("finding writable groups: %w", err)
 	}
+	defer res.Close()
 
 	gs = make(map[iface.GroupKey]iface.GroupState)
 
@@ -250,6 +253,7 @@ func (r *rbsDB) Groups() ([]iface.GroupKey, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("listing groups: %w", err)
 	}
+	defer res.Close()
 
 	var groups []iface.GroupKey
 	for res.Next() {
@@ -278,6 +282,7 @@ func (r *rbsDB) GroupMeta(gk iface.GroupKey) (iface.GroupMeta, error) {
 	if err != nil {
 		return iface.GroupMeta{}, xerrors.Errorf("getting group meta: %w", err)
 	}
+	defer res.Close()
 
 	var blocks int64
 	var bytes int64
