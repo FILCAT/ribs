@@ -32,6 +32,9 @@ function Root() {
                 <div className="Root-nav-item">
                     <Link to={`/content`}>Content</Link>
                 </div>
+                <div className="Root-nav-item">
+                    <Link to={`/repair`}>Repair</Link>
+                </div>
             </div>
             <div className="Root-body">
                 <Outlet />

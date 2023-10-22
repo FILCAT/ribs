@@ -114,6 +114,10 @@ func (rc *RIBSRpc) SealedDealCounts(ctx context.Context) ([]ribs.DealCountStats,
 	return rc.ribs.DealDiag().SealedDealCounts()
 }
 
+func (rc *RIBSRpc) RepairQueue() (ribs.RepairQueueStats, error) {
+	return rc.ribs.DealDiag().RepairQueue()
+}
+
 func (rc *RIBSRpc) RepairStats() (map[int]ribs.RepairJob, error) {
 	return rc.ribs.DealDiag().RepairStats()
 }

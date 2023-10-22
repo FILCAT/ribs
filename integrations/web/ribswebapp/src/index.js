@@ -13,6 +13,7 @@ import Group from "./routes/Group";
 import Providers from './routes/Providers';
 import Provider from './routes/Provider';
 import Content from "./routes/Content";
+import Repair from "./routes/Repair";
 
 const router = createBrowserRouter([
     {
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
             { path: "providers", element: <Providers /> },
             { path: "provider/:providerID", element: <Provider /> },
             { path: "content", element: <Content />},
+            { path: "repair", element: <Repair />},
         ],
     },
 ]);

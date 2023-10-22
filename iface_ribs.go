@@ -42,7 +42,12 @@ type RIBSDiag interface {
 	RetrievableDealCounts() ([]DealCountStats, error)
 	SealedDealCounts() ([]DealCountStats, error)
 
+	RepairQueue() (RepairQueueStats, error)
 	RepairStats() (map[int]RepairJob, error)
+}
+
+type RepairQueueStats struct {
+	Total, Assigned int
 }
 
 type RepairJob struct {

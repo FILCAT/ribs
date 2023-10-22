@@ -1569,13 +1569,13 @@ func (r *ribsDB) AssignRepairToWorker(workerID int) (*iface.GroupKey, error) {
 	return &groupID, nil
 }
 
-func (r *ribsDB) GetRepairTableStats() (total int, assigned int, err error) {
+func (r *ribsDB) GetRepairStats() (out iface.RepairQueueStats, err error) {
 	query := `
         SELECT COUNT(*), COUNT(CASE WHEN worker IS NOT NULL THEN 1 END)
         FROM repairs;
     `
-	err = r.db.QueryRow(query).Scan(&total, &assigned)
-	return total, assigned, err
+	err = r.db.QueryRow(query).Scan(&out.Total, &out.Assigned)
+	return out, err
 }
 
 func (r *ribsDB) GetAssignedWorkByWorkerID(workerID int) ([]iface.GroupKey, error) {

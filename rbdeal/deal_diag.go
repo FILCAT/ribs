@@ -98,6 +98,10 @@ func (r *ribs) SealedDealCounts() ([]iface.DealCountStats, error) {
 	return r.db.GetSealedDealStats()
 }
 
+func (r *ribs) RepairQueue() (iface.RepairQueueStats, error) {
+	return r.db.GetRepairStats()
+}
+
 func (r *ribs) RepairStats() (map[int]iface.RepairJob, error) {
 	r.repairStatsLk.Lock()
 	defer r.repairStatsLk.Unlock()
