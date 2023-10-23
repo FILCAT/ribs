@@ -46,7 +46,7 @@ func (r *ribs) repairWorker(ctx context.Context) { // root, id?
 
 		err := r.repairStep(ctx, workerID)
 		if err != nil {
-			log.Errorf("repair worker %d failed: %+v", workerID, err)
+			log.Errorw("repair step failed", "error", err, "worker", workerID)
 		}
 	}
 }
@@ -117,6 +117,10 @@ func (r *ribs) fetchGroup(ctx context.Context, workerID int, group ribs2.GroupKe
 	workerDir := filepath.Join(r.repairDir, fmt.Sprintf("w%d", workerID))
 	// todo check if anything else is in the worker dir, cleanup if needed
 
+	if err := os.MkdirAll(workerDir, 0755); err != nil {
+		return xerrors.Errorf("mkdir repair worker dir: %w", err)
+	}
+
 	groupFile := filepath.Join(workerDir, fmt.Sprintf("group-%d.car", group))
 
 	if err := r.fetchGroupHttp(ctx, workerID, group, groupFile); err != nil {
@@ -168,16 +172,11 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			continue
 		}
 
-		log.Errorw("attempting http repair retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
-
-		// if groupFile exists, truncate it
-		if err := os.Truncate(groupFile, 0); err != nil {
-			return xerrors.Errorf("truncate group file: %w", err)
-		}
-
 		// start fetch into the file
 		reqUrl := *u
 		reqUrl.Path = path.Join(reqUrl.Path, "piece", gm.PieceCid.String())
+
+		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.Provider)
 
 		req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
 		if err != nil {
@@ -199,7 +198,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		})
 
 		// copy response body to file
-		f, err := os.OpenFile(groupFile, os.O_WRONLY, 0644)
+		f, err := os.OpenFile(groupFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 		if err != nil {
 			return xerrors.Errorf("open group file: %w", err)
 		}

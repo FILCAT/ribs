@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	types2 "github.com/filecoin-project/lotus/chain/types"
 	"github.com/multiformats/go-multiaddr"
@@ -1592,7 +1593,7 @@ func (r *ribsDB) AssignRepairToWorker(workerID int) (*iface.GroupKey, error) {
 	var groupID iface.GroupKey
 	err := r.db.QueryRow(query, workerID).Scan(&groupID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// No rows were updated, return nil
 			return nil, nil
 		}
