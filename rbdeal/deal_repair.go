@@ -156,6 +156,10 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 	})
 
 	for _, candidate := range candidates {
+		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+			r.State = ribs2.RepairJobStateFetching
+		})
+
 		addrInfo, err := r.retrProv.getAddrInfoCached(candidate.Provider)
 		if err != nil {
 			log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
@@ -180,16 +184,25 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
 		if err != nil {
-			return xerrors.Errorf("new request: %w", err)
+			//return xerrors.Errorf("new request: %w", err)
+			log.Errorw("failed to create request", "err", err, "provider", candidate.Provider)
+			continue
 		}
+
+		// set content length to gm.CarSize
+		req.Header.Set("Content-Length", fmt.Sprintf("%d", gm.CarSize))
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return xerrors.Errorf("do request: %w", err)
+			//return xerrors.Errorf("do request: %w", err)
+			log.Errorw("failed to do request", "err", err, "provider", candidate.Provider)
+			continue
 		}
 
 		if resp.StatusCode != 200 {
-			return xerrors.Errorf("http status: %d", resp.StatusCode)
+			//return xerrors.Errorf("http status: %d", resp.StatusCode)
+			log.Errorw("http status", "status", resp.StatusCode, "provider", candidate.Provider)
+			continue
 		}
 
 		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
@@ -205,7 +218,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		ctx, done := context.WithCancel(ctx)
 		go func() {
-			// watch fetch progress with file stat (that allows io.Copy to be smart)
+			// watch fetch progress with file stat
 
 			for {
 				select {
@@ -226,7 +239,10 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
-		_, err = io.Copy(f, resp.Body)
+		cc := new(ributil.DataCidWriter)
+		commdReader := io.TeeReader(resp.Body, cc)
+
+		_, err = io.Copy(f, commdReader)
 		done()
 		if err != nil {
 			_ = f.Close()
@@ -249,7 +265,25 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			r.State = ribs2.RepairJobStateVerifying
 		})
 
-		// todo: verify group file
+		dc, err := cc.Sum()
+		if err != nil {
+			return xerrors.Errorf("sum car: %w", err)
+		}
+
+		if dc.PieceCID != gm.PieceCid {
+			// remove the file
+			_ = os.Remove(groupFile)
+
+			//return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
+			// todo record
+			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.Provider)
+			continue
+		}
+
+		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+			r.FetchProgress = r.FetchSize
+			r.State = ribs2.RepairJobStateIndexing
+		})
 
 		return nil
 	}
