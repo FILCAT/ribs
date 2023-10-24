@@ -143,7 +143,6 @@ create table if not exists repairs
     last_attempt      integer default 0 not null
 );
 
-drop view if exists good_providers_view;
 drop view if exists sp_deal_stats_view;
 drop view if exists sp_retr_stats_view;
 drop view if exists bad_providers_new_reject_view;
@@ -197,8 +196,73 @@ WHERE
 GROUP BY
     d.provider_addr;
 
-CREATE VIEW IF NOT EXISTS good_providers_view AS
-    SELECT 
+CREATE TABLE good_providers (
+  id INTEGER PRIMARY KEY,
+  ping_ok INTEGER,
+
+  boost_deals INTEGER,
+  booster_http INTEGER,
+  booster_bitswap INTEGER,
+
+  indexed_success INTEGER,
+  indexed_fail INTEGER,
+
+  retrprobe_success INTEGER,
+  retrprobe_fail INTEGER,
+  retrprobe_blocks INTEGER, 
+  retrprobe_bytes INTEGER,
+
+  ask_price INTEGER,
+  ask_verif_price INTEGER,
+  ask_min_piece_size INTEGER,
+  ask_max_piece_size INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_providers_eligible ON providers(in_market, ping_ok, ask_ok, ask_min_piece_size, ask_max_piece_size);
+CREATE INDEX IF NOT EXISTS idx_deals_provider ON deals(provider_addr, group_id, rejected, start_time);
+CREATE INDEX IF NOT EXISTS idx_deals_group ON deals(group_id, rejected, start_time);
+CREATE INDEX IF NOT EXISTS idx_deals_retrieval ON deals(last_retrieval_check, last_retrieval_check_success);
+`
+
+func openRibsDB(root string) (*ribsDB, error) {
+	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
+	if err != nil {
+		return nil, xerrors.Errorf("open db: %w", err)
+	}
+
+	_, err = db.Exec(dbSchema)
+	if err != nil {
+		return nil, xerrors.Errorf("exec schema: %w", err)
+	}
+
+	if err := refreshGoodProviders(db); err != nil {
+		return nil, xerrors.Errorf("initial good provider refresh: %w", err)
+	}
+
+	go func() {
+		for {
+			time.Sleep(2 * time.Minute)
+			if err := refreshGoodProviders(db); err != nil {
+				log.Errorw("refreshing good providers", "error", err)
+			}
+		}
+	}()
+
+	return &ribsDB{
+		db: db,
+	}, nil
+}
+
+func refreshGoodProviders(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	// Query to populate good_providers table
+	q := `
+    INSERT INTO good_providers
+        SELECT 
         p.id, p.ping_ok, p.boost_deals, p.booster_http, p.booster_bitswap,
         p.indexed_success, p.indexed_fail,
         p.retrprobe_success, p.retrprobe_fail, p.retrprobe_blocks, p.retrprobe_bytes,
@@ -219,23 +283,28 @@ CREATE VIEW IF NOT EXISTS good_providers_view AS
         AND bp.sp_id IS NULL  -- Excludes bad providers
     ORDER BY
         (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
+  `
 
-`
-
-func openRibsDB(root string) (*ribsDB, error) {
-	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
-	if err != nil {
-		return nil, xerrors.Errorf("open db: %w", err)
+	// Delete existing rows
+	if _, err := tx.Exec("DELETE FROM good_providers"); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 
-	_, err = db.Exec(fmt.Sprintf(dbSchema, maxPieceSize, minPieceSize))
-	if err != nil {
-		return nil, xerrors.Errorf("exec schema: %w", err)
+	// Insert refreshed data
+	if _, err := tx.Exec(fmt.Sprintf(q, maxPieceSize, minPieceSize)); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 
-	return &ribsDB{
-		db: db,
-	}, nil
+	if err := tx.Commit(); err != nil {
+		return xerrors.Errorf("commit provider refresh: %w", err)
+	}
+
+	// Refresh indexes
+	_, err = db.Exec("ANALYZE")
+
+	return err
 }
 
 type dealProvider struct {
@@ -254,7 +323,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 	var withBitswap []dealProvider
 	var random []dealProvider
 
-	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+	res, err := r.db.Query(`select id, ask_price, ask_verif_price from good_providers
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
@@ -289,7 +358,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
@@ -316,7 +385,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 		return nil, xerrors.Errorf("closing providers: %w", err)
 	}
 
-	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers_view
+	res, err = r.db.Query(`select id, ask_price, ask_verif_price from good_providers
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
