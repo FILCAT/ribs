@@ -258,6 +258,8 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 			return nil, xerrors.Errorf("close head: %w", err)
 		}
 
+		// todo if offloaded, check if datafile exists and remove
+
 		return &CarLog{
 			staging: staging,
 
@@ -1137,6 +1139,21 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 
 	}
 
+	return nil
+}
+
+func (j *CarLog) LoadData(car io.Reader) error {
+	// todo is offloaded external??
+
+	// check we are offloaded
+
+	// write car to data file
+
+	// if extern: write to staging while collecting index, write bsst
+
+	// if not-extern: todo
+
+	// mark extern-fin
 	return nil
 }
 
