@@ -208,7 +208,7 @@ WHERE
 GROUP BY
     d.provider_addr;
 
-CREATE TABLE good_providers (
+CREATE TABLE if not exists good_providers (
   id INTEGER PRIMARY KEY,
   ping_ok INTEGER,
 
