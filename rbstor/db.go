@@ -20,6 +20,7 @@ var pragmas = []string{
 		"PRAGMA automatic_index = OFF",*/
 	"PRAGMA journal_mode = WAL",
 	"PRAGMA read_uncommitted = ON",
+	"PRAGMA busy_timeout = 5000",
 }
 
 const dbSchema = `

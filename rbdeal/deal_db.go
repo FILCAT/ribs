@@ -25,6 +25,18 @@ type ribsDB struct {
 	db *sql.DB
 }
 
+var pragmas = []string{
+	"PRAGMA synchronous = normal",
+	"PRAGMA temp_store = memory",
+	"PRAGMA mmap_size = 30000000000",
+	"PRAGMA page_size = 32768",
+	/*	"PRAGMA auto_vacuum = NONE",
+		"PRAGMA automatic_index = OFF",*/
+	"PRAGMA journal_mode = WAL",
+	"PRAGMA read_uncommitted = ON",
+	"PRAGMA busy_timeout = 5000",
+}
+
 const dbSchema = `
 /* deals */
 create table if not exists deals (
@@ -228,6 +240,13 @@ func openRibsDB(root string) (*ribsDB, error) {
 	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
+	}
+
+	for _, pragma := range pragmas {
+		_, err := db.Exec(pragma)
+		if err != nil {
+			return nil, xerrors.Errorf("exec pragma: %w", err)
+		}
 	}
 
 	_, err = db.Exec(dbSchema)
