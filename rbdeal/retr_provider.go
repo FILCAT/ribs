@@ -491,6 +491,11 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 		return xerrors.Errorf("response too large: %d", resp.ContentLength)
 	}
 
+	if resp.ContentLength < 0 {
+		log.Errorw("http retrieval failed (response has no content length)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		return xerrors.Errorf("response has no content length, or bad content length: %d", resp.ContentLength)
+	}
+
 	//bbuf := pool.Get(int(resp.ContentLength)) todo not easy because promise stuff
 	bbuf := make([]byte, resp.ContentLength)
 
