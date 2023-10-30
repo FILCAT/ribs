@@ -373,6 +373,12 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				// todo could do in goroutines once FetchBlocks actually calls with multiple hashes
 
 				err = r.doHttpRetrieval(ctx, group, candidate.Provider, u, cidToGet, func(data []byte) {
+					r.ongoingRequestsLk.Lock()
+					delete(r.ongoingRequests, cidToGet)
+					r.ongoingRequestsLk.Unlock()
+
+					r.blockCache.Add(mhStr(hashToGet), data) // todo pool copy stuff
+
 					promise.res = data
 					close(promise.done)
 				})
