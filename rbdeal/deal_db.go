@@ -273,11 +273,6 @@ func openRibsDB(root string) (*ribsDB, error) {
 }
 
 func refreshGoodProviders(db *sql.DB) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
 	// Query to populate good_providers table
 	q := `
     INSERT INTO good_providers
@@ -305,23 +300,17 @@ func refreshGoodProviders(db *sql.DB) error {
   `
 
 	// Delete existing rows
-	if _, err := tx.Exec("DELETE FROM good_providers"); err != nil {
-		_ = tx.Rollback()
+	if _, err := db.Exec("DELETE FROM good_providers"); err != nil {
 		return err
 	}
 
 	// Insert refreshed data
-	if _, err := tx.Exec(fmt.Sprintf(q, maxPieceSize, minPieceSize)); err != nil {
-		_ = tx.Rollback()
+	if _, err := db.Exec(fmt.Sprintf(q, maxPieceSize, minPieceSize)); err != nil {
 		return err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return xerrors.Errorf("commit provider refresh: %w", err)
-	}
-
 	// Refresh indexes
-	_, err = db.Exec("ANALYZE")
+	_, err := db.Exec("ANALYZE")
 
 	return err
 }
