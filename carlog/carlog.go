@@ -40,6 +40,9 @@ const (
 	BsstIndex      = "index.bsst"
 	BsstIndexCanon = "fil.bsst"
 	HashSample     = "sample.mhlist"
+
+	BlockLog = "blklog.car"
+	FilCar   = "fil.car"
 )
 
 const jbobBufSize = 16 << 20
@@ -149,6 +152,8 @@ type Head struct {
 }
 
 func Create(staging CarStorageProvider, indexPath, dataPath string, _ TruncCleanup) (*CarLog, error) {
+	blkLogPath := filepath.Join(dataPath, BlockLog)
+
 	if err := os.Mkdir(indexPath, 0755); err != nil {
 		return nil, xerrors.Errorf("mkdir index path (%s): %w", indexPath, err)
 	}
@@ -158,7 +163,7 @@ func Create(staging CarStorageProvider, indexPath, dataPath string, _ TruncClean
 		return nil, xerrors.Errorf("opening head: %w", err)
 	}
 
-	dataFile, err := os.OpenFile(filepath.Join(dataPath), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	dataFile, err := os.OpenFile(blkLogPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening head: %w", err)
 	}
@@ -253,6 +258,8 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 		return nil, xerrors.Errorf("unmarshal head: %w", err)
 	}
 
+	blkLogPath := filepath.Join(dataPath, BlockLog)
+
 	if h.Offloaded {
 		if err := headFile.Close(); err != nil {
 			return nil, xerrors.Errorf("close head: %w", err)
@@ -295,7 +302,7 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 	}
 
 	// open data
-	dataFile, err := os.OpenFile(dataPath, os.O_RDWR|os.O_SYNC, 0666)
+	dataFile, err := os.OpenFile(blkLogPath, os.O_RDWR|os.O_SYNC, 0666)
 	if err != nil {
 		return nil, xerrors.Errorf("opening data: %w", err)
 	}
@@ -858,6 +865,8 @@ func (j *CarLog) viewExternal(c []mh.Multihash, cb func(cidx int, found bool, da
 	}
 
 	if j.staging == nil {
+		// todo may be fil.car
+
 		// this probably can't happen, but just in case
 		return xerrors.Errorf("staging storage not set")
 	}
@@ -1142,14 +1151,118 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (j *CarLog) LoadData(car io.Reader) error {
-	// todo is offloaded external??
+func (j *CarLog) LoadData(ctx context.Context, car io.Reader, sz int64) error {
+	j.idxLk.Lock()
+	defer j.idxLk.Unlock()
 
-	// check we are offloaded
+	// check if head is open
+	if j.head != nil {
+		return xerrors.Errorf("cannot load data into non-offloaded jbob")
+	}
+
+	if j.staging == nil {
+		return xerrors.Errorf("cannot load data without staging storage yet")
+	}
+
+	// closed head means that we're offloaded, open data file
+	filPath := filepath.Join(j.DataPath, FilCar)
+	df, err := os.OpenFile(filPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return xerrors.Errorf("opening data file: %w", err)
+	}
 
 	// write car to data file
+	n, err := io.CopyBuffer(df, car, make([]byte, 1<<20))
+
+	cerr := df.Close()
+
+	if err != nil {
+		// remove file
+		rerr := os.Remove(filPath)
+		if rerr != nil {
+			log.Errorf("removing file after failed copy: %s", rerr)
+		}
+
+		return xerrors.Errorf("writing car to data file: %w", err)
+	}
+
+	if n != sz {
+		// remove file
+		rerr := os.Remove(filPath)
+		if rerr != nil {
+			log.Errorf("removing file after failed copy: %s", rerr)
+		}
+
+		return xerrors.Errorf("expected to write %d bytes, wrote %d", sz, n)
+	}
+
+	if cerr != nil {
+		return xerrors.Errorf("closing data file: %w", cerr)
+	}
+
+	return nil
+}
+
+func (j *CarLog) FinDataReload(ctx context.Context) error {
+	j.idxLk.Lock()
+	defer j.idxLk.Unlock()
+
+	// check if head is open
+	if j.head != nil {
+		return xerrors.Errorf("cannot load data into non-offloaded jbob")
+	}
+
+	if j.staging == nil {
+		return xerrors.Errorf("cannot load data without staging storage yet")
+	}
+
+	// closed head means that we're offloaded, open data file
+	filPath := filepath.Join(j.DataPath, FilCar)
+	df, err := os.OpenFile(filPath, os.O_RDONLY, 0644)
+	if err != nil {
+		return xerrors.Errorf("opening data file: %w", err)
+	}
+
+	// index
+	{
+		// dfs bsst
+		iprov := &carIdxSource{
+			base: j.rIdx,
+			carSource: func(w io.Writer) (int64, cid.Cid, error) {
+				_, err := io.CopyBuffer(w, df, make([]byte, 1<<20))
+				return -1, cid.Undef, err
+			},
+		}
+
+		bss, err := CreateBSSTIndex(filepath.Join(j.IndexPath, BsstIndexCanon), iprov)
+		if err != nil {
+			return xerrors.Errorf("write canonical bsst index: %w", err)
+		}
+		j.eIdx = bss
+
+		if iprov.statReader == nil {
+			return xerrors.Errorf("no stat reader")
+		}
+		if !iprov.statReader.eof {
+			return xerrors.Errorf("didn't read whole file")
+		}
+	}
+
+	st, err := df.Stat()
+	if err != nil {
+		return xerrors.Errorf("stat data file: %w", err)
+	}
+
+	sz := st.Size()
 
 	// if extern: write to staging while collecting index, write bsst
+	err = j.staging.Upload(ctx, sz, func(writer io.Writer) error {
+		_, err := io.CopyBuffer(writer, df, make([]byte, 1<<20))
+		return err
+	})
+	if err != nil {
+		return xerrors.Errorf("uploading car to staging: %w", err)
+	}
 
 	// if not-extern: todo
 
@@ -1336,6 +1449,8 @@ func (j *CarLog) genTopCar() error {
 
 // returns car size and root cid
 func (j *CarLog) WriteCar(w io.Writer) (int64, cid.Cid, error) {
+	// todo support serving from fil.car
+
 	j.readStateLk.Lock()
 	if len(j.layerOffsets) == 0 {
 		j.readStateLk.Unlock()
@@ -1636,7 +1751,8 @@ func (j *CarLog) offloadData() error {
 	j.writeLru = nil
 
 	// remove data file
-	if err := os.RemoveAll(j.DataPath); err != nil {
+	blkLogPath := filepath.Join(j.DataPath, BlockLog)
+	if err := os.RemoveAll(blkLogPath); err != nil {
 		return xerrors.Errorf("removing data file: %w", err)
 	}
 

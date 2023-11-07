@@ -4,7 +4,6 @@ import { formatBytesBinary, formatNum, epochToDate, epochToDuration } from "../h
 import "./Groups.css";
 import "./Deal.css";
 import {Link} from "react-router-dom";
-import {Line} from "recharts";
 
 export function Deal({ deal, headHeight, pieceCid, dataCid }) {
     const {

@@ -102,7 +102,7 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, staging *atomi
 		}
 	}
 
-	jb, err := jbOpenFunc(stw, filepath.Join(groupPath, "blklog.meta"), filepath.Join(groupPath, "blklog.car"), func(to int64, h []mh.Multihash) error {
+	jb, err := jbOpenFunc(stw, filepath.Join(groupPath, "blklog.meta"), groupPath, func(to int64, h []mh.Multihash) error {
 		if to < recordedHead {
 			return xerrors.Errorf("cannot rewind jbob head to %d, recorded group head is %d", to, recordedHead)
 		}
