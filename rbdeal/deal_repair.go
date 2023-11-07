@@ -52,7 +52,7 @@ func (r *ribs) repairWorker(ctx context.Context) { // root, id?
 }
 
 func (r *ribs) repairStep(ctx context.Context, workerID int) error {
-	assignedGroups, err := r.db.GetAssignedWorkByWorkerID(workerID)
+	assignedGroups, err := r.db.GetAssignedRepairWorkByWorkerID(workerID)
 	if err != nil {
 		return xerrors.Errorf("get assigned work: %w", err)
 	}
@@ -91,13 +91,20 @@ func (r *ribs) repairStep(ctx context.Context, workerID int) error {
 		return xerrors.Errorf("fetch sector: %w", err)
 	}
 
-	// here we have the sector fetched
-
 	select {}
 
-	// send to storage
+	// here we have the sector fetched and verified
 
-	// move group to deals in progress
+	groupFile := ""
+	_ = groupFile
+
+	//r.RBS.Storage().LoadFilCar(groupOsFile)
+
+	if err := r.db.DelRepair(*assigned); err != nil {
+		return xerrors.Errorf("marking group %d as repaired: %w", *assigned, err)
+	}
+
+	// group is now in reindexdng state, drop
 
 	return nil
 }

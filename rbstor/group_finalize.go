@@ -75,6 +75,26 @@ func (m *Group) GenCommP() error {
 	return nil
 }
 
+func (m *Group) FinDataReload(ctx context.Context) error {
+	panic("reviewme")
+
+	if m.state != iface.GroupStateReload {
+		return xerrors.Errorf("group not in state for finishing data reload: %d", m.state)
+	}
+
+	if err := m.jb.FinDataReload(context.Background()); err != nil {
+		return xerrors.Errorf("carlog finalize data reload: %w", err)
+	}
+
+	log.Infow("finished data reload", "group", m.id)
+
+	if err := m.advanceState(ctx, iface.GroupStateLocalReadyForDeals); err != nil {
+		return xerrors.Errorf("mark level index dropped: %w", err)
+	}
+
+	return nil
+}
+
 func (m *Group) advanceState(ctx context.Context, st iface.GroupState) error {
 	m.dblk.Lock()
 	defer m.dblk.Unlock()

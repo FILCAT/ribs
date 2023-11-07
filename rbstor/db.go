@@ -40,6 +40,7 @@ create table if not exists groups
      * 2 - vrcar done
      * 3 - has commp
      * 4 - offloaded
+     * 5 - reload
      */
     g_state     integer not null,
     

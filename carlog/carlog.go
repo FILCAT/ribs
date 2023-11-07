@@ -1255,7 +1255,7 @@ func (j *CarLog) FinDataReload(ctx context.Context) error {
 
 	sz := st.Size()
 
-	// if extern: write to staging while collecting index, write bsst
+	// if extern: write to staging
 	err = j.staging.Upload(ctx, sz, func(writer io.Writer) error {
 		_, err := io.CopyBuffer(writer, df, make([]byte, 1<<20))
 		return err
@@ -1264,9 +1264,60 @@ func (j *CarLog) FinDataReload(ctx context.Context) error {
 		return xerrors.Errorf("uploading car to staging: %w", err)
 	}
 
+	if err := df.Close(); err != nil {
+		return xerrors.Errorf("closing fil.car: %w", err)
+	}
+
+	// cleanup fil.car
+	if err := os.Remove(filPath); err != nil {
+		return xerrors.Errorf("removing fil.car: %w", err)
+	}
+
 	// if not-extern: todo
 
+	// reopen head
+	headFile, err := os.OpenFile(filepath.Join(j.IndexPath, HeadName), os.O_RDWR|os.O_SYNC, 0666)
+	if err != nil {
+		return xerrors.Errorf("opening head: %w", err)
+	}
+
+	// read head
+	var headBuf [HeadSize]byte
+	n, err := headFile.ReadAt(headBuf[:], 0)
+	if err != nil {
+		return xerrors.Errorf("HEAD READ ERROR: %w", err)
+	}
+	if n != len(headBuf) {
+		return xerrors.Errorf("bad head read bytes (%d bytes)", n)
+	}
+
+	var h Head
+	if err := h.UnmarshalCBOR(bytes.NewBuffer(headBuf[:])); err != nil {
+		return xerrors.Errorf("unmarshal head: %w", err)
+	}
+
+	if len(h.LayerOffsets) == 0 {
+		return xerrors.Errorf("no layer offsets")
+	}
+
+	j.head = headFile
+	j.layerOffsets = h.LayerOffsets
+	j.dataStart = h.DataStart
+	j.dataEnd = h.DataEnd
+
 	// mark extern-fin
+	err = j.mutHead(func(h *Head) error {
+		if !h.External {
+			return xerrors.Errorf("cannot fin data reload on non-extern head")
+		}
+
+		h.Offloaded = false
+		return nil
+	})
+	if err != nil {
+		return xerrors.Errorf("marking as non-offloaded: %w", err)
+	}
+
 	return nil
 }
 

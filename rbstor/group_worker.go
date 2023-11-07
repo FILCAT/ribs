@@ -63,6 +63,24 @@ func (r *rbs) workerExecTask(toExec task) {
 		}
 
 		r.sendSub(toExec.group, iface.GroupStateVRCARDone, iface.GroupStateLocalReadyForDeals)
+	case taskTypeFinDataReload:
+		r.workersFinDataReload.Add(1)
+		defer r.workersFinDataReload.Add(-1)
+
+		r.lk.Lock()
+		g, ok := r.openGroups[toExec.group]
+		r.lk.Unlock()
+		if !ok {
+			log.Errorw("group not open", "group", toExec.group, "toExec", toExec)
+			return
+		}
+
+		err := g.FinDataReload(context.TODO())
+		if err != nil {
+			log.Errorw("finishing data reload", "group", toExec.group, "err", err)
+		}
+
+		r.sendSub(toExec.group, iface.GroupStateReload, iface.GroupStateLocalReadyForDeals)
 	}
 }
 
@@ -112,6 +130,8 @@ func (r *rbs) resumeGroup(group iface.GroupKey) {
 		sendTask(taskTypeGenCommP)
 	case iface.GroupStateLocalReadyForDeals:
 	case iface.GroupStateOffloaded:
+	case iface.GroupStateReload:
+		sendTask(taskTypeFinDataReload)
 	}
 }
 

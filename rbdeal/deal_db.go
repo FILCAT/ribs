@@ -1553,7 +1553,7 @@ FROM
             deals d ON all_groups.group_id = d.group_id AND d.last_retrieval_check > 0 AND d.last_retrieval_check < (d.last_retrieval_check_success + 3600*24)
         JOIN groups g on g.id = all_groups.group_id
         WHERE
-            g.g_state = 4
+            g.g_state in (4, 5)
         GROUP BY
             all_groups.group_id
     ) AS retrievable_deals_per_group
@@ -1601,7 +1601,7 @@ FROM
             deals d ON all_groups.group_id = d.group_id AND d.sealed = 1
         JOIN groups g on g.id = all_groups.group_id
         WHERE
-            g.g_state = 4
+            g.g_state in (4, 5)
         GROUP BY
             all_groups.group_id
     ) AS retrievable_deals_per_group
@@ -1633,7 +1633,6 @@ ORDER BY
 	return stats, nil
 }
 
-// todo untested
 func (r *ribsDB) AddRepairsForLowRetrievableDeals() error {
 	query := `
         INSERT INTO repairs (group_id, retrievable_deals)
@@ -1689,7 +1688,7 @@ func (r *ribsDB) GetRepairStats() (out iface.RepairQueueStats, err error) {
 	return out, err
 }
 
-func (r *ribsDB) GetAssignedWorkByWorkerID(workerID int) ([]iface.GroupKey, error) {
+func (r *ribsDB) GetAssignedRepairWorkByWorkerID(workerID int) ([]iface.GroupKey, error) {
 	query := `
         SELECT group_id FROM repairs
         WHERE worker = ?;
@@ -1715,4 +1714,13 @@ func (r *ribsDB) GetAssignedWorkByWorkerID(workerID int) ([]iface.GroupKey, erro
 	}
 
 	return groupIDs, nil
+}
+
+func (r *ribsDB) DelRepair(groupID iface.GroupKey) error {
+	query := `
+		DELETE FROM repairs
+		WHERE group_id = ?;
+	`
+	_, err := r.db.Exec(query, groupID)
+	return err
 }

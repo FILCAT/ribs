@@ -81,7 +81,8 @@ export const groupStateText = [
     "Full",
     "VRCAR Done",
     "Deals in Progress",
-    "Offloaded"
+    "Offloaded",
+    "Reload"
 ];
 
 export const GroupStateWritable = 0;

@@ -101,6 +101,7 @@ func (r *rbs) WorkerStats() iface.WorkerStats {
 		Available:  r.workersAvail.Load(),
 		InFinalize: r.workersFinalizing.Load(),
 		InCommP:    r.workersCommP.Load(),
+		InReload:   r.workersFinDataReload.Load(),
 		TaskQueue:  int64(len(r.tasks)),
 		CommPBytes: globalCommpBytes.Load(),
 	}

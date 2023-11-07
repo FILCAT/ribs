@@ -108,8 +108,8 @@ type RBSDiag interface {
 }
 
 type WorkerStats struct {
-	Available, InFinalize, InCommP int64
-	TaskQueue                      int64
+	Available, InFinalize, InCommP, InReload int64
+	TaskQueue                                int64
 
 	CommPBytes int64
 }
@@ -179,7 +179,7 @@ const (
 	GroupStateLocalReadyForDeals
 	GroupStateOffloaded
 
-	// GroupStateDownloading
+	GroupStateReload
 )
 
 type RBSExternalStorage interface {

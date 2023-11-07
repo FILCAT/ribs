@@ -92,6 +92,7 @@ type taskType int
 const (
 	taskTypeFinalize taskType = iota
 	taskTypeGenCommP
+	taskTypeFinDataReload
 )
 
 type task struct {
@@ -134,9 +135,10 @@ type rbs struct {
 	grpWriteSize   int64
 
 	// workers
-	workersAvail      atomic.Int64
-	workersFinalizing atomic.Int64
-	workersCommP      atomic.Int64
+	workersAvail         atomic.Int64
+	workersFinalizing    atomic.Int64
+	workersCommP         atomic.Int64
+	workersFinDataReload atomic.Int64
 }
 
 func (r *rbs) Close() error {
