@@ -82,6 +82,8 @@ type Storage interface {
 
 	Offload(ctx context.Context, group GroupKey) error
 
+	LoadFilCar(ctx context.Context, group GroupKey, f io.Reader, sz int64) error
+
 	Subscribe(GroupSub)
 }
 

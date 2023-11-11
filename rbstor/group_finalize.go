@@ -75,8 +75,18 @@ func (m *Group) GenCommP() error {
 	return nil
 }
 
+func (m *Group) LoadFilCar(ctx context.Context, f io.Reader, sz int64) error {
+	if err := m.jb.LoadData(ctx, f, sz); err != nil {
+		return xerrors.Errorf("load carlog data: %w", err)
+	}
+
+	return nil
+}
+
 func (m *Group) FinDataReload(ctx context.Context) error {
-	panic("reviewme")
+	log.Errorw("FIN DATA REEELOAD")
+
+	select {} // reviewme todo
 
 	if m.state != iface.GroupStateReload {
 		return xerrors.Errorf("group not in state for finishing data reload: %d", m.state)

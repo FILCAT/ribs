@@ -86,30 +86,39 @@ func (r *ribs) repairStep(ctx context.Context, workerID int) error {
 	}
 
 	// fetch sector if not fetched
-	err = r.fetchGroup(ctx, workerID, *assigned)
+	groupFile, err := r.fetchGroup(ctx, workerID, *assigned)
 	if err != nil {
-		return xerrors.Errorf("fetch sector: %w", err)
+		return xerrors.Errorf("fetch sector (group %d): %w", *assigned, err)
 	}
 
-	select {}
+	groupReader, err := os.OpenFile(groupFile, os.O_RDONLY, 0644)
+	if err != nil {
+		return xerrors.Errorf("opening repair .car file: %w", err)
+	}
+	defer groupReader.Close()
+
+	st, err := groupReader.Stat()
+	if err != nil {
+		return xerrors.Errorf("stat repair file: %w", err)
+	}
 
 	// here we have the sector fetched and verified
 
-	groupFile := ""
-	_ = groupFile
-
-	//r.RBS.Storage().LoadFilCar(groupOsFile)
+	err = r.RBS.Storage().LoadFilCar(ctx, *assigned, groupReader, int64(st.Size()))
+	if err != nil {
+		return xerrors.Errorf("reload data file (group %d): %w", *assigned, err)
+	}
 
 	if err := r.db.DelRepair(*assigned); err != nil {
 		return xerrors.Errorf("marking group %d as repaired: %w", *assigned, err)
 	}
 
-	// group is now in reindexdng state, drop
+	select {}
 
 	return nil
 }
 
-func (r *ribs) fetchGroup(ctx context.Context, workerID int, group ribs2.GroupKey) error {
+func (r *ribs) fetchGroup(ctx context.Context, workerID int, group ribs2.GroupKey) (string, error) {
 	rstat := ribs2.RepairJob{
 		GroupKey:      group,
 		State:         ribs2.RepairJobStateFetching,
@@ -125,18 +134,18 @@ func (r *ribs) fetchGroup(ctx context.Context, workerID int, group ribs2.GroupKe
 	// todo check if anything else is in the worker dir, cleanup if needed
 
 	if err := os.MkdirAll(workerDir, 0755); err != nil {
-		return xerrors.Errorf("mkdir repair worker dir: %w", err)
+		return "", xerrors.Errorf("mkdir repair worker dir: %w", err)
 	}
 
 	groupFile := filepath.Join(workerDir, fmt.Sprintf("group-%d.car", group))
 
 	if err := r.fetchGroupHttp(ctx, workerID, group, groupFile); err != nil {
-		return xerrors.Errorf("fetch group http: %w", err)
+		return "", xerrors.Errorf("fetch group http: %w", err)
 	}
 
 	// todo: lassie
 
-	return nil
+	return groupFile, nil
 }
 
 func (r *ribs) updateRepairStats(worker int, cb func(*ribs2.RepairJob)) {
