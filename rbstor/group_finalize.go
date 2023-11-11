@@ -76,8 +76,16 @@ func (m *Group) GenCommP() error {
 }
 
 func (m *Group) LoadFilCar(ctx context.Context, f io.Reader, sz int64) error {
+	if m.state != iface.GroupStateOffloaded {
+		return xerrors.Errorf("can't offload group in state %d", m.state)
+	}
+
 	if err := m.jb.LoadData(ctx, f, sz); err != nil {
 		return xerrors.Errorf("load carlog data: %w", err)
+	}
+
+	if err := m.advanceState(context.Background(), iface.GroupStateReload); err != nil {
+		return xerrors.Errorf("marking group as offloaded: %w", err)
 	}
 
 	return nil
