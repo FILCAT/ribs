@@ -122,7 +122,7 @@ func (r *robustHttpResponse) startReq() error {
 		return xerrors.Errorf("failed to create request")
 	}
 
-	req.Header.Set("Content-Range", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize))
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize-1))
 
 	log.Errorw("Before sending HTTP request", "url", r.url, "cr", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize))
 	resp, err := client.Do(req)
