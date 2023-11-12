@@ -7,7 +7,6 @@ import (
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -198,63 +197,11 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.Provider)
 
-		// custom http client allowing for conn deadlines
-
-		/*dialer := &net.Dialer{
-			Timeout: 20 * time.Second,
-		}
-
-		var nc net.Conn
-
-		// Create a custom HTTP client
-		client := &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-					if nc != nil {
-						return nil, xerrors.Errorf("one connection already made")
-					}
-
-					conn, err := dialer.DialContext(ctx, network, addr)
-					if err != nil {
-						return nil, err
-					}
-
-					nc = conn
-
-					// Set a deadline for the whole operation, including reading the response
-					if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-						return nil, xerrors.Errorf("set deadline: %w", err)
-					}
-
-					return conn, nil
-				},
-			},
-		}*/
-
 		// make the request!!
 
-		req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
-		if err != nil {
-			//return xerrors.Errorf("new request: %w", err)
-			log.Errorw("failed to create request", "err", err, "provider", candidate.Provider)
-			continue
-		}
-
-		// set content length to gm.CarSize
-		req.Header.Set("Content-Length", fmt.Sprintf("%d", gm.CarSize))
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			//return xerrors.Errorf("do request: %w", err)
-			log.Errorw("failed to do request", "err", err, "provider", candidate.Provider)
-			continue
-		}
-
-		if resp.StatusCode != 200 {
-			//return xerrors.Errorf("http status: %d", resp.StatusCode)
-			log.Errorw("http status", "status", resp.StatusCode, "provider", candidate.Provider)
-			continue
-		}
+		rc := ributil.RobustGet(reqUrl.String(), gm.CarSize, func() *ributil.RateCounter {
+			return r.repairFetchCounters.Get(group)
+		})
 
 		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
 			r.FetchProgress = 0
@@ -291,23 +238,23 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		}()
 
 		cc := new(ributil.DataCidWriter)
-		commdReader := io.TeeReader(resp.Body, cc)
+		commdReader := io.TeeReader(rc, cc)
 
 		_, err = io.Copy(f, commdReader)
 		done()
 		if err != nil {
 			_ = f.Close()
 			_ = os.Remove(groupFile)
-			_ = resp.Body.Close()
+			_ = rc.Close()
 			return xerrors.Errorf("copy response body: %w", err)
 		}
 
 		if err := f.Close(); err != nil {
-			_ = resp.Body.Close()
+			_ = rc.Close()
 			return xerrors.Errorf("close group file: %w", err)
 		}
 
-		if err := resp.Body.Close(); err != nil {
+		if err := rc.Close(); err != nil {
 			return xerrors.Errorf("close response body: %w", err)
 		}
 

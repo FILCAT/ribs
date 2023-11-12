@@ -55,6 +55,7 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 			continue
 		}
 		if n == 0 {
+			r.curCloser.Close()
 			return 0, xerrors.Errorf("read 0 bytes")
 		}
 
@@ -136,13 +137,23 @@ func (r *robustHttpResponse) startReq() error {
 	rw := NewRateEnforcingReader(dlRead, rc, reqTxIdleTimeout)
 
 	r.cur = rw
-	r.curCloser = resp.Body
+	r.curCloser = funcCloser(func() error {
+		rc.release()
+		return req.Body.Close()
+	})
 
 	return nil
 }
 
-func RobustGet(url string, dataSize int64) io.ReadCloser {
+type funcCloser func() error
+
+func (fc funcCloser) Close() error {
+	return fc()
+}
+
+func RobustGet(url string, dataSize int64, rcf func() *RateCounter) io.ReadCloser {
 	return &robustHttpResponse{
+		getRC:    rcf,
 		url:      url,
 		dataSize: dataSize,
 	}
