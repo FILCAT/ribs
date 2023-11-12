@@ -72,7 +72,6 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 		return n, nil
 	}
 
-	log.Errorw("Exiting Read with max retry error")
 	return 0, xerrors.Errorf("http read failed after %d retries", maxRetryCount)
 }
 
