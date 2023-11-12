@@ -1121,7 +1121,7 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	res, err := r.db.Query(`select uuid, provider_addr, sealed, failed, rejected, deal_id,
 										sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch,
 										retrieval_probes_success, retrieval_probes_fail, retrieval_probe_prev_ttfb_ms,
-										last_retrieval_check > 0 AND last_retrieval_check < (last_retrieval_check_success + 3600*24) as no_recent_retr
+										last_retrieval_check > 0 AND last_retrieval_check > (last_retrieval_check_success + 3600*24) as no_recent_retr
 										from deals where group_id = ?`, gk)
 	if err != nil {
 		return nil, xerrors.Errorf("getting group meta: %w", err)
