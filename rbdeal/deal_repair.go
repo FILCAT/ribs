@@ -7,6 +7,7 @@ import (
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -204,6 +205,41 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.Provider)
 
+		// custom http client allowing for conn deadlines
+
+		dialer := &net.Dialer{
+			Timeout: 20 * time.Second,
+		}
+
+		var nc net.Conn
+
+		// Create a custom HTTP client
+		client := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					if nc != nil {
+						return nil, xerrors.Errorf("one connection already made")
+					}
+
+					conn, err := dialer.DialContext(ctx, network, addr)
+					if err != nil {
+						return nil, err
+					}
+
+					nc = conn
+
+					// Set a deadline for the whole operation, including reading the response
+					if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+						return nil, xerrors.Errorf("set deadline: %w", err)
+					}
+
+					return conn, nil
+				},
+			},
+		}
+
+		// make the request!!
+
 		req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
 		if err != nil {
 			//return xerrors.Errorf("new request: %w", err)
@@ -214,7 +250,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		// set content length to gm.CarSize
 		req.Header.Set("Content-Length", fmt.Sprintf("%d", gm.CarSize))
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			//return xerrors.Errorf("do request: %w", err)
 			log.Errorw("failed to do request", "err", err, "provider", candidate.Provider)
@@ -261,10 +297,20 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
+		if nc == nil {
+			done()
+			return xerrors.Errorf("nc was nil")
+		}
+
 		var repairTxIdleTimeout = 20 * time.Second
 
+		dlRead := &readerDeadliner{
+			Reader:      resp.Body,
+			setDeadline: nc.SetDeadline,
+		}
+
 		rc := r.repairFetchCounters.Get(group)
-		rw := ributil.NewRateEnforcingReader(resp.Body, rc, repairTxIdleTimeout)
+		rw := ributil.NewRateEnforcingReader(dlRead, rc, repairTxIdleTimeout)
 
 		cc := new(ributil.DataCidWriter)
 		commdReader := io.TeeReader(rw, cc)
@@ -320,4 +366,13 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 func (r *ribs) fetchGroupLassie() {
 
+}
+
+type readerDeadliner struct {
+	io.Reader
+	setDeadline func(time.Time) error
+}
+
+func (rd *readerDeadliner) SetReadDeadline(t time.Time) error {
+	return rd.setDeadline(t)
 }
