@@ -368,7 +368,6 @@ func (r *rbs) HashSample(ctx context.Context, group iface.GroupKey) ([]mh.Multih
 
 func (r *rbs) LoadFilCar(ctx context.Context, group iface.GroupKey, f io.Reader, sz int64) error {
 	err := r.withReadableGroup(ctx, group, func(g *Group) error {
-
 		if err := g.LoadFilCar(ctx, f, sz); err != nil {
 			return xerrors.Errorf("load data into group: %w", err)
 		}

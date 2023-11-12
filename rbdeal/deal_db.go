@@ -1724,3 +1724,20 @@ func (r *ribsDB) DelRepair(groupID iface.GroupKey) error {
 	_, err := r.db.Exec(query, groupID)
 	return err
 }
+
+func (r *ribsDB) UpdateRepairOnStepNotDone(workerID int) error {
+	query := `
+		UPDATE repairs
+		SET
+		    worker = NULL,
+		    last_attempt = strftime('%s','now')
+		WHERE worker = ?;
+	`
+
+	_, err := r.db.Exec(query, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to update repair: %w", err)
+	}
+
+	return nil
+}

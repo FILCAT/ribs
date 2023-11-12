@@ -47,6 +47,10 @@ func (r *ribs) repairWorker(ctx context.Context) { // root, id?
 		err := r.repairStep(ctx, workerID)
 		if err != nil {
 			log.Errorw("repair step failed", "error", err, "worker", workerID)
+
+			if err := r.db.UpdateRepairOnStepNotDone(workerID); err != nil {
+				log.Errorw("unassigning worker from failed repair", "worker", workerID)
+			}
 		}
 	}
 }
