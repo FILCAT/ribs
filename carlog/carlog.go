@@ -1321,10 +1321,7 @@ func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64, carSz int64) 
 
 	// mark extern-fin
 	err = j.mutHead(func(h *Head) error {
-		if !h.External {
-			return xerrors.Errorf("cannot fin data reload on non-extern head")
-		}
-
+		h.External = true
 		h.Offloaded = false
 		return nil
 	})
