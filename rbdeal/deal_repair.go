@@ -34,9 +34,7 @@ Tables:
 
 var RepairCheckInterval = time.Minute
 
-func (r *ribs) repairWorker(ctx context.Context) { // root, id?
-	workerID := 0
-
+func (r *ribs) repairWorker(ctx context.Context, workerID int) { // root, id?
 	for {
 		select {
 		case <-r.close:
