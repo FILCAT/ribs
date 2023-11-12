@@ -37,7 +37,7 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 			log.Errorw("Current response is nil, starting new request")
 
 			if err := r.startReq(); err != nil {
-				log.Errorw("Error in startReq", "error", err)
+				log.Errorw("Error in startReq", "error", err, "i", i)
 				time.Sleep(1 * time.Second)
 				continue
 			}
