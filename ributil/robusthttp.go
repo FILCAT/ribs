@@ -95,7 +95,7 @@ func (r *robustHttpResponse) startReq() error {
 				nc = conn
 
 				// Set a deadline for the whole operation, including reading the response
-				if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+				if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
 					return nil, xerrors.Errorf("set deadline: %w", err)
 				}
 
@@ -126,11 +126,11 @@ func (r *robustHttpResponse) startReq() error {
 		return xerrors.Errorf("nc was nil")
 	}
 
-	var reqTxIdleTimeout = 30 * time.Second
+	var reqTxIdleTimeout = 15 * time.Second
 
 	dlRead := &readerDeadliner{
 		Reader:      resp.Body,
-		setDeadline: nc.SetDeadline,
+		setDeadline: nc.SetReadDeadline,
 	}
 
 	rc := r.getRC()

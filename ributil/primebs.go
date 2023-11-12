@@ -46,8 +46,6 @@ func (b *IpldStoreWrapper) Put(ctx context.Context, key string, content []byte) 
 		return fmt.Errorf("bad CID key: %w", err)
 	}
 
-	log.Errorw("putting block", "keyCid", keyCid)
-
 	bk, err := blocks.NewBlockWithCid(content, keyCid)
 	if err != nil {
 		return fmt.Errorf("bad block: %w", err)
