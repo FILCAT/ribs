@@ -286,6 +286,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		return nil, xerrors.Errorf("setup car server: %w", err)
 	}
 	go r.repairWorker(context.TODO())
+	go r.repairWorker(context.TODO())
 
 	r.subGroupChanges()
 

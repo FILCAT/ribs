@@ -37,8 +37,6 @@ var RepairCheckInterval = time.Minute
 func (r *ribs) repairWorker(ctx context.Context) { // root, id?
 	workerID := 0
 
-	select {}
-
 	for {
 		select {
 		case <-r.close:
@@ -118,8 +116,6 @@ func (r *ribs) repairStep(ctx context.Context, workerID int) error {
 	if err := r.db.DelRepair(*assigned); err != nil {
 		return xerrors.Errorf("marking group %d as repaired: %w", *assigned, err)
 	}
-
-	select {}
 
 	return nil
 }
