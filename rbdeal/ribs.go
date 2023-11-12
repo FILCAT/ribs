@@ -201,7 +201,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 
 		moreDealsLocks: map[iface.GroupKey]struct{}{},
 
-		repairFetchCounters: ributil.NewRateCounters[iface.GroupKey](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps))),
+		repairFetchCounters: ributil.NewRateCounters[iface.GroupKey](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps/4))),
 	}
 
 	rp, err := newRetrievalProvider(context.TODO(), r)

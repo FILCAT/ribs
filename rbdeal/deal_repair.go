@@ -229,7 +229,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 					nc = conn
 
 					// Set a deadline for the whole operation, including reading the response
-					if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+					if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 						return nil, xerrors.Errorf("set deadline: %w", err)
 					}
 
@@ -302,7 +302,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			return xerrors.Errorf("nc was nil")
 		}
 
-		var repairTxIdleTimeout = 20 * time.Second
+		var repairTxIdleTimeout = 300 * time.Second
 
 		dlRead := &readerDeadliner{
 			Reader:      resp.Body,
