@@ -7,7 +7,6 @@ import (
 	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -207,7 +206,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		// custom http client allowing for conn deadlines
 
-		dialer := &net.Dialer{
+		/*dialer := &net.Dialer{
 			Timeout: 20 * time.Second,
 		}
 
@@ -236,7 +235,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 					return conn, nil
 				},
 			},
-		}
+		}*/
 
 		// make the request!!
 
@@ -250,7 +249,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		// set content length to gm.CarSize
 		req.Header.Set("Content-Length", fmt.Sprintf("%d", gm.CarSize))
 
-		resp, err := client.Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			//return xerrors.Errorf("do request: %w", err)
 			log.Errorw("failed to do request", "err", err, "provider", candidate.Provider)
@@ -297,23 +296,23 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
-		if nc == nil {
+		/*if nc == nil {
 			done()
 			return xerrors.Errorf("nc was nil")
-		}
+		}*/
 
-		var repairTxIdleTimeout = 300 * time.Second
+		//var repairTxIdleTimeout = 30 * time.Second
 
-		dlRead := &readerDeadliner{
+		/*dlRead := &readerDeadliner{
 			Reader:      resp.Body,
 			setDeadline: nc.SetDeadline,
-		}
+		}*/
 
-		rc := r.repairFetchCounters.Get(group)
-		rw := ributil.NewRateEnforcingReader(dlRead, rc, repairTxIdleTimeout)
+		//rc := r.repairFetchCounters.Get(group)
+		//rw := ributil.NewRateEnforcingReader(resp.Body, rc, repairTxIdleTimeout)
 
 		cc := new(ributil.DataCidWriter)
-		commdReader := io.TeeReader(rw, cc)
+		commdReader := io.TeeReader(resp.Body, cc)
 
 		_, err = io.Copy(f, commdReader)
 		done()

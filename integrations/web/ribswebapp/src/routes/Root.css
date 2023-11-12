@@ -137,3 +137,7 @@ a {
 a:hover {
     color: #4CAF50;
 }
+
+th {
+    white-space: nowrap;
+}
