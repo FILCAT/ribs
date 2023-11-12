@@ -103,7 +103,11 @@ func (m *Group) FinDataReload(ctx context.Context) error {
 		return xerrors.Errorf("getting group meta: %w", err)
 	}
 
-	if err := m.jb.FinDataReload(context.Background(), gm.Blocks); err != nil {
+	if gm.DealCarSize == nil {
+		return xerrors.Errorf("deal car size is nil!")
+	}
+
+	if err := m.jb.FinDataReload(context.Background(), gm.Blocks, *gm.DealCarSize); err != nil {
 		return xerrors.Errorf("carlog finalize data reload: %w", err)
 	}
 

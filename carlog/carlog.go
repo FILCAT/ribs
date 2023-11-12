@@ -1208,7 +1208,7 @@ func (j *CarLog) LoadData(ctx context.Context, car io.Reader, sz int64) error {
 	return nil
 }
 
-func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64) error {
+func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64, carSz int64) error {
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
 
@@ -1228,13 +1228,15 @@ func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64) error {
 		return xerrors.Errorf("opening data file: %w", err)
 	}
 
+	limDf := io.LimitReader(df, carSz)
+
 	// index
 	{
 		// dfs bsst
 		iprov := &carIdxSource{
 			entries: blkEnts,
 			carSource: func(w io.Writer) (int64, cid.Cid, error) {
-				_, err := io.CopyBuffer(w, df, make([]byte, 1<<20))
+				_, err := io.CopyBuffer(w, limDf, make([]byte, 1<<20))
 				return -1, cid.Undef, err
 			},
 		}
@@ -1260,9 +1262,16 @@ func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64) error {
 
 	sz := st.Size()
 
+	_, err = df.Seek(0, io.SeekStart)
+	if err != nil {
+		return xerrors.Errorf("seek to start: %w", err)
+	}
+
+	limDf = io.LimitReader(df, carSz)
+
 	// if extern: write to staging
 	err = j.staging.Upload(ctx, sz, func(writer io.Writer) error {
-		_, err := io.CopyBuffer(writer, df, make([]byte, 1<<20))
+		_, err := io.CopyBuffer(writer, limDf, make([]byte, 1<<20))
 		return err
 	})
 	if err != nil {
