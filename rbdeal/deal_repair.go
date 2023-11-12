@@ -37,6 +37,8 @@ var RepairCheckInterval = time.Minute
 func (r *ribs) repairWorker(ctx context.Context) { // root, id?
 	workerID := 0
 
+	select {}
+
 	for {
 		select {
 		case <-r.close:
