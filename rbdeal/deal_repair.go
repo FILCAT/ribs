@@ -246,7 +246,8 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			_ = f.Close()
 			_ = os.Remove(groupFile)
 			_ = rc.Close()
-			return xerrors.Errorf("copy response body: %w", err)
+			log.Errorw("failed to copy response body", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			continue
 		}
 
 		if err := f.Close(); err != nil {
