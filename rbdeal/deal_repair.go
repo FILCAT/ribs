@@ -290,21 +290,6 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
-		/*if nc == nil {
-			done()
-			return xerrors.Errorf("nc was nil")
-		}*/
-
-		//var repairTxIdleTimeout = 30 * time.Second
-
-		/*dlRead := &readerDeadliner{
-			Reader:      resp.Body,
-			setDeadline: nc.SetDeadline,
-		}*/
-
-		//rc := r.repairFetchCounters.Get(group)
-		//rw := ributil.NewRateEnforcingReader(resp.Body, rc, repairTxIdleTimeout)
-
 		cc := new(ributil.DataCidWriter)
 		commdReader := io.TeeReader(resp.Body, cc)
 
@@ -359,13 +344,4 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 func (r *ribs) fetchGroupLassie() {
 
-}
-
-type readerDeadliner struct {
-	io.Reader
-	setDeadline func(time.Time) error
-}
-
-func (rd *readerDeadliner) SetReadDeadline(t time.Time) error {
-	return rd.setDeadline(t)
 }
