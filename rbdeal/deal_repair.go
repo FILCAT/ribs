@@ -259,8 +259,13 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
+		var repairTxIdleTimeout = 20 * time.Second
+
+		rc := r.repairFetchCounters.Get(group)
+		rw := ributil.NewRateEnforcingReader(resp.Body, rc, repairTxIdleTimeout)
+
 		cc := new(ributil.DataCidWriter)
-		commdReader := io.TeeReader(resp.Body, cc)
+		commdReader := io.TeeReader(rw, cc)
 
 		_, err = io.Copy(f, commdReader)
 		done()

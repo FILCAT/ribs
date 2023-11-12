@@ -108,10 +108,6 @@ type ribs struct {
 
 	rateCounters *ributil.RateCounters[peer.ID]
 
-	repairDir     string
-	repairStats   map[int]*iface.RepairJob // workerid -> repair job
-	repairStatsLk sync.Mutex
-
 	/* car upload offload (S3) */
 
 	s3          *s3.S3
@@ -137,6 +133,13 @@ type ribs struct {
 
 	/* retrieval checker */
 	rckToDo, rckStarted, rckSuccess, rckFail, rckSuccessAll, rckFailAll atomic.Int64
+
+	/* repair */
+	repairDir     string
+	repairStats   map[int]*iface.RepairJob // workerid -> repair job
+	repairStatsLk sync.Mutex
+
+	repairFetchCounters *ributil.RateCounters[iface.GroupKey]
 }
 
 func (r *ribs) Wallet() iface.Wallet {
@@ -197,6 +200,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		marketWatchClosed: make(chan struct{}),
 
 		moreDealsLocks: map[iface.GroupKey]struct{}{},
+
+		repairFetchCounters: ributil.NewRateCounters[iface.GroupKey](ributil.MinAvgGlobalLogPeerRate(float64(minTransferMbps), float64(linkSpeedMbps))),
 	}
 
 	rp, err := newRetrievalProvider(context.TODO(), r)
