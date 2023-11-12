@@ -98,7 +98,12 @@ func (m *Group) FinDataReload(ctx context.Context) error {
 		return xerrors.Errorf("group not in state for finishing data reload: %d", m.state)
 	}
 
-	if err := m.jb.FinDataReload(context.Background()); err != nil {
+	gm, err := m.db.GroupMeta(m.id)
+	if err != nil {
+		return xerrors.Errorf("getting group meta: %w", err)
+	}
+
+	if err := m.jb.FinDataReload(context.Background(), gm.Blocks); err != nil {
 		return xerrors.Errorf("carlog finalize data reload: %w", err)
 	}
 

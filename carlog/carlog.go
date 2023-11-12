@@ -1088,9 +1088,14 @@ func (j *CarLog) Finalize(ctx context.Context) error {
 				}
 			}
 
+			ents, err := j.rIdx.Entries()
+			if err != nil {
+				return xerrors.Errorf("getting ridx ent count: %w", err)
+			}
+
 			// dfs bsst
 			iprov := &carIdxSource{
-				base:      j.rIdx,
+				entries:   ents,
 				carSource: j.WriteCar,
 			}
 
@@ -1203,7 +1208,7 @@ func (j *CarLog) LoadData(ctx context.Context, car io.Reader, sz int64) error {
 	return nil
 }
 
-func (j *CarLog) FinDataReload(ctx context.Context) error {
+func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64) error {
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
 
@@ -1227,7 +1232,7 @@ func (j *CarLog) FinDataReload(ctx context.Context) error {
 	{
 		// dfs bsst
 		iprov := &carIdxSource{
-			base: j.rIdx,
+			entries: blkEnts,
 			carSource: func(w io.Writer) (int64, cid.Cid, error) {
 				_, err := io.CopyBuffer(w, df, make([]byte, 1<<20))
 				return -1, cid.Undef, err
@@ -1610,7 +1615,7 @@ type cardata struct {
 }
 
 type carIdxSource struct {
-	base      ReadableIndex
+	entries   int64
 	carSource func(w io.Writer) (int64, cid.Cid, error)
 
 	statReader *statRead
@@ -1688,7 +1693,7 @@ func (c *carIdxSource) List(f func(c mh.Multihash, offs []int64) error) error {
 }
 
 func (c *carIdxSource) Entries() (int64, error) {
-	return c.base.Entries()
+	return c.entries, nil
 }
 
 var _ IndexSource = &carIdxSource{}
