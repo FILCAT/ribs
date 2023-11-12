@@ -129,6 +129,7 @@ type DealMeta struct {
 
 	RetrTTFBMs            int64
 	RetrSuccess, RetrFail int64
+	NoRecentSuccess       bool
 }
 
 type Wallet interface {

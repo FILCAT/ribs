@@ -1120,7 +1120,8 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 
 	res, err := r.db.Query(`select uuid, provider_addr, sealed, failed, rejected, deal_id,
 										sp_status, sp_sealing_status, error_msg, sp_recv_bytes, sp_txsize, sp_pub_msg_cid, start_epoch, end_epoch,
-										retrieval_probes_success, retrieval_probes_fail, retrieval_probe_prev_ttfb_ms
+										retrieval_probes_success, retrieval_probes_fail, retrieval_probe_prev_ttfb_ms,
+										last_retrieval_check > 0 AND last_retrieval_check < (last_retrieval_check_success + 3600*24) as no_recent_retr
 										from deals where group_id = ?`, gk)
 	if err != nil {
 		return nil, xerrors.Errorf("getting group meta: %w", err)
@@ -1142,8 +1143,9 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 		var retrievalProbesSuccess *int64
 		var retrievalProbesFail *int64
 		var retrievalProbeTTFBMS *int64
+		var noRecentRetrievalSuccess bool
 
-		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch, &retrievalProbesSuccess, &retrievalProbesFail, &retrievalProbeTTFBMS)
+		err := res.Scan(&dealUuid, &provider, &sealed, &failed, &rejected, &dealID, &status, &sealStatus, &errMsg, &bytesRecv, &txSize, &pubCid, &startEpoch, &endEpoch, &retrievalProbesSuccess, &retrievalProbesFail, &retrievalProbeTTFBMS, &noRecentRetrievalSuccess)
 		if err != nil {
 			return nil, xerrors.Errorf("scanning deal: %w", err)
 		}
@@ -1167,6 +1169,8 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 			RetrTTFBMs:  DerefOr(retrievalProbeTTFBMS, 0),
 			RetrSuccess: DerefOr(retrievalProbesSuccess, 0),
 			RetrFail:    DerefOr(retrievalProbesFail, 0),
+
+			NoRecentSuccess: noRecentRetrievalSuccess,
 		})
 	}
 
@@ -1298,7 +1302,7 @@ type RetrCheckCandidate struct {
 }
 
 func (r *ribsDB) GetRetrievalCheckCandidates() ([]RetrCheckCandidate, error) {
-	const secondsIn10Minutes = 600
+	const secondsIn6Hours = 6 * 60 * 60
 	now := time.Now().Unix()
 
 	rows, err := r.db.Query(`
@@ -1306,7 +1310,7 @@ func (r *ribsDB) GetRetrievalCheckCandidates() ([]RetrCheckCandidate, error) {
 		WHERE sealed = 1 
 		AND failed = 0 
 		AND last_retrieval_check <= ?`,
-		now-secondsIn10Minutes)
+		now-secondsIn6Hours)
 	if err != nil {
 		return nil, xerrors.Errorf("getting retrieval check candidates: %w", err)
 	}

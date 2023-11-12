@@ -22,6 +22,7 @@ export function Deal({ deal, headHeight, pieceCid, dataCid }) {
         Error,
         RetrSuccess,
         RetrFail,
+        NoRecentSuccess,
     } = deal;
 
     const errorMessage = Error.length > 49 ? `${Error.slice(0, 24)}...${Error.slice(-24)}` : Error;
@@ -33,7 +34,7 @@ export function Deal({ deal, headHeight, pieceCid, dataCid }) {
                 <Link to={`/provider/f0${Provider}`}>f0{Provider}</Link>
                 {Sealed && <><strong> SEALED</strong> {
                     (RetrSuccess == 0 && RetrFail == 0) ? "" : (
-                        RetrSuccess > 0 ? <i>RETRIEVABLE</i> : <span className="deal-error">unretrievable</span>
+                        RetrSuccess > 0 && !NoRecentSuccess ? <i>RETRIEVABLE</i> : <span className="deal-error">unretrievable</span>
                     )
                 }</>}
             </span>
