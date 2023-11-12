@@ -141,7 +141,7 @@ func (r *robustHttpResponse) startReq() error {
 		return xerrors.Errorf("nc was nil")
 	}
 
-	var reqTxIdleTimeout = 15 * time.Second
+	var reqTxIdleTimeout = 4 * time.Second
 
 	dlRead := &readerDeadliner{
 		Reader:      resp.Body,
