@@ -68,7 +68,6 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 			return 0, xerrors.Errorf("read 0 bytes")
 		}
 
-		log.Errorw("Exiting Read with success", "bytesRead", n)
 		return n, nil
 	}
 
