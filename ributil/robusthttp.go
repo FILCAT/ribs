@@ -35,10 +35,9 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 	for i := 0; i < maxRetryCount; i++ {
 		if r.cur == nil {
 			log.Errorw("Current response is nil, starting new request")
-			err := r.startReq()
-			if err != nil {
+			for err := r.startReq(); err != nil; err = r.startReq() {
 				log.Errorw("Error in startReq", "error", err)
-				return 0, err
+				time.Sleep(1 * time.Second)
 			}
 		}
 
@@ -96,10 +95,6 @@ func (r *robustHttpResponse) startReq() error {
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				log.Errorw("DialContext called", "network", network, "addr", addr)
-				if nc != nil {
-					return nil, xerrors.Errorf("expected one conn per client")
-				}
-
 				conn, err := dialer.DialContext(ctx, network, addr)
 				if err != nil {
 					log.Errorw("DialContext error", "error", err)
@@ -136,11 +131,13 @@ func (r *robustHttpResponse) startReq() error {
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
 		log.Errorw("Unexpected HTTP status", "status", resp.StatusCode)
+		resp.Body.Close()
 		return xerrors.Errorf("http status: %d", resp.StatusCode)
 	}
 
 	if nc == nil {
 		log.Errorw("Connection is nil after client.Do")
+		resp.Body.Close()
 		return xerrors.Errorf("nc was nil")
 	}
 
