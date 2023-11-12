@@ -139,7 +139,7 @@ func (r *robustHttpResponse) startReq() error {
 	r.cur = rw
 	r.curCloser = funcCloser(func() error {
 		rc.release()
-		return req.Body.Close()
+		return resp.Body.Close()
 	})
 
 	return nil
