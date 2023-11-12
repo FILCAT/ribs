@@ -34,10 +34,10 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 
 	for i := 0; i < maxRetryCount; i++ {
 		if r.cur == nil {
-			log.Debugw("Current response is nil, starting new request")
+			log.Errorw("Current response is nil, starting new request")
 			err := r.startReq()
 			if err != nil {
-				log.Debugw("Error in startReq", "error", err)
+				log.Errorw("Error in startReq", "error", err)
 				return 0, err
 			}
 		}
@@ -46,11 +46,11 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 		if err == io.EOF {
 			r.curCloser.Close()
 			r.cur = nil
-			log.Debugw("EOF reached in Read", "bytesRead", n)
+			log.Errorw("EOF reached in Read", "bytesRead", n)
 			return n, err
 		}
 		if err != nil {
-			log.Debugw("Read error", "error", err)
+			log.Errorw("Read error", "error", err)
 			if n > 0 {
 				r.curCloser.Close()
 				r.cur = nil
@@ -64,30 +64,30 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 		}
 		if n == 0 {
 			r.curCloser.Close()
-			log.Debugw("Read 0 bytes", "bytesRead", n)
+			log.Errorw("Read 0 bytes", "bytesRead", n)
 			return 0, xerrors.Errorf("read 0 bytes")
 		}
 
-		log.Debugw("Exiting Read with success", "bytesRead", n)
+		log.Errorw("Exiting Read with success", "bytesRead", n)
 		return n, nil
 	}
 
-	log.Debugw("Exiting Read with max retry error")
+	log.Errorw("Exiting Read with max retry error")
 	return 0, xerrors.Errorf("http read failed after %d retries", maxRetryCount)
 }
 
 func (r *robustHttpResponse) Close() error {
-	log.Debugw("Entering function Close")
+	log.Errorw("Entering function Close")
 	if r.curCloser != nil {
 		return r.curCloser.Close()
 	}
 
-	log.Debugw("Exiting Close with no current closer")
+	log.Errorw("Exiting Close with no current closer")
 	return nil
 }
 
 func (r *robustHttpResponse) startReq() error {
-	log.Debugw("Entering function startReq", "url", r.url)
+	log.Errorw("Entering function startReq", "url", r.url)
 	dialer := &net.Dialer{
 		Timeout: 20 * time.Second,
 	}
@@ -97,14 +97,14 @@ func (r *robustHttpResponse) startReq() error {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				log.Debugw("DialContext called", "network", network, "addr", addr)
+				log.Errorw("DialContext called", "network", network, "addr", addr)
 				if nc != nil {
 					return nil, xerrors.Errorf("expected one conn per client")
 				}
 
 				conn, err := dialer.DialContext(ctx, network, addr)
 				if err != nil {
-					log.Debugw("DialContext error", "error", err)
+					log.Errorw("DialContext error", "error", err)
 					return nil, err
 				}
 
@@ -112,7 +112,7 @@ func (r *robustHttpResponse) startReq() error {
 
 				// Set a deadline for the whole operation, including reading the response
 				if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-					log.Debugw("SetReadDeadline error", "error", err)
+					log.Errorw("SetReadDeadline error", "error", err)
 					return nil, xerrors.Errorf("set deadline: %w", err)
 				}
 
@@ -129,20 +129,20 @@ func (r *robustHttpResponse) startReq() error {
 
 	req.Header.Set("Content-Range", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize))
 
-	log.Debugw("Before sending HTTP request", "url", r.url, "cr", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize))
+	log.Errorw("Before sending HTTP request", "url", r.url, "cr", fmt.Sprintf("bytes=%d-%d", r.atOff, r.dataSize))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Debugw("Error in client.Do", "error", err)
+		log.Errorw("Error in client.Do", "error", err)
 		return xerrors.Errorf("do request: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		log.Debugw("Unexpected HTTP status", "status", resp.StatusCode)
+		log.Errorw("Unexpected HTTP status", "status", resp.StatusCode)
 		return xerrors.Errorf("http status: %d", resp.StatusCode)
 	}
 
 	if nc == nil {
-		log.Debugw("Connection is nil after client.Do")
+		log.Errorw("Connection is nil after client.Do")
 		return xerrors.Errorf("nc was nil")
 	}
 
@@ -158,12 +158,12 @@ func (r *robustHttpResponse) startReq() error {
 
 	r.cur = rw
 	r.curCloser = funcCloser(func() error {
-		log.Debugw("Closing response body")
+		log.Errorw("Closing response body")
 		rc.release()
 		return resp.Body.Close()
 	})
 
-	log.Debugw("Exiting startReq with success")
+	log.Errorw("Exiting startReq with success")
 	return nil
 }
 
