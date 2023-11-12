@@ -25,7 +25,7 @@ func init() {
 	logging.SetLogLevel("ributil", "DEBUG")
 }
 
-var maxRetryCount = 5
+var maxRetryCount = 15
 
 func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 	defer func() {
@@ -35,9 +35,11 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 	for i := 0; i < maxRetryCount; i++ {
 		if r.cur == nil {
 			log.Errorw("Current response is nil, starting new request")
-			for err := r.startReq(); err != nil; err = r.startReq() {
+
+			if err := r.startReq(); err != nil {
 				log.Errorw("Error in startReq", "error", err)
 				time.Sleep(1 * time.Second)
+				continue
 			}
 		}
 
