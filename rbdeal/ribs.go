@@ -178,6 +178,10 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 		return nil, xerrors.Errorf("open RBS: %w", err)
 	}
 
+	if err := db.startDB(); err != nil {
+		return nil, xerrors.Errorf("start db: %w", err)
+	}
+
 	r := &ribs{
 		RBS: rbs,
 		db:  db,

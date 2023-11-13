@@ -254,22 +254,26 @@ func openRibsDB(root string) (*ribsDB, error) {
 		return nil, xerrors.Errorf("exec schema: %w", err)
 	}
 
-	if err := refreshGoodProviders(db); err != nil {
-		return nil, xerrors.Errorf("initial good provider refresh: %w", err)
+	return &ribsDB{
+		db: db,
+	}, nil
+}
+
+func (r *ribsDB) startDB() error {
+	if err := refreshGoodProviders(r.db); err != nil {
+		return xerrors.Errorf("initial good provider refresh: %w", err)
 	}
 
 	go func() {
 		for {
 			time.Sleep(2 * time.Minute)
-			if err := refreshGoodProviders(db); err != nil {
+			if err := refreshGoodProviders(r.db); err != nil {
 				log.Errorw("refreshing good providers", "error", err)
 			}
 		}
 	}()
 
-	return &ribsDB{
-		db: db,
-	}, nil
+	return nil
 }
 
 func refreshGoodProviders(db *sql.DB) error {
