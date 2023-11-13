@@ -114,6 +114,11 @@ func (r *ribs) repairStep(ctx context.Context, workerID int) error {
 		return xerrors.Errorf("marking group %d as repaired: %w", *assigned, err)
 	}
 
+	// remove repair file
+	if err := os.Remove(groupFile); err != nil {
+		return xerrors.Errorf("removing repair file: %w", err)
+	}
+
 	return nil
 }
 
@@ -273,7 +278,6 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			//return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
 			// todo record
 			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.Provider, "group", group, "file", groupFile)
-			select {}
 
 			// remove the file
 			_ = os.Remove(groupFile)
