@@ -270,12 +270,14 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		}
 
 		if dc.PieceCID != gm.PieceCid {
+			//return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
+			// todo record
+			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.Provider, "group", group, "file", groupFile)
+			select {}
+
 			// remove the file
 			_ = os.Remove(groupFile)
 
-			//return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
-			// todo record
-			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.Provider)
 			continue
 		}
 

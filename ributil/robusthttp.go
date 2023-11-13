@@ -52,19 +52,19 @@ func (r *robustHttpResponse) Read(p []byte) (n int, err error) {
 		}
 		if err != nil {
 			log.Errorw("Read error", "error", err)
+			r.curCloser.Close()
+			r.cur = nil
+
 			if n > 0 {
-				r.curCloser.Close()
-				r.cur = nil
 				return n, nil
 			}
 
 			log.Errorw("robust http read error, will retry", "err", err, "i", i)
-			r.curCloser.Close()
-			r.cur = nil
 			continue
 		}
 		if n == 0 {
 			r.curCloser.Close()
+			r.cur = nil
 			log.Errorw("Read 0 bytes", "bytesRead", n)
 			return 0, xerrors.Errorf("read 0 bytes")
 		}
