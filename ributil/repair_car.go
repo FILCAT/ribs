@@ -18,9 +18,11 @@ type RepairCarLog struct {
 	expectCidStack [][]cid.Cid
 
 	readBuf []byte
+
+	repairBlock func(cid.Cid) ([]byte, error)
 }
 
-func NewCarRepairReader(source io.Reader, root cid.Cid) (*RepairCarLog, error) {
+func NewCarRepairReader(source io.Reader, root cid.Cid, repair func(cid.Cid) ([]byte, error)) (*RepairCarLog, error) {
 	br := bufio.NewReader(source)
 
 	h, err := car.ReadHeader(br)
@@ -43,9 +45,10 @@ func NewCarRepairReader(source io.Reader, root cid.Cid) (*RepairCarLog, error) {
 	}
 
 	return &RepairCarLog{
-		readBuf: hdrBuf.Bytes(),
+		readBuf:     hdrBuf.Bytes(),
+		source:      br,
+		repairBlock: repair,
 
-		source: br,
 		expectCidStack: [][]cid.Cid{
 			{root},
 		},
@@ -77,6 +80,8 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	}
 
 	expCidBytes := firstCidInLayer.Bytes()
+
+	// length header read
 	ent, err := carutil.LdRead(r.source)
 	if err != nil {
 		return 0, xerrors.Errorf("read entry: %w", err)
@@ -87,19 +92,31 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	}
 
 	if !bytes.Equal(ent[:len(expCidBytes)], expCidBytes) {
-		// todo repair
-		return 0, xerrors.Errorf("expected cid mismatch %x != %x", ent[:len(expCidBytes)], expCidBytes)
+		log.Errorw("cid mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", ent[:len(expCidBytes)])
+
+		// repair here is really just copying the right cid into the entry
+		copy(ent[:len(expCidBytes)], expCidBytes)
 	}
 
-	data := ent[len(expCidBytes):]
-
-	hash, err := firstCidInLayer.Prefix().Sum(data)
+	hash, err := firstCidInLayer.Prefix().Sum(ent[len(expCidBytes):])
 	if err != nil {
 		return 0, xerrors.Errorf("hash data: %w", err)
 	}
 	if !hash.Equals(firstCidInLayer) {
-		// todo repair
-		return 0, xerrors.Errorf("data hash mismatch %s != %s", hash, firstCidInLayer)
+		log.Errorw("data hash mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", hash)
+
+		// block data repair
+		goodData, err := r.repairBlock(firstCidInLayer)
+		if err != nil {
+			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
+		}
+
+		if len(goodData) != len(ent[len(expCidBytes):]) {
+			return 0, xerrors.Errorf("repair block %s: data length mismatch %d != %d", firstCidInLayer, len(goodData), len(ent[len(expCidBytes):]))
+		}
+
+		copy(ent[len(expCidBytes):], goodData)
+		// note: it won't be that easy when we'll want to save allocations here
 	}
 
 	// here the data is ok, put the whole entry into the read buffer
@@ -113,7 +130,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	if firstCidInLayer.Prefix().Codec == cid.DagCBOR {
 		var links []cid.Cid
 		// todo cbor-gen
-		if err := cbor.DecodeInto(data, &links); err != nil {
+		if err := cbor.DecodeInto(ent[len(expCidBytes):], &links); err != nil {
 			return 0, xerrors.Errorf("decoding layer links: %w", err)
 		}
 

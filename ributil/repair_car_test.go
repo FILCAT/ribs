@@ -4,10 +4,37 @@ import (
 	"bytes"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 	"io"
 	"testing"
 )
 
+/*
+echo "natmoiunoeutmi" | ipfs add --raw-leaves
+# Output: added bafkreidqw5niodrmt5nza7on5f7mmjx4vymbiwmxamd4nihtoldyviioxu
+
+echo "etominpcyomdrpycmx" | ipfs add --raw-leaves
+# Output: added bafkreibn4ktninvehj4iwerimg45kyo2h3wj5tcn53wjwhfeez4wyih7xq
+
+echo ".rpyhlxmbl.crxf." | ipfs add --raw-leaves
+# Output: added bafkreibftlukrlh3iapgjmcemz4gom4s4fpli6tqjggor3pbhdrgfpipl4
+
+echo "crp.ydrcbd.py" | ipfs add --raw-leaves
+# Output: added bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q
+
+# Commands to create DAG nodes
+ipfs dag put --input-codec=dag-json <<< '[{"/": "bafkreidqw5niodrmt5nza7on5f7mmjx4vymbiwmxamd4nihtoldyviioxu"}, {"/": "bafkreibn4ktninvehj4iwerimg45kyo2h3wj5tcn53wjwhfeez4wyih7xq"}]'
+# Output: bafyreielemrpjfp3tqlperrfcdtqp2kjranb34tpnwjc5ir5x7rjm7pevy
+
+ipfs dag put --input-codec=dag-json <<< '[{"/": "bafkreibftlukrlh3iapgjmcemz4gom4s4fpli6tqjggor3pbhdrgfpipl4"}, {"/": "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q"}]'
+# Output: bafyreidzjgmslbs4fw45ymtagkxnffdeiag4w6477h6iwb6bz2kovjpcpm
+
+ipfs dag put --input-codec=dag-json <<< '[{"/": "bafyreielemrpjfp3tqlperrfcdtqp2kjranb34tpnwjc5ir5x7rjm7pevy"}, {"/": "bafyreidzjgmslbs4fw45ymtagkxnffdeiag4w6477h6iwb6bz2kovjpcpm"}]'
+# Output: bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a
+
+# Command to export data from the DAG
+ipfs dag export bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a
+*/
 var testCar = []byte{
 	0x3a, 0xa2, 0x65, 0x72, 0x6f, 0x6f, 0x74, 0x73, 0x81, 0xd8, 0x2a, 0x58, 0x25, 0x00, 0x01, 0x71,
 	0x12, 0x20, 0xde, 0xf8, 0xde, 0xac, 0x8a, 0x7d, 0x1a, 0xeb, 0xe0, 0xb9, 0xee, 0x09, 0x26, 0x8f,
@@ -57,7 +84,7 @@ func TestRepairCarLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rr, err := NewCarRepairReader(bytes.NewReader(testCar), rc)
+	rr, err := NewCarRepairReader(bytes.NewReader(testCar), rc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +104,69 @@ func TestRepairCarBitFlipData(t *testing.T) {
 	copy(tcCopy, testCar)
 	tcCopy[len(tcCopy)-1] ^= 0x01
 
-	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc)
+	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
+		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
+			return nil, xerrors.Errorf("unexpected cid: %s", c)
+		}
+
+		return []byte("crp.ydrcbd.py\n"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := io.ReadAll(rr)
+	require.NoError(t, err)
+	require.Equal(t, testCar, d)
+}
+
+func TestRepairCarBitFlipCID(t *testing.T) {
+	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lastBlkOff := len("crp.ydrcbd.py\n") + 10
+
+	tcCopy := make([]byte, len(testCar))
+	copy(tcCopy, testCar)
+	tcCopy[len(tcCopy)-lastBlkOff] ^= 0x01
+
+	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
+		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
+			return nil, xerrors.Errorf("unexpected cid: %s", c)
+		}
+
+		return []byte("crp.ydrcbd.py\n"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := io.ReadAll(rr)
+	require.NoError(t, err)
+	require.Equal(t, testCar, d)
+}
+
+func TestRepairCarBitFlipLen(t *testing.T) {
+	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lastBlkOff := len("crp.ydrcbd.py\n") + rc.ByteLen() + 1
+
+	tcCopy := make([]byte, len(testCar))
+	copy(tcCopy, testCar)
+	tcCopy[len(tcCopy)-lastBlkOff] ^= 0x01
+
+	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
+		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
+			return nil, xerrors.Errorf("unexpected cid: %s", c)
+		}
+
+		return []byte("crp.ydrcbd.py\n"), nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
