@@ -2,7 +2,11 @@ package ributil
 
 import (
 	"bytes"
+	"context"
+	"github.com/filecoin-project/lotus/blockstore"
 	"github.com/ipfs/go-cid"
+	"github.com/ipld/go-car"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/xerrors"
 	"io"
@@ -78,7 +82,18 @@ var testCar = []byte{
 	0x72, 0x63, 0x62, 0x64, 0x2e, 0x70, 0x79, 0x0a,
 }
 
-func TestRepairCarLog(t *testing.T) {
+var testCarBs = func() blockstore.Blockstore {
+	bstore := blockstore.NewMemory()
+
+	_, err := car.LoadCar(context.Background(), bstore, bytes.NewReader(testCar))
+	if err != nil {
+		panic(err)
+	}
+
+	return bstore
+}()
+
+func TestRepairCarLogHappyPath(t *testing.T) {
 	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
 	if err != nil {
 		t.Fatal(err)
@@ -94,73 +109,134 @@ func TestRepairCarLog(t *testing.T) {
 	require.Equal(t, testCar, d)
 }
 
-func TestRepairCarBitFlipData(t *testing.T) {
+func TestRepairCar(t *testing.T) {
 	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tcCopy := make([]byte, len(testCar))
-	copy(tcCopy, testCar)
-	tcCopy[len(tcCopy)-1] ^= 0x01
-
-	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
-		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
-			return nil, xerrors.Errorf("unexpected cid: %s", c)
-		}
-
-		return []byte("crp.ydrcbd.py\n"), nil
-	})
-	if err != nil {
-		t.Fatal(err)
+	testCases := []struct {
+		Name            string
+		CorruptOffset   int
+		CorruptCallback func(byte, int) byte
+	}{
+		{
+			Name:          "BitFlipData",
+			CorruptOffset: len(testCar) - 1,
+			CorruptCallback: func(b byte, i int) byte {
+				return b ^ 0x01
+			},
+		},
+		{
+			Name:          "BitFlipCID",
+			CorruptOffset: len(testCar) - len("crp.ydrcbd.py\n") - 10,
+			CorruptCallback: func(b byte, i int) byte {
+				return b ^ 0x01
+			},
+		},
+		{
+			Name:          "BitFlipVarintToEOF",
+			CorruptOffset: len(testCar) - len("crp.ydrcbd.py\n") - rc.ByteLen() - 1,
+			CorruptCallback: func(b byte, i int) byte {
+				return b ^ 0x01
+			},
+		},
+		{
+			Name:          "BitFlipVarintDecodeFail",
+			CorruptOffset: len(testCar) - len("crp.ydrcbd.py\n") - rc.ByteLen() - 1,
+			CorruptCallback: func(b byte, i int) byte {
+				return b ^ 0x80
+			},
+		},
+		{
+			Name:          "BitFlipDataShort",
+			CorruptOffset: len(testCar) - len("crp.ydrcbd.py\n") - rc.ByteLen() - 1,
+			CorruptCallback: func(b byte, i int) byte {
+				return b - 1
+			},
+		},
+		{
+			Name:          "BitFlipDataShortMidCID",
+			CorruptOffset: len(testCar) - len("crp.ydrcbd.py\n") - rc.ByteLen() - 1,
+			CorruptCallback: func(b byte, i int) byte {
+				return 12
+			},
+		},
 	}
 
-	d, err := io.ReadAll(rr)
-	require.NoError(t, err)
-	require.Equal(t, testCar, d)
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			testRepairCarWithCorruption(t, false, []int{tc.CorruptOffset}, tc.CorruptCallback)
+		})
+	}
 }
 
-func TestRepairCarBitFlipCID(t *testing.T) {
-	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
-	if err != nil {
-		t.Fatal(err)
+func fuzzRepairFunc(t *testing.T, corruptOffset []int) {
+	// Define the CorruptCallback function using the byte 'b'
+	// This function can be randomized or you can create several and choose one based on 'b'
+	corruptCallback := func(b byte, ci int) byte {
+		// Example corruption function, replace with actual logic
+		return b ^ byte(corruptOffset[ci]&0xff)
 	}
 
-	lastBlkOff := len("crp.ydrcbd.py\n") + 10
-
-	tcCopy := make([]byte, len(testCar))
-	copy(tcCopy, testCar)
-	tcCopy[len(tcCopy)-lastBlkOff] ^= 0x01
-
-	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
-		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
-			return nil, xerrors.Errorf("unexpected cid: %s", c)
+	coffs := lo.Map(corruptOffset, func(i int, v int) int {
+		co := v & 0x7fffffff
+		co >>= 8
+		co = co % len(testCar)
+		if co == 0 {
+			co = 1 // don't corrupt first byte, too we won't bother with handling that
 		}
-
-		return []byte("crp.ydrcbd.py\n"), nil
+		return co
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	d, err := io.ReadAll(rr)
-	require.NoError(t, err)
-	require.Equal(t, testCar, d)
+	testRepairCarWithCorruption(t, true, coffs, corruptCallback)
 }
 
-func TestRepairCarBitFlipLen(t *testing.T) {
+func FuzzRepairCar(f *testing.F) {
+	f.Add(int(0), byte(0))
+	f.Fuzz(func(t *testing.T, c0 int, b0 byte) {
+		fuzzRepairFunc(t, []int{(c0 << 8) | int(b0)})
+	})
+}
+
+func FuzzRepairCar2c(f *testing.F) {
+	f.Add(int(0), byte(0), int(0), byte(0))
+	f.Fuzz(func(t *testing.T, c0 int, b0 byte, c1 int, b1 byte) {
+		fuzzRepairFunc(t, []int{(c0 << 8) | int(b0), (c1 << 8) | int(b1)})
+	})
+}
+
+func FuzzRepairCar3c(f *testing.F) {
+	f.Add(int(0), byte(0), int(0), byte(0), int(0), byte(0))
+	f.Fuzz(func(t *testing.T, c0 int, b0 byte, c1 int, b1 byte, c2 int, b2 byte) {
+		fuzzRepairFunc(t, []int{(c0 << 8) | int(b0), (c1 << 8) | int(b1), (c2 << 8) | int(b2)})
+	})
+}
+
+func testRepairCarWithCorruption(t *testing.T, fuzz bool, corruptOffset []int, corruptCallback func(byte, int) byte) {
 	rc, err := cid.Parse("bafyreig67dpkzct5dlv6bopobeti72tttybwtyg63xh25qoan3t7i7aj2a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	lastBlkOff := len("crp.ydrcbd.py\n") + rc.ByteLen() + 1
-
+	// Create a copy of testCar and apply the corruption
 	tcCopy := make([]byte, len(testCar))
 	copy(tcCopy, testCar)
-	tcCopy[len(tcCopy)-lastBlkOff] ^= 0x01
+
+	for ci, off := range corruptOffset {
+		tcCopy[off] = corruptCallback(tcCopy[off], ci)
+	}
 
 	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), rc, func(c cid.Cid) ([]byte, error) {
+		if fuzz {
+			// fuzz can break any block
+			b, err := testCarBs.Get(context.Background(), c)
+			if err != nil {
+				return nil, xerrors.Errorf("get test blk: %w", err)
+			}
+			return b.RawData(), nil
+		}
+
 		if c.String() != "bafkreifgh655vcevj45q7uqpftwzy7ubfqkpwvh77enfrnaxac5t4gro5q" {
 			return nil, xerrors.Errorf("unexpected cid: %s", c)
 		}
@@ -168,6 +244,9 @@ func TestRepairCarBitFlipLen(t *testing.T) {
 		return []byte("crp.ydrcbd.py\n"), nil
 	})
 	if err != nil {
+		if fuzz {
+			return // Ignore errors here when fuzzing
+		}
 		t.Fatal(err)
 	}
 

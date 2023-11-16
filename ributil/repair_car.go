@@ -10,6 +10,7 @@ import (
 	carutil "github.com/ipld/go-car/util"
 	"golang.org/x/xerrors"
 	"io"
+	"math/bits"
 )
 
 type RepairCarLog struct {
@@ -23,11 +24,15 @@ type RepairCarLog struct {
 }
 
 func NewCarRepairReader(source io.Reader, root cid.Cid, repair func(cid.Cid) ([]byte, error)) (*RepairCarLog, error) {
-	br := bufio.NewReader(source)
+	br := bufio.NewReaderSize(source, int(carutil.MaxAllowedSectionSize))
 
 	h, err := car.ReadHeader(br)
 	if err != nil {
 		return nil, xerrors.Errorf("read car header: %w", err)
+	}
+
+	if h.Version != 1 {
+		return nil, xerrors.Errorf("unsupported car version: %d", h.Version)
 	}
 
 	if len(h.Roots) != 1 {
@@ -82,13 +87,84 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	expCidBytes := firstCidInLayer.Bytes()
 
 	// length header read
-	ent, err := carutil.LdRead(r.source)
+
+	maxExpectedCIDLen := 4 // car max extry size is 32MB, so 4 bytes is enough for varint length
+
+	cidLenEnt, err := r.source.Peek(firstCidInLayer.ByteLen() + maxExpectedCIDLen)
 	if err != nil {
-		return 0, xerrors.Errorf("read entry: %w", err)
+		return 0, xerrors.Errorf("peek entry: %w", err)
+	}
+	cidOff, err := match32Bytes(firstCidInLayer.Bytes()[:32], cidLenEnt[1:]) // at least 1 byte for varint length
+	if err != nil {
+		return 0, xerrors.Errorf("match cid pos: %w", err)
+	}
+
+	varintLen := cidOff + 1
+
+	if _, err := r.source.Discard(varintLen); err != nil {
+		return 0, xerrors.Errorf("discard varint len bytes: %w", err)
+	}
+
+	// vEntLen contains the length claimed by the varint. It will, most of the time
+	// be ok, but sometimes it may contain bitflips, so don't always trust it
+	var ent []byte
+	vEntLen, n := binary.Uvarint(cidLenEnt[:varintLen])
+	if n <= 0 || vEntLen > uint64(carutil.MaxAllowedSectionSize) {
+		// varint len is probably corrupted
+		log.Errorw("bad varint or header is bigger than util.MaxAllowedSectionSize, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen)
+
+		goodData, err := r.repairBlock(firstCidInLayer)
+		if err != nil {
+			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
+		}
+
+		// make ent the correct length
+		ent = make([]byte, len(firstCidInLayer.Bytes())+len(goodData))
+
+		// now reconstruct correct entry for next steps
+		copy(ent[:firstCidInLayer.ByteLen()], firstCidInLayer.Bytes())
+		copy(ent[firstCidInLayer.ByteLen():], goodData)
+	}
+
+	if len(ent) == 0 {
+		// wasn't repaired above, so just read from source stream
+		ent, err = r.source.Peek(int(vEntLen))
+		if err != nil {
+			if err == io.EOF {
+				// length was probably corrupted
+				log.Errorw("read entry eof, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen)
+
+				goodData, err := r.repairBlock(firstCidInLayer)
+				if err != nil {
+					return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
+				}
+
+				// make ent the correct length
+				ent = make([]byte, len(firstCidInLayer.Bytes())+len(goodData))
+
+				// now reconstruct correct entry for next steps
+				copy(ent[:firstCidInLayer.ByteLen()], firstCidInLayer.Bytes())
+				copy(ent[firstCidInLayer.ByteLen():], goodData)
+			} else {
+				return 0, xerrors.Errorf("peek entry: %w", err)
+			}
+
+		}
 	}
 
 	if len(ent) < len(expCidBytes) {
-		return 0, xerrors.Errorf("read expected cid: short read")
+		log.Errorw("entry shorter than cid, will attempt repair", "expected", firstCidInLayer, "actual", ent)
+		goodData, err := r.repairBlock(firstCidInLayer)
+		if err != nil {
+			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
+		}
+
+		// make ent the correct length
+		ent = make([]byte, len(firstCidInLayer.Bytes())+len(goodData))
+
+		// now reconstruct correct entry for next steps
+		copy(ent[:firstCidInLayer.ByteLen()], firstCidInLayer.Bytes())
+		copy(ent[firstCidInLayer.ByteLen():], goodData)
 	}
 
 	if !bytes.Equal(ent[:len(expCidBytes)], expCidBytes) {
@@ -112,7 +188,10 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		}
 
 		if len(goodData) != len(ent[len(expCidBytes):]) {
-			return 0, xerrors.Errorf("repair block %s: data length mismatch %d != %d", firstCidInLayer, len(goodData), len(ent[len(expCidBytes):]))
+			// resize ent to the correct length
+			ent = make([]byte, len(expCidBytes)+len(goodData))
+			// copy in cid bytes again..
+			copy(ent[:len(expCidBytes)], expCidBytes)
 		}
 
 		copy(ent[len(expCidBytes):], goodData)
@@ -138,9 +217,53 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		r.expectCidStack = append(r.expectCidStack, links)
 	}
 
+	// advance the source by the correct amount
+	if _, err := r.source.Discard(len(ent)); err != nil {
+		return 0, xerrors.Errorf("discard entry: %w", err)
+	}
+
 	// now perform the real read
 	n = copy(p, r.readBuf)
 	r.readBuf = r.readBuf[n:]
+	return
+}
+
+// finds pattern in buf
+func match32Bytes(pattern []byte, buf []byte) (off int, err error) {
+	// data might be corrupted, so we can't use bytes.Index
+	// we count matching bits at offsets 0,1,2,3, and select highest overlap
+
+	if len(pattern) != 32 {
+		return 0, xerrors.Errorf("pattern must be 32 bytes")
+	}
+	if len(buf) < 4+32 {
+		return 0, xerrors.Errorf("buf must be at least 36 bytes")
+	}
+
+	var maxOverlap int
+	var maxOverlapOff int
+
+	for i := 0; i < 4; i++ {
+		overlap := b32overlap(pattern, buf[i:])
+		if overlap == 32*8 {
+			return i, nil
+		}
+		if overlap > maxOverlap {
+			maxOverlap = overlap
+			maxOverlapOff = i
+		}
+	}
+
+	return maxOverlapOff, nil
+}
+
+func b32overlap(patt, b []byte) (overlap int) {
+	var matchingBits int
+
+	for i, pb := range patt {
+		matchingBits += 8 - bits.OnesCount8(pb^b[i])
+	}
+
 	return
 }
 
