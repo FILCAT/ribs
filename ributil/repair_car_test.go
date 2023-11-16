@@ -179,7 +179,7 @@ func fuzzRepairFunc(t *testing.T, corruptOffset []int) {
 		return b ^ byte(corruptOffset[ci]&0xff)
 	}
 
-	coffs := lo.Map(corruptOffset, func(i int, v int) int {
+	coffs := lo.Map(corruptOffset, func(v int, i int) int {
 		co := v & 0x7fffffff
 		co >>= 8
 		co = co % len(testCar)
