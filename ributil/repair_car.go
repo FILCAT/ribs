@@ -36,7 +36,15 @@ func NewCarRepairReader(source io.Reader, root cid.Cid) (*RepairCarLog, error) {
 		return nil, xerrors.Errorf("root cid mismatch: %s != %s", h.Roots[0], root)
 	}
 
+	var hdrBuf bytes.Buffer
+	err = car.WriteHeader(h, &hdrBuf)
+	if err != nil {
+		return nil, xerrors.Errorf("write car header: %w", err)
+	}
+
 	return &RepairCarLog{
+		readBuf: hdrBuf.Bytes(),
+
 		source: br,
 		expectCidStack: [][]cid.Cid{
 			{root},
@@ -99,6 +107,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	r.readBuf = make([]byte, len(ent)+binary.MaxVarintLen64)
 	vn := binary.PutUvarint(r.readBuf, uint64(len(ent)))
 	copy(r.readBuf[vn:], ent)
+	r.readBuf = r.readBuf[:len(ent)+vn]
 
 	// parse links
 	if firstCidInLayer.Prefix().Codec == cid.DagCBOR {
