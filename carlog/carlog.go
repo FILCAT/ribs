@@ -1583,6 +1583,7 @@ func (j *CarLog) WriteCar(w io.Writer) (int64, cid.Cid, error) {
 		// TODO: (optimization) Instead of decoding all blocks, just assume that
 		//  there are up to /arity/ blocks in each node, and just output the next
 		//  layer ountil layerOffsets tell us we're at the end of the layer
+		// todo: cbor-gen
 		var links []cid.Cid
 		if err := cbor.DecodeInto(data, &links); err != nil {
 			return xerrors.Errorf("decoding layer links: %w", err)
