@@ -363,3 +363,29 @@ func FuzzRepairCarLog1c(f *testing.F) {
 		fuzzWithRealData(t, root, bs, data, coffs, corruptCallback)
 	})
 }
+
+func FuzzRepairCarLog3c(f *testing.F) {
+	data, root, bs := prepareCarlogTestData(f)
+
+	f.Add(int(0), byte(0), int(0), byte(0), int(0), byte(0))
+	f.Fuzz(func(t *testing.T, c0 int, b0 byte, c1 int, b1 byte, c2 int, b2 byte) {
+		corruptOffset := []int{(c0 << 8) | int(b0), (c1 << 8) | int(b1), (c2 << 8) | int(b2)}
+
+		corruptCallback := func(b byte, ci int) byte {
+			// Example corruption function, replace with actual logic
+			return b ^ byte(corruptOffset[ci]&0xff)
+		}
+
+		coffs := lo.Map(corruptOffset, func(v int, i int) int {
+			co := v & 0x7fffffff
+			co >>= 8
+			co = co % len(testCar)
+			if co == 0 {
+				co = 1 // don't corrupt first byte, too we won't bother with handling that
+			}
+			return co
+		})
+
+		fuzzWithRealData(t, root, bs, data, coffs, corruptCallback)
+	})
+}
