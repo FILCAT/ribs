@@ -255,6 +255,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			_ = f.Close()
 			_ = os.Remove(groupFile)
 			_ = robustReqReader.Close()
+			done()
 			log.Errorw("failed to create repair reader", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
 			continue
 		}
