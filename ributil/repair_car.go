@@ -65,6 +65,10 @@ func NewCarRepairReader(source io.Reader, root cid.Cid, repair func(cid.Cid) ([]
 	}, nil
 }
 
+func (r *RepairCarLog) badPct() int64 {
+	return r.bad * 100 / r.totalRead
+}
+
 func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	if len(r.readBuf) > 0 {
 		n = copy(p, r.readBuf)
@@ -129,7 +133,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	vEntLen, n := binary.Uvarint(cidLenEnt[:varintLen])
 	if n <= 0 || vEntLen > uint64(carutil.MaxAllowedSectionSize) {
 		// varint len is probably corrupted
-		log.Errorw("repairRead bad varint or header is bigger than util.MaxAllowedSectionSize, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen)
+		log.Errorw("repairRead bad varint or header is bigger than util.MaxAllowedSectionSize, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen, "badPct", r.badPct())
 		wasCorrupt = true
 
 		goodData, err := r.repairBlock(firstCidInLayer)
@@ -151,7 +155,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		if err != nil {
 			if err == io.EOF {
 				// length was probably corrupted
-				log.Errorw("repairRead read entry eof, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen)
+				log.Errorw("repairRead read entry eof, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen, "badPct", r.badPct())
 				wasCorrupt = true
 
 				goodData, err := r.repairBlock(firstCidInLayer)
@@ -173,7 +177,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	}
 
 	if len(ent) < len(expCidBytes) {
-		log.Errorw("repairRead entry shorter than cid, will attempt repair", "expected", firstCidInLayer, "actual", ent)
+		log.Errorw("repairRead entry shorter than cid, will attempt repair", "expected", firstCidInLayer, "actual", ent, "badPct", r.badPct())
 		wasCorrupt = true
 
 		goodData, err := r.repairBlock(firstCidInLayer)
@@ -190,7 +194,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	}
 
 	if !bytes.Equal(ent[:len(expCidBytes)], expCidBytes) {
-		log.Errorw("repairRead cid mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", ent[:len(expCidBytes)])
+		log.Errorw("repairRead cid mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", ent[:len(expCidBytes)], "badPct", r.badPct())
 		wasCorrupt = true
 
 		// repair here is really just copying the right cid into the entry
@@ -202,7 +206,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		return 0, xerrors.Errorf("hash data: %w", err)
 	}
 	if !hash.Equals(firstCidInLayer) {
-		log.Errorw("repairRead data hash mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", hash)
+		log.Errorw("repairRead data hash mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", hash, "badPct", r.badPct())
 		wasCorrupt = true
 
 		// block data repair
