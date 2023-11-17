@@ -3,8 +3,10 @@ package rbdeal
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/go-cid"
 	ribs2 "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/ributil"
+	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"io"
 	"os"
@@ -204,7 +206,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		// make the request!!
 
-		rc := ributil.RobustGet(reqUrl.String(), gm.CarSize, func() *ributil.RateCounter {
+		robustReqReader := ributil.RobustGet(reqUrl.String(), gm.CarSize, func() *ributil.RateCounter {
 			return r.repairFetchCounters.Get(group)
 		})
 
@@ -242,25 +244,40 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
+		repairReader, err := ributil.NewCarRepairReader(robustReqReader, gm.RootCid, func(b cid.Cid) ([]byte, error) {
+			var outData []byte
+			return outData, r.retrProv.FetchBlocks(ctx, group, []multihash.Multihash{b.Hash()}, func(cidx int, data []byte) {
+				outData = make([]byte, len(data))
+				copy(outData, data)
+			})
+		})
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(groupFile)
+			_ = robustReqReader.Close()
+			log.Errorw("failed to create repair reader", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			continue
+		}
+
 		cc := new(ributil.DataCidWriter)
-		commdReader := io.TeeReader(rc, cc)
+		commdReader := io.TeeReader(repairReader, cc)
 
 		_, err = io.Copy(f, commdReader)
 		done()
 		if err != nil {
 			_ = f.Close()
 			_ = os.Remove(groupFile)
-			_ = rc.Close()
+			_ = robustReqReader.Close()
 			log.Errorw("failed to copy response body", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
 			continue
 		}
 
 		if err := f.Close(); err != nil {
-			_ = rc.Close()
+			_ = robustReqReader.Close()
 			return xerrors.Errorf("close group file: %w", err)
 		}
 
-		if err := rc.Close(); err != nil {
+		if err := robustReqReader.Close(); err != nil {
 			return xerrors.Errorf("close response body: %w", err)
 		}
 
