@@ -3,13 +3,19 @@ package ributil
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"github.com/filecoin-project/lotus/blockstore"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
+	"github.com/lotus-web3/ribs/carlog"
+	"github.com/multiformats/go-multihash"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/xerrors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -192,7 +198,7 @@ func fuzzRepairFunc(t *testing.T, corruptOffset []int) {
 	testRepairCarWithCorruption(t, true, coffs, corruptCallback)
 }
 
-func FuzzRepairCar(f *testing.F) {
+func FuzzRepairCar1c(f *testing.F) {
 	f.Add(int(0), byte(0))
 	f.Fuzz(func(t *testing.T, c0 int, b0 byte) {
 		fuzzRepairFunc(t, []int{(c0 << 8) | int(b0)})
@@ -253,4 +259,107 @@ func testRepairCarWithCorruption(t *testing.T, fuzz bool, corruptOffset []int, c
 	d, err := io.ReadAll(rr)
 	require.NoError(t, err)
 	require.Equal(t, testCar, d)
+}
+
+func TestWithCarlogFilcar(t *testing.T) {
+	carData, root, _ := prepareCarlogTestData(t)
+
+	rr, err := NewCarRepairReader(bytes.NewReader(carData), root, nil)
+	require.NoError(t, err)
+
+	var resBuf bytes.Buffer
+	_, err = io.Copy(&resBuf, rr)
+	require.NoError(t, err)
+
+	require.Equal(t, carData, resBuf.Bytes())
+}
+
+type TF interface {
+	require.TestingT
+	TempDir() string
+}
+
+func prepareCarlogTestData(t TF) ([]byte, cid.Cid, blockstore.Blockstore) {
+	td := t.TempDir()
+
+	idir, ddir := filepath.Join(td, "ind"), filepath.Join(td, "dat")
+	require.NoError(t, os.MkdirAll(ddir, 0777))
+
+	cl, err := carlog.Create(nil, idir, ddir, nil)
+	require.NoError(t, err)
+
+	for i := 0; i < 8000; i++ {
+		var bdata [100]byte
+		_, _ = rand.Read(bdata[:])
+		blk := blocks.NewBlock(bdata[:])
+
+		err := cl.Put([]multihash.Multihash{blk.Cid().Hash()}, []blocks.Block{blk})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, cl.MarkReadOnly())
+	require.NoError(t, cl.Finalize(context.Background()))
+
+	var carBuf bytes.Buffer
+	_, root, err := cl.WriteCar(&carBuf)
+	require.NoError(t, err)
+
+	bstore := blockstore.NewMemory()
+
+	_, err = car.LoadCar(context.Background(), bstore, bytes.NewReader(carBuf.Bytes()))
+	require.NoError(t, err)
+
+	return carBuf.Bytes(), root, bstore
+}
+
+func fuzzWithRealData(t *testing.T, root cid.Cid, testBs blockstore.Blockstore, data []byte, corruptOffset []int, corruptCallback func(byte, int) byte) {
+	// Create a copy of testCar and apply the corruption
+	tcCopy := make([]byte, len(data))
+	copy(tcCopy, data)
+
+	for ci, off := range corruptOffset {
+		tcCopy[off] = corruptCallback(tcCopy[off], ci)
+	}
+
+	rr, err := NewCarRepairReader(bytes.NewReader(tcCopy), root, func(c cid.Cid) ([]byte, error) {
+		// fuzz can break any block
+		b, err := testBs.Get(context.Background(), c)
+		if err != nil {
+			return nil, xerrors.Errorf("get test blk: %w", err)
+		}
+		return b.RawData(), nil
+	})
+	if err != nil {
+		return // Ignore errors here when fuzzing
+	}
+
+	d, err := io.ReadAll(rr)
+	require.NoError(t, err)
+	require.Equal(t, data, d)
+}
+
+func FuzzRepairCarLog1c(f *testing.F) {
+	data, root, bs := prepareCarlogTestData(f)
+
+	f.Add(int(0), byte(0))
+	f.Fuzz(func(t *testing.T, c0 int, b0 byte) {
+		corruptOffset := []int{(c0 << 8) | int(b0)}
+
+		corruptCallback := func(b byte, ci int) byte {
+			// Example corruption function, replace with actual logic
+			return b ^ byte(corruptOffset[ci]&0xff)
+		}
+
+		coffs := lo.Map(corruptOffset, func(v int, i int) int {
+			co := v & 0x7fffffff
+			co >>= 8
+			co = co % len(testCar)
+			if co == 0 {
+				co = 1 // don't corrupt first byte, too we won't bother with handling that
+			}
+			return co
+		})
+
+		fuzzWithRealData(t, root, bs, data, coffs, corruptCallback)
+	})
 }

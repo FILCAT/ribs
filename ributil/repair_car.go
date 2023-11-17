@@ -289,10 +289,8 @@ func match32Bytes(pattern []byte, buf []byte) (off int, overlap int, err error) 
 }
 
 func b32overlap(patt, b []byte) (overlap int) {
-	var matchingBits int
-
 	for i, pb := range patt {
-		matchingBits += 8 - bits.OnesCount8(pb^b[i])
+		overlap += 8 - bits.OnesCount8(pb^b[i])
 	}
 
 	return
