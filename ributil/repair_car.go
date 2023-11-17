@@ -116,7 +116,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	if err != nil {
 		return 0, xerrors.Errorf("peek entry: %w", err)
 	}
-	cidOff, err := match32Bytes(firstCidInLayer.Bytes()[:32], cidLenEnt[1:]) // at least 1 byte for varint length
+	cidOff, maxOverlap, err := match32Bytes(firstCidInLayer.Bytes()[:32], cidLenEnt[1:]) // at least 1 byte for varint length
 	if err != nil {
 		return 0, xerrors.Errorf("match cid pos: %w", err)
 	}
@@ -194,7 +194,9 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 	}
 
 	if !bytes.Equal(ent[:len(expCidBytes)], expCidBytes) {
-		log.Errorw("repairRead cid mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", ent[:len(expCidBytes)], "badPct", r.badPct())
+		badCidBits := 256 - maxOverlap
+
+		log.Errorw("repairRead cid mismatch in car stream, will attempt repair", "expected", firstCidInLayer, "actual", ent[:len(expCidBytes)], "flippedBits", badCidBits, "badPct", r.badPct())
 		wasCorrupt = true
 
 		// repair here is really just copying the right cid into the entry
@@ -257,15 +259,15 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 }
 
 // finds pattern in buf
-func match32Bytes(pattern []byte, buf []byte) (off int, err error) {
+func match32Bytes(pattern []byte, buf []byte) (off int, overlap int, err error) {
 	// data might be corrupted, so we can't use bytes.Index
 	// we count matching bits at offsets 0,1,2,3, and select highest overlap
 
 	if len(pattern) != 32 {
-		return 0, xerrors.Errorf("pattern must be 32 bytes")
+		return 0, 0, xerrors.Errorf("pattern must be 32 bytes")
 	}
 	if len(buf) < 4+32 {
-		return 0, xerrors.Errorf("buf must be at least 36 bytes")
+		return 0, 0, xerrors.Errorf("buf must be at least 36 bytes")
 	}
 
 	var maxOverlap int
@@ -275,7 +277,7 @@ func match32Bytes(pattern []byte, buf []byte) (off int, err error) {
 		overlap := b32overlap(pattern, buf[i:])
 		if overlap == 32*8 {
 			// happy path
-			return i, nil
+			return i, 256, nil
 		}
 		if overlap > maxOverlap {
 			maxOverlap = overlap
@@ -283,7 +285,7 @@ func match32Bytes(pattern []byte, buf []byte) (off int, err error) {
 		}
 	}
 
-	return maxOverlapOff, nil
+	return maxOverlapOff, maxOverlap, nil
 }
 
 func b32overlap(patt, b []byte) (overlap int) {
