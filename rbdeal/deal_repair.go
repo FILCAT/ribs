@@ -258,9 +258,10 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			log.Errorw("failed to create repair reader", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
 			continue
 		}
+		_ = repairReader // disable for now, it's a whee bit broken
 
 		cc := new(ributil.DataCidWriter)
-		commdReader := io.TeeReader(repairReader, cc)
+		commdReader := io.TeeReader(robustReqReader, cc)
 
 		_, err = io.Copy(f, commdReader)
 		done()
