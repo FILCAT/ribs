@@ -146,10 +146,13 @@ func (r *ribs) fetchGroup(ctx context.Context, workerID int, group ribs2.GroupKe
 	groupFile := filepath.Join(workerDir, fmt.Sprintf("group-%d.car", group))
 
 	if err := r.fetchGroupHttp(ctx, workerID, group, groupFile); err != nil {
-		return "", xerrors.Errorf("fetch group http: %w", err)
-	}
+		log.Errorw("failed to fetch group with http, will attempt lassie", "err", err, "group", group, "worker", workerID)
 
-	// todo: lassie
+		if err := r.fetchGroupLassie(ctx, workerID, group, groupFile); err != nil {
+			log.Errorw("failed to fetch group with lassie", "err", err, "group", group, "worker", workerID)
+			return "", xerrors.Errorf("fetch group lassie: %w", err)
+		}
+	}
 
 	return groupFile, nil
 }
@@ -244,12 +247,53 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			}
 		}()
 
-		repairReader, err := ributil.NewCarRepairReader(robustReqReader, gm.RootCid, func(b cid.Cid) ([]byte, error) {
+		repairReader, err := ributil.NewCarRepairReader(robustReqReader, gm.RootCid, func(b cid.Cid, badData []byte) ([]byte, error) {
 			var outData []byte
-			return outData, r.retrProv.FetchBlocks(ctx, group, []multihash.Multihash{b.Hash()}, func(cidx int, data []byte) {
+			err := r.retrProv.FetchBlocks(ctx, group, []multihash.Multihash{b.Hash()}, func(cidx int, data []byte) {
 				outData = make([]byte, len(data))
 				copy(outData, data)
 			})
+			if err == nil {
+				return outData, nil
+			}
+
+			log.Errorw("failed to fetch repair block", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			/*
+				// try bitflip repair
+				NOTE: this bit flip repair is not really useful, apparently bitflips tend to come in groups,
+					and we're not fixing more that one bitfilp
+
+				if len(badData) == 0 {
+					return nil, xerrors.Errorf("can't attempt bitflip repair and repair retrieval failed: %w", err)
+				}
+
+				log.Errorw("attempting bitflip repair", "group", group, "provider", candidate.Provider, "url", reqUrl.String(), "dataSize", len(badData))
+				for i := 0; i < len(badData)*8; i++ {
+					if i > 0 {
+						// unflip previous bit
+						prevBit := i - 1
+						badData[prevBit/8] ^= 1 << (prevBit % 8)
+					}
+
+					// flip bit
+					badData[i/8] ^= 1 << (i % 8)
+
+					hash, err := b.Prefix().Sum(badData)
+					if err != nil {
+						return nil, xerrors.Errorf("hash data: %w", err)
+					}
+
+					if hash.Equals(b) {
+						log.Errorw("bitflip repair successful", "group", group, "provider", candidate.Provider, "url", reqUrl.String(), "flippedBit", i)
+						return badData, nil
+					}
+				}
+
+				// unflip last bit
+				badData[len(badData)-1] ^= 1 << 7
+				log.Errorw("bitflip repair failed", "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			*/
+			return nil, xerrors.Errorf("repair retrieval failed: %w", err)
 		})
 		if err != nil {
 			_ = f.Close()
@@ -305,7 +349,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
 			r.FetchProgress = r.FetchSize
-			r.State = ribs2.RepairJobStateIndexing
+			r.State = ribs2.RepairJobStateImporting
 		})
 
 		return nil
@@ -314,6 +358,102 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 	return xerrors.Errorf("no retrieval candidates")
 }
 
-func (r *ribs) fetchGroupLassie() {
+func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.GroupKey, groupFile string) error {
+	gm, err := r.Storage().DescibeGroup(ctx, group)
+	if err != nil {
+		return xerrors.Errorf("failed to get group metadata: %w", err)
+	}
 
+	log.Errorw("attempting lassie repair retrieval", "group", group, "root", gm.RootCid, "piece", gm.PieceCid, "file", groupFile, "worker", workerID)
+
+	tempDir := filepath.Join(r.repairDir, fmt.Sprintf("%s.temp", groupFile))
+	err = os.MkdirAll(tempDir, 0755)
+	if err != nil {
+		return xerrors.Errorf("mkdir temp dir: %w", err)
+	}
+
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		if err != nil {
+			log.Errorw("failed to remove lassie temp dir", "err", err, "dir", tempDir, "group", group, "worker", workerID)
+		}
+	}()
+
+	r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+		r.FetchProgress = 0
+		r.State = ribs2.RepairJobStateFetching
+		r.FetchUrl = "lassie+[bitswap,graphsync]"
+	})
+
+	ctx, done := context.WithCancel(ctx)
+	go func() {
+		// watch fetch progress with file stat
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+
+			fi, err := os.Stat(groupFile)
+			if err != nil {
+				log.Errorw("failed to stat group file", "err", err)
+				continue
+			}
+
+			r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+				r.FetchProgress = fi.Size()
+			})
+		}
+	}()
+
+	err = r.retrProv.FetchDeal(ctx, group, gm.RootCid, tempDir, groupFile)
+	done()
+
+	if err != nil {
+		log.Errorw("failed to fetch deal with lassie", "err", err, "group", group, "worker", workerID)
+		return xerrors.Errorf("failed to fetch deal: %w", err)
+	}
+
+	r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+		r.FetchProgress = r.FetchSize
+		r.State = ribs2.RepairJobStateVerifying
+	})
+
+	f, err := os.OpenFile(groupFile, os.O_RDONLY, 0644)
+	if err != nil {
+		return xerrors.Errorf("open group file: %w", err)
+	}
+
+	cc := new(ributil.DataCidWriter)
+
+	_, err = io.Copy(cc, f)
+	if err != nil {
+		_ = f.Close()
+		return xerrors.Errorf("copy group file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return xerrors.Errorf("close group file: %w", err)
+	}
+
+	dc, err := cc.Sum()
+	if err != nil {
+		//_ = os.Remove(groupFile)
+		return xerrors.Errorf("sum car: %w", err)
+	}
+
+	if dc.PieceCID != gm.PieceCid {
+		//_ = os.Remove(groupFile)
+		log.Errorw("piece cid mismatch in lassie fetch", "cid", dc.PieceCID, "expected", gm.PieceCid, "group", group, "file", groupFile)
+		return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
+	}
+
+	r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+		r.FetchProgress = r.FetchSize
+		r.State = ribs2.RepairJobStateImporting
+	})
+
+	return nil
 }

@@ -62,10 +62,9 @@ type RepairJob struct {
 type RepairJobState string
 
 const (
-	RepairJobStateFetching   RepairJobState = "fetching"
-	RepairJobStateVerifying  RepairJobState = "verifying"
-	RepairJobStateIndexing   RepairJobState = "indexing"
-	RepairJobStateFinalizing RepairJobState = "finalizing"
+	RepairJobStateFetching  RepairJobState = "fetching"
+	RepairJobStateVerifying RepairJobState = "verifying"
+	RepairJobStateImporting RepairJobState = "importing"
 )
 
 type DealCountStats struct {
