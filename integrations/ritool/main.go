@@ -14,6 +14,7 @@ func main() {
 			headCmd,
 			carlogCmd,
 			idxLevelCmd,
+			ldbcidCmd,
 		},
 	}
 

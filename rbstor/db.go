@@ -3,6 +3,7 @@ package rbstor
 import (
 	"context"
 	"database/sql"
+	"github.com/lotus-web3/ribs/ributil"
 	"path/filepath"
 
 	commcid "github.com/filecoin-project/go-fil-commcid"
@@ -20,7 +21,7 @@ var pragmas = []string{
 		"PRAGMA automatic_index = OFF",*/
 	"PRAGMA journal_mode = WAL",
 	"PRAGMA read_uncommitted = ON",
-	"PRAGMA busy_timeout = 5000",
+	"PRAGMA busy_timeout = 50000",
 }
 
 const dbSchema = `
@@ -84,18 +85,18 @@ create index if not exists offloads_group_id_index
 `
 
 type rbsDB struct {
-	db *sql.DB
+	db *ributil.RetryDB
 }
 
-func openRibsDB(root string, opt *sql.DB) (*rbsDB, error) {
+func openRibsDB(root string, opt *ributil.RetryDB) (*rbsDB, error) {
 	db := opt
 	if db == nil {
 		var err error
-		db, err = sql.Open("sqlite3", filepath.Join(root, "store.db"))
+		rdb, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 		if err != nil {
 			return nil, xerrors.Errorf("open db: %w", err)
-
 		}
+		db = ributil.NewRetryDB(rdb)
 	}
 
 	for _, pragma := range pragmas {

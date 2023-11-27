@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	types2 "github.com/filecoin-project/lotus/chain/types"
+	"github.com/lotus-web3/ribs/ributil"
 	"github.com/multiformats/go-multiaddr"
 	"path/filepath"
 	"sort"
@@ -22,7 +23,7 @@ import (
 )
 
 type ribsDB struct {
-	db *sql.DB
+	db *ributil.RetryDB
 }
 
 var pragmas = []string{
@@ -34,7 +35,7 @@ var pragmas = []string{
 		"PRAGMA automatic_index = OFF",*/
 	"PRAGMA journal_mode = WAL",
 	"PRAGMA read_uncommitted = ON",
-	"PRAGMA busy_timeout = 5000",
+	"PRAGMA busy_timeout = 50000",
 }
 
 const dbSchema = `
@@ -237,10 +238,12 @@ CREATE INDEX IF NOT EXISTS idx_deals_retrieval ON deals(last_retrieval_check, la
 `
 
 func openRibsDB(root string) (*ribsDB, error) {
-	db, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
+	rdb, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
 	if err != nil {
 		return nil, xerrors.Errorf("open db: %w", err)
 	}
+
+	db := ributil.NewRetryDB(rdb)
 
 	for _, pragma := range pragmas {
 		_, err := db.Exec(pragma)
@@ -276,7 +279,7 @@ func (r *ribsDB) startDB() error {
 	return nil
 }
 
-func refreshGoodProviders(db *sql.DB) error {
+func refreshGoodProviders(db *ributil.RetryDB) error {
 	// Query to populate good_providers table
 	q := `
     INSERT INTO good_providers
