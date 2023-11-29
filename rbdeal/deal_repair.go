@@ -366,7 +366,7 @@ func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.G
 
 	log.Errorw("attempting lassie repair retrieval", "group", group, "root", gm.RootCid, "piece", gm.PieceCid, "file", groupFile, "worker", workerID)
 
-	tempDir := filepath.Join(r.repairDir, fmt.Sprintf("%s.temp", groupFile))
+	tempDir := fmt.Sprintf("%s.temp", groupFile)
 	err = os.MkdirAll(tempDir, 0755)
 	if err != nil {
 		return xerrors.Errorf("mkdir temp dir: %w", err)
@@ -412,6 +412,7 @@ func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.G
 	done()
 
 	if err != nil {
+		_ = os.Remove(groupFile)
 		log.Errorw("failed to fetch deal with lassie", "err", err, "group", group, "worker", workerID)
 		return xerrors.Errorf("failed to fetch deal: %w", err)
 	}
@@ -431,6 +432,7 @@ func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.G
 	_, err = io.Copy(cc, f)
 	if err != nil {
 		_ = f.Close()
+		_ = os.Remove(groupFile)
 		return xerrors.Errorf("copy group file: %w", err)
 	}
 
@@ -440,12 +442,12 @@ func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.G
 
 	dc, err := cc.Sum()
 	if err != nil {
-		//_ = os.Remove(groupFile)
+		_ = os.Remove(groupFile)
 		return xerrors.Errorf("sum car: %w", err)
 	}
 
 	if dc.PieceCID != gm.PieceCid {
-		//_ = os.Remove(groupFile)
+		_ = os.Remove(groupFile)
 		log.Errorw("piece cid mismatch in lassie fetch", "cid", dc.PieceCID, "expected", gm.PieceCid, "group", group, "file", groupFile)
 		return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
 	}
