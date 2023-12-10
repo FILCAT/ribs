@@ -354,11 +354,11 @@ func (m *mfsDavFs) RemoveAll(ctx context.Context, name string) error {
 
 func checkPath(p string) (string, error) {
 	if len(p) == 0 {
-		return "", fmt.Errorf("paths must not be empty")
+		p = "/"
 	}
 
 	if p[0] != '/' {
-		return "", fmt.Errorf("paths must start with a leading slash")
+		p = "/" + p
 	}
 
 	cleaned := gopath.Clean(p)
