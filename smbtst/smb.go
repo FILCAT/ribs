@@ -113,8 +113,8 @@ func (m *MfsSmbFs) allocHandle(fh *mfsHandle) vfs.VfsHandle {
 	m.fdlk.Lock()
 	defer m.fdlk.Unlock()
 
-	out := m.fdctr
 	m.fdctr++
+	out := m.fdctr
 
 	m.fds[out] = fh
 	return out
@@ -136,6 +136,8 @@ func (m *MfsSmbFs) getOpenHandle(handle vfs.VfsHandle) (*mfsHandle, func(), erro
 }
 
 func (m *MfsSmbFs) GetAttr(handle vfs.VfsHandle) (*vfs.Attributes, error) {
+	log.Errorw("GET ATTR", "handle", handle)
+
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return nil, err
@@ -147,6 +149,10 @@ func (m *MfsSmbFs) GetAttr(handle vfs.VfsHandle) (*vfs.Attributes, error) {
 		return nil, err
 	}
 
+	return m.attrForNode(nd)
+}
+
+func (m *MfsSmbFs) attrForNode(nd format.Node) (*vfs.Attributes, error) {
 	switch n := nd.(type) {
 	case *dag.ProtoNode:
 		d, err := ft.FSNodeFromBytes(n.Data())
@@ -236,8 +242,12 @@ func (m *MfsSmbFs) Open(name string, flag int, perm int) (vfs.VfsHandle, error) 
 	return m.open(name, flag, perm, false) // todo allow dir??
 }
 
-func (m *MfsSmbFs) open(name string, flag int, perm int, mustDir bool) (vfs.VfsHandle, error) {
+func (m *MfsSmbFs) open(name string, flag int, perm int, mustDir bool) (h vfs.VfsHandle, err error) {
 	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
+
+	defer func() {
+		log.Errorw("OPEN FILE DONE", "name", name, "flag", flag, "perm", perm, "h", h, "err", err)
+	}()
 
 	path, err := checkPath(name)
 	if err != nil {
@@ -365,9 +375,29 @@ func (m *MfsSmbFs) Close(handle vfs.VfsHandle) error {
 	panic("implement me")
 }
 
-func (m *MfsSmbFs) Lookup(handle vfs.VfsHandle, s string) (*vfs.Attributes, error) {
-	//TODO implement me
-	panic("implement me")
+func (m *MfsSmbFs) Lookup(handle vfs.VfsHandle, subPath string) (*vfs.Attributes, error) {
+	log.Errorw("LOOKUP", "handle", handle, "subPath", subPath)
+
+	p := "/"
+
+	if handle != 0 {
+		hnd, done, err := m.getOpenHandle(handle)
+		if err != nil {
+			return nil, err
+		}
+		defer done()
+
+		p = hnd.path
+	}
+
+	p = gopath.Join(p, subPath)
+
+	nd, err := getNodeFromPath(context.TODO(), m.mr, p)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.attrForNode(nd)
 }
 
 func (m *MfsSmbFs) Mkdir(s string, mode int) (*vfs.Attributes, error) {
