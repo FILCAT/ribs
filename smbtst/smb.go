@@ -553,6 +553,10 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, posFlag int, maxEntries int) ([
 
 	log.Errorw("READ DIR DONE", "handle", handle, "posFlag", posFlag, "seekPos", seekPos, "hpos", hnd.dirPos, "maxEntries", maxEntries, "out", out, "err", err)
 
+	if len(out) == 0 {
+		return nil, io.EOF
+	}
+
 	return out, nil
 }
 
