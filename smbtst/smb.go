@@ -13,8 +13,10 @@ import (
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
+	smb2 "github.com/macos-fuse-t/go-smb2/server"
 	"github.com/macos-fuse-t/go-smb2/vfs"
 	mh "github.com/multiformats/go-multihash"
+	"go.uber.org/fx"
 	"golang.org/x/xerrors"
 	"io"
 	"os"
@@ -50,12 +52,51 @@ var v1CidPrefix = cid.Prefix{
 
 var fileTime = time.Date(2020, 10, 14, 0, 0, 0, 0, time.UTC)
 
-type mfsSmbFs struct {
+type MfsSmbFs struct {
 	mr *mfs.Root
 
 	fdlk  sync.Mutex
 	fdctr vfs.VfsHandle
 	fds   map[vfs.VfsHandle]*mfsHandle
+}
+
+func NewMfsSmbFs(mr *mfs.Root) (*MfsSmbFs, error) {
+	return &MfsSmbFs{
+		mr:  mr,
+		fds: make(map[vfs.VfsHandle]*mfsHandle),
+	}, nil
+}
+
+func StartMfsSmbFs(lc fx.Lifecycle, fs *MfsSmbFs) error {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return xerrors.Errorf("getting hostname: %w", err)
+	}
+
+	srv := smb2.NewServer(
+		&smb2.ServerConfig{
+			AllowGuest:  true,
+			MaxIOReads:  1024,
+			MaxIOWrites: 1024,
+			Xatrrs:      false,
+		},
+		&smb2.NTLMAuthenticator{
+			TargetSPN:    "",
+			NbDomain:     hostname,
+			NbName:       hostname,
+			DnsName:      hostname + ".local",
+			DnsDomain:    ".local",
+			UserPassword: map[string]string{"a": "a"},
+			AllowGuest:   true,
+		},
+		map[string]vfs.VFSFileSystem{"filecoin": fs},
+	)
+
+	listen := ":4455"
+	log.Infof("Starting SMB server at %s", listen)
+	go srv.Serve(listen)
+
+	return nil
 }
 
 type mfsHandle struct {
@@ -68,7 +109,7 @@ type mfsHandle struct {
 	path string
 }
 
-func (m *mfsSmbFs) allocHandle(fh *mfsHandle) vfs.VfsHandle {
+func (m *MfsSmbFs) allocHandle(fh *mfsHandle) vfs.VfsHandle {
 	m.fdlk.Lock()
 	defer m.fdlk.Unlock()
 
@@ -79,7 +120,7 @@ func (m *mfsSmbFs) allocHandle(fh *mfsHandle) vfs.VfsHandle {
 	return out
 }
 
-func (m *mfsSmbFs) getOpenHandle(handle vfs.VfsHandle) (*mfsHandle, func(), error) {
+func (m *MfsSmbFs) getOpenHandle(handle vfs.VfsHandle) (*mfsHandle, func(), error) {
 	m.fdlk.Lock()
 	hnd, ok := m.fds[handle]
 	if !ok {
@@ -94,7 +135,7 @@ func (m *mfsSmbFs) getOpenHandle(handle vfs.VfsHandle) (*mfsHandle, func(), erro
 	}, nil
 }
 
-func (m *mfsSmbFs) GetAttr(handle vfs.VfsHandle) (*vfs.Attributes, error) {
+func (m *MfsSmbFs) GetAttr(handle vfs.VfsHandle) (*vfs.Attributes, error) {
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return nil, err
@@ -157,12 +198,12 @@ func (m *mfsSmbFs) GetAttr(handle vfs.VfsHandle) (*vfs.Attributes, error) {
 	}
 }
 
-func (m *mfsSmbFs) SetAttr(handle vfs.VfsHandle, attributes *vfs.Attributes) (*vfs.Attributes, error) {
+func (m *MfsSmbFs) SetAttr(handle vfs.VfsHandle, attributes *vfs.Attributes) (*vfs.Attributes, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
+func (m *MfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
 	a := vfs.FSAttributes{}
 	a.SetAvailableBlocks(volBavail)
 	a.SetBlockSize(blockSize)
@@ -174,7 +215,7 @@ func (m *mfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
 	return &a, nil
 }
 
-func (m *mfsSmbFs) FSync(handle vfs.VfsHandle) error {
+func (m *MfsSmbFs) FSync(handle vfs.VfsHandle) error {
 	/*hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return err
@@ -186,16 +227,16 @@ func (m *mfsSmbFs) FSync(handle vfs.VfsHandle) error {
 	panic("impl")
 }
 
-func (m *mfsSmbFs) Flush(handle vfs.VfsHandle) error {
+func (m *MfsSmbFs) Flush(handle vfs.VfsHandle) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Open(name string, flag int, perm int) (vfs.VfsHandle, error) {
+func (m *MfsSmbFs) Open(name string, flag int, perm int) (vfs.VfsHandle, error) {
 	return m.open(name, flag, perm, false) // todo allow dir??
 }
 
-func (m *mfsSmbFs) open(name string, flag int, perm int, mustDir bool) (vfs.VfsHandle, error) {
+func (m *MfsSmbFs) open(name string, flag int, perm int, mustDir bool) (vfs.VfsHandle, error) {
 	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
 
 	path, err := checkPath(name)
@@ -319,46 +360,45 @@ func getParentDir(root *mfs.Root, dir string) (*mfs.Directory, error) {
 	return pdir, nil
 }
 
-func (m *mfsSmbFs) Close(handle vfs.VfsHandle) error {
+func (m *MfsSmbFs) Close(handle vfs.VfsHandle) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Lookup(handle vfs.VfsHandle, s string) (*vfs.Attributes, error) {
+func (m *MfsSmbFs) Lookup(handle vfs.VfsHandle, s string) (*vfs.Attributes, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Mkdir(s string, mode int) (*vfs.Attributes, error) {
-	panic("mkparents")
-
+func (m *MfsSmbFs) Mkdir(s string, mode int) (*vfs.Attributes, error) {
 	err := mfs.Mkdir(m.mr, s, mfs.MkdirOpts{
 		Mkparents: false,
 		Flush:     true,
 	})
 	if err != nil {
-		return nil, xerrors.Errorf("mfs mkdir: %w", err)
+		return nil, err
 	}
 
+	return nil, nil
 }
 
-func (m *mfsSmbFs) Read(handle vfs.VfsHandle, bytes []byte, u uint64, i int) (int, error) {
+func (m *MfsSmbFs) Read(handle vfs.VfsHandle, bytes []byte, u uint64, i int) (int, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Write(handle vfs.VfsHandle, bytes []byte, u uint64, i int) (int, error) {
+func (m *MfsSmbFs) Write(handle vfs.VfsHandle, bytes []byte, u uint64, i int) (int, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) OpenDir(name string) (vfs.VfsHandle, error) {
+func (m *MfsSmbFs) OpenDir(name string) (vfs.VfsHandle, error) {
 	return m.open(name, 0, 0, true)
 }
 
 var errHalt = errors.New("halt readdir")
 
-func (m *mfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
+func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return nil, err
@@ -420,57 +460,57 @@ func (m *mfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 	return out, nil
 }
 
-func (m *mfsSmbFs) Readlink(handle vfs.VfsHandle) (string, error) {
+func (m *MfsSmbFs) Readlink(handle vfs.VfsHandle) (string, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Unlink(handle vfs.VfsHandle) error {
+func (m *MfsSmbFs) Unlink(handle vfs.VfsHandle) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Truncate(handle vfs.VfsHandle, u uint64) error {
+func (m *MfsSmbFs) Truncate(handle vfs.VfsHandle, u uint64) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Rename(handle vfs.VfsHandle, s string, i int) error {
+func (m *MfsSmbFs) Rename(handle vfs.VfsHandle, s string, i int) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Symlink(handle vfs.VfsHandle, s string, i int) (*vfs.Attributes, error) {
+func (m *MfsSmbFs) Symlink(handle vfs.VfsHandle, s string, i int) (*vfs.Attributes, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Link(node vfs.VfsNode, node2 vfs.VfsNode, s string) (*vfs.Attributes, error) {
+func (m *MfsSmbFs) Link(node vfs.VfsNode, node2 vfs.VfsNode, s string) (*vfs.Attributes, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Listxattr(handle vfs.VfsHandle) ([]string, error) {
+func (m *MfsSmbFs) Listxattr(handle vfs.VfsHandle) ([]string, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Getxattr(handle vfs.VfsHandle, s string, bytes []byte) (int, error) {
+func (m *MfsSmbFs) Getxattr(handle vfs.VfsHandle, s string, bytes []byte) (int, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Setxattr(handle vfs.VfsHandle, s string, bytes []byte) error {
+func (m *MfsSmbFs) Setxattr(handle vfs.VfsHandle, s string, bytes []byte) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Removexattr(handle vfs.VfsHandle, s string) error {
+func (m *MfsSmbFs) Removexattr(handle vfs.VfsHandle, s string) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-var _ vfs.VFSFileSystem = &mfsSmbFs{}
+var _ vfs.VFSFileSystem = &MfsSmbFs{}
 
 func getNodeFromPath(ctx context.Context, mr *mfs.Root, p string) (format.Node, error) {
 	switch {

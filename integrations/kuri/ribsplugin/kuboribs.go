@@ -3,6 +3,7 @@ package kuboribs
 import (
 	"context"
 	"fmt"
+	"github.com/lotus-web3/ribs/smbtst"
 	"os"
 
 	lotusbstore "github.com/filecoin-project/lotus/blockstore"
@@ -78,6 +79,9 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 		fx.Decorate(RibsFiles),
 
 		fx.Invoke(StartMfsDav),
+
+		fx.Provide(smbtst.NewMfsSmbFs),
+		fx.Invoke(smbtst.StartMfsSmbFs),
 	)
 	return opts, nil
 }
