@@ -93,7 +93,7 @@ func OpenGroup(ctx context.Context, db *rbsDB, index iface.Index, staging *atomi
 		jbOpenFunc = carlog.Create
 	}
 
-	var stw *carStorageWrapper
+	var stw carlog.CarStorageProvider
 	st := staging.Load()
 	if st != nil {
 		stw = &carStorageWrapper{

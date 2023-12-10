@@ -2,6 +2,9 @@ package rbdeal
 
 import (
 	"context"
+	"github.com/filecoin-project/lassie/pkg/storage"
+	"github.com/ipld/go-car/v2"
+	"github.com/ipld/go-car/v2/storage/deferred"
 	trustlessutils "github.com/ipld/go-trustless-utils"
 	"github.com/lotus-web3/ribs/carlog"
 	"io"
@@ -286,8 +289,8 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 		lassie.WithFinder(rp),
 		lassie.WithConcurrentSPRetrievals(50),
 		lassie.WithBitswapConcurrency(50),
-		lassie.WithGlobalTimeout(30*time.Second),
-		lassie.WithProviderTimeout(4*time.Second),
+		//lassie.WithGlobalTimeout(30*time.Second),
+		//lassie.WithProviderTimeout(4*time.Second),
 		lassie.WithHost(retrHost))
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create lassie: %w", err)
@@ -659,5 +662,87 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 	*bytesServed += int64(len(b.RawData()))
 	cb(i, b.RawData())
 
+	return nil
+}
+
+const maxBlocks = 30_000_000 // max groups blocks default to 20M, 30 here is a bit of a buffer
+
+func (r *retrievalProvider) FetchDeal(ctx context.Context, group iface.GroupKey, root cid.Cid, tempDir, carfile string) error {
+	// setup index
+	m := root.Hash()
+
+	r.reqSourcesLk.Lock()
+	if _, ok := r.requests[mhStr(m)]; !ok {
+		r.requests[mhStr(m)] = map[iface.GroupKey]int{}
+	}
+
+	r.requests[mhStr(m)][group]++
+	r.reqSourcesLk.Unlock()
+
+	defer func() {
+		r.reqSourcesLk.Lock()
+
+		r.requests[mhStr(m)][group]--
+		if r.requests[mhStr(m)][group] == 0 {
+			delete(r.requests[mhStr(m)], group)
+		}
+
+		r.reqSourcesLk.Unlock()
+	}()
+
+	// setup retrieval
+	carOpts := []car.Option{
+		car.WriteAsCarV1(true),
+		car.StoreIdentityCIDs(false),
+		car.UseWholeCIDs(false),
+	}
+
+	carWriter := deferred.NewDeferredCarWriterForPath(carfile, []cid.Cid{root}, carOpts...)
+
+	carWriter.OnPut(func(i int) {}, false)
+
+	tempStore := storage.NewDeferredStorageCar(tempDir, root)
+	carStore := storage.NewCachingTempStore(carWriter.BlockWriteOpener(), tempStore)
+	defer carStore.Close()
+
+	linkSystem := cidlink.DefaultLinkSystem()
+	linkSystem.SetWriteStorage(carStore)
+	linkSystem.SetReadStorage(carStore)
+	linkSystem.TrustedStorage = true
+	unixfsnode.AddUnixFSReificationToLinkSystem(&linkSystem)
+
+	preloadStore := carStore.PreloadStore()
+
+	request := types.RetrievalRequest{
+		RetrievalID:       must.One(types.NewRetrievalID()),
+		LinkSystem:        linkSystem,
+		PreloadLinkSystem: cidlink.DefaultLinkSystem(),
+		Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1},
+		MaxBlocks:         maxBlocks,
+
+		Request: trustlessutils.Request{
+			Root:       root,
+			Path:       "",
+			Scope:      trustlessutils.DagScopeAll,
+			Bytes:      nil,
+			Duplicates: false,
+		},
+	}
+
+	request.PreloadLinkSystem.SetReadStorage(preloadStore)
+	request.PreloadLinkSystem.SetWriteStorage(preloadStore)
+	request.PreloadLinkSystem.TrustedStorage = true
+
+	stats, err := r.lsi.Fetch(ctx, request)
+	if err != nil {
+		log.Errorw("retrieval failed", "cid", root, "error", err)
+		return err
+	}
+	spid := stats.StorageProviderId.String()
+	if spid == "" {
+		spid = types.BitswapIndentifier
+	}
+
+	log.Errorw("retr stat", "dur", stats.Duration, "size", stats.Size, "cid", root, "provider", spid)
 	return nil
 }

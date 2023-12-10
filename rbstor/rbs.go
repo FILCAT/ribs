@@ -2,7 +2,7 @@ package rbstor
 
 import (
 	"context"
-	"database/sql"
+	"github.com/lotus-web3/ribs/ributil"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,12 +21,12 @@ import (
 var log = logging.Logger("rbs")
 
 type openOptions struct {
-	db *sql.DB
+	db *ributil.RetryDB
 }
 
 type OpenOption func(*openOptions)
 
-func WithDB(db *sql.DB) OpenOption {
+func WithDB(db *ributil.RetryDB) OpenOption {
 	return func(o *openOptions) {
 		o.db = db
 	}

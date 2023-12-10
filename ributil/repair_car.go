@@ -20,7 +20,7 @@ type RepairCarLog struct {
 
 	readBuf []byte
 
-	repairBlock func(cid.Cid) ([]byte, error)
+	repairBlock func(c cid.Cid, bad []byte) ([]byte, error)
 
 	totalRead, bad int64
 }
@@ -28,7 +28,7 @@ type RepairCarLog struct {
 var minReadDecision int64 = 100 // blocks
 var maxCorruptPct int64 = 10    // percent
 
-func NewCarRepairReader(source io.Reader, root cid.Cid, repair func(cid.Cid) ([]byte, error)) (*RepairCarLog, error) {
+func NewCarRepairReader(source io.Reader, root cid.Cid, repair func(cid.Cid, []byte) ([]byte, error)) (*RepairCarLog, error) {
 	br := bufio.NewReaderSize(source, int(carutil.MaxAllowedSectionSize))
 
 	h, err := car.ReadHeader(br)
@@ -136,7 +136,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		log.Errorw("repairRead bad varint or header is bigger than util.MaxAllowedSectionSize, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen, "badPct", r.badPct())
 		wasCorrupt = true
 
-		goodData, err := r.repairBlock(firstCidInLayer)
+		goodData, err := r.repairBlock(firstCidInLayer, nil)
 		if err != nil {
 			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
 		}
@@ -158,7 +158,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 				log.Errorw("repairRead read entry eof, varint len is probably corrupted, will try repair", "expected", firstCidInLayer, "actual", vEntLen, "badPct", r.badPct())
 				wasCorrupt = true
 
-				goodData, err := r.repairBlock(firstCidInLayer)
+				goodData, err := r.repairBlock(firstCidInLayer, nil)
 				if err != nil {
 					return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
 				}
@@ -180,7 +180,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		log.Errorw("repairRead entry shorter than cid, will attempt repair", "expected", firstCidInLayer, "actual", ent, "badPct", r.badPct())
 		wasCorrupt = true
 
-		goodData, err := r.repairBlock(firstCidInLayer)
+		goodData, err := r.repairBlock(firstCidInLayer, nil)
 		if err != nil {
 			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
 		}
@@ -212,7 +212,7 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 		wasCorrupt = true
 
 		// block data repair
-		goodData, err := r.repairBlock(firstCidInLayer)
+		goodData, err := r.repairBlock(firstCidInLayer, ent[len(expCidBytes):])
 		if err != nil {
 			return 0, xerrors.Errorf("repair block %s: %w", firstCidInLayer, err)
 		}

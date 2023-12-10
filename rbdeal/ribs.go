@@ -147,8 +147,6 @@ func (r *ribs) Wallet() iface.Wallet {
 }
 
 func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
-	logging.SetLogLevel("lassie/retriever", "DEBUG")
-
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, xerrors.Errorf("make root dir: %w", err)
 	}
@@ -295,6 +293,12 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	go r.repairWorker(context.TODO(), 2)
 	go r.repairWorker(context.TODO(), 3)
 	go r.repairWorker(context.TODO(), 4)
+	/*	go r.repairWorker(context.TODO(), 5)
+		go r.repairWorker(context.TODO(), 6)
+		go r.repairWorker(context.TODO(), 7)
+		go r.repairWorker(context.TODO(), 8)
+		go r.repairWorker(context.TODO(), 9)
+		go r.repairWorker(context.TODO(), 10)*/
 
 	r.subGroupChanges()
 
