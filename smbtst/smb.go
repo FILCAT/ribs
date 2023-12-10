@@ -243,7 +243,7 @@ func (m *MfsSmbFs) Open(name string, flag int, perm int) (vfs.VfsHandle, error) 
 }
 
 func (m *MfsSmbFs) open(name string, flag int, perm int, mustDir bool) (h vfs.VfsHandle, err error) {
-	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
+	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm, "mustDir", mustDir)
 
 	defer func() {
 		log.Errorw("OPEN FILE DONE", "name", name, "flag", flag, "perm", perm, "h", h, "err", err)
@@ -371,8 +371,22 @@ func getParentDir(root *mfs.Root, dir string) (*mfs.Directory, error) {
 }
 
 func (m *MfsSmbFs) Close(handle vfs.VfsHandle) error {
-	//TODO implement me
-	panic("implement me")
+	log.Errorw("CLOSE", "handle", handle)
+
+	hnd, done, err := m.getOpenHandle(handle)
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	if hnd.mfdf != nil {
+		return hnd.mfdf.Close()
+	}
+	if hnd.mfdi != nil {
+		return hnd.mfdi.Flush()
+	}
+
+	return nil
 }
 
 func (m *MfsSmbFs) Lookup(handle vfs.VfsHandle, subPath string) (*vfs.Attributes, error) {
