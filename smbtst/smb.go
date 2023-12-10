@@ -519,32 +519,35 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, posFlag int, maxEntries int) ([
 			maxEntries--
 		}
 
-		var a vfs.DirInfo
-		a.Name = nl.Name
+		var dirInfo vfs.DirInfo
+		dirInfo.Name = nl.Name
 
 		mode := os.FileMode(0644)
 		if nl.Type == int(mfs.TDir) {
 			mode = os.FileMode(0755) | os.ModeDir
 		}
 
-		a.SetInodeNumber(123) // todo this may be very bad)
-		a.SetSizeBytes(uint64(nl.Size))
-		a.SetDiskSizeBytes(uint64(nl.Size))
-		a.SetUnixMode(uint32(mode))
-		a.SetPermissions(vfs.NewPermissionsFromMode(uint32(mode)))
-		a.SetAccessTime(fileTime)
-		a.SetLastDataModificationTime(fileTime)
-		a.SetBirthTime(fileTime)
-		a.SetLastStatusChangeTime(fileTime)
+		var attr vfs.Attributes
+		attr.SetInodeNumber(10 + uint64(hnd.dirPos)) // todo this may be very bad)
+		attr.SetSizeBytes(uint64(nl.Size))
+		attr.SetDiskSizeBytes(uint64(nl.Size))
+		attr.SetUnixMode(uint32(mode))
+		attr.SetPermissions(vfs.NewPermissionsFromMode(uint32(mode)))
+		attr.SetAccessTime(fileTime)
+		attr.SetLastDataModificationTime(fileTime)
+		attr.SetBirthTime(fileTime)
+		attr.SetLastStatusChangeTime(fileTime)
 
 		if nl.Type == int(mfs.TDir) {
-			a.SetFileType(vfs.FileTypeDirectory)
+			attr.SetFileType(vfs.FileTypeDirectory)
 		} else {
-			a.SetFileType(vfs.FileTypeRegularFile)
+			attr.SetFileType(vfs.FileTypeRegularFile)
 		}
 
+		dirInfo.Attributes = attr
+
 		hnd.dirPos++
-		out = append(out, a)
+		out = append(out, dirInfo)
 		return nil
 	})
 	if err != nil && err != errHalt {
