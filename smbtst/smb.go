@@ -449,12 +449,8 @@ func (m *MfsSmbFs) OpenDir(name string) (vfs.VfsHandle, error) {
 
 var errHalt = errors.New("halt readdir")
 
-func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
-	log.Errorw("READ DIR", "handle", handle, "pos", pos, "maxEntries", maxEntries)
-
-	if pos != 0 {
-		panic("todo")
-	}
+func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, posFlag int, maxEntries int) ([]vfs.DirInfo, error) {
+	log.Errorw("READ DIR", "handle", handle, "posFlag", posFlag, "maxEntries", maxEntries)
 
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
@@ -464,6 +460,12 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 
 	if hnd.mfdi == nil {
 		return nil, xerrors.Errorf("not a directory")
+	}
+
+	if posFlag != 0 {
+		// non-zero pos means we want to reset the dir pos
+
+		hnd.dirPos = 0
 	}
 
 	var out []vfs.DirInfo
@@ -549,7 +551,7 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 		return nil, err
 	}
 
-	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "seekPos", seekPos, "hpos", hnd.dirPos, "maxEntries", maxEntries, "out", out, "err", err)
+	log.Errorw("READ DIR DONE", "handle", handle, "posFlag", posFlag, "seekPos", seekPos, "hpos", hnd.dirPos, "maxEntries", maxEntries, "out", out, "err", err)
 
 	return out, nil
 }
