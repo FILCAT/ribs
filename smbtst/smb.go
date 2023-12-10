@@ -93,7 +93,7 @@ func StartMfsSmbFs(lc fx.Lifecycle, fs *MfsSmbFs) error {
 	)
 
 	listen := ":4455"
-	log.Infof("Starting SMB server at %s", listen)
+	log.Errorf("Starting SMB server at %s", listen)
 	go srv.Serve(listen)
 
 	return nil
