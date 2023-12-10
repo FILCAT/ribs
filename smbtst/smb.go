@@ -502,14 +502,14 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 			a.SetFileType(vfs.FileTypeRegularFile)
 		}
 
-		out = append(out)
+		out = append(out, a)
 		return nil
 	})
 	if err != nil && err != errHalt {
 		return nil, err
 	}
 
-	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "maxEntries", maxEntries, "out", out)
+	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "maxEntries", maxEntries, "out", out, "err", err)
 
 	return out, nil
 }
