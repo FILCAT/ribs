@@ -106,6 +106,8 @@ type mfsHandle struct {
 	mfdf mfs.FileDescriptor // if file
 	mfdi *mfs.Directory     // if dir
 
+	dirPos int
+
 	path string
 }
 
@@ -450,6 +452,10 @@ var errHalt = errors.New("halt readdir")
 func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
 	log.Errorw("READ DIR", "handle", handle, "pos", pos, "maxEntries", maxEntries)
 
+	if pos != 0 {
+		panic("todo")
+	}
+
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return nil, err
@@ -462,11 +468,44 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 
 	var out []vfs.DirInfo
 
-	// todo fd dir pos AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	if maxEntries != 0 && maxEntries < 2 {
+		return nil, xerrors.Errorf("maxEntries must be 0 or >= 2")
+	}
 
+	if hnd.dirPos == 0 {
+		dnd, err := hnd.mfdi.GetNode()
+		if err != nil {
+			return nil, xerrors.Errorf("get dir attr: %w", err)
+		}
+
+		rootAttr, err := m.attrForNode(dnd)
+		if err != nil {
+			return nil, xerrors.Errorf("get dir attr: %w", err)
+		}
+
+		out = append(out,
+			vfs.DirInfo{
+				Name:       ".",
+				Attributes: *rootAttr,
+			},
+			vfs.DirInfo{
+				Name:       "..",
+				Attributes: *rootAttr,
+			})
+
+		if maxEntries > 0 {
+			maxEntries -= 2
+		}
+
+		hnd.dirPos = 2
+	}
+
+	seekPos := hnd.dirPos - 2
+
+	// todo start iter in goroutine for better seq reads
 	err = hnd.mfdi.ForEachEntry(context.TODO(), func(nl mfs.NodeListing) error {
-		if pos > 0 {
-			pos--
+		if seekPos > 0 {
+			seekPos--
 			return nil
 		}
 
@@ -502,6 +541,7 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 			a.SetFileType(vfs.FileTypeRegularFile)
 		}
 
+		hnd.dirPos++
 		out = append(out, a)
 		return nil
 	})
@@ -509,7 +549,7 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 		return nil, err
 	}
 
-	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "maxEntries", maxEntries, "out", out, "err", err)
+	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "seekPos", seekPos, "hpos", hnd.dirPos, "maxEntries", maxEntries, "out", out, "err", err)
 
 	return out, nil
 }
