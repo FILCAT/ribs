@@ -210,6 +210,8 @@ func (m *MfsSmbFs) SetAttr(handle vfs.VfsHandle, attributes *vfs.Attributes) (*v
 }
 
 func (m *MfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
+	log.Errorw("STAT FS", "handle", handle)
+
 	a := vfs.FSAttributes{}
 	a.SetAvailableBlocks(volBavail)
 	a.SetBlockSize(blockSize)
@@ -222,6 +224,7 @@ func (m *MfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
 }
 
 func (m *MfsSmbFs) FSync(handle vfs.VfsHandle) error {
+	log.Errorw("FSYNC", "handle", handle)
 	/*hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return err
@@ -415,6 +418,8 @@ func (m *MfsSmbFs) Lookup(handle vfs.VfsHandle, subPath string) (*vfs.Attributes
 }
 
 func (m *MfsSmbFs) Mkdir(s string, mode int) (*vfs.Attributes, error) {
+	log.Errorw("MKDIR", "s", s, "mode", mode)
+
 	err := mfs.Mkdir(m.mr, s, mfs.MkdirOpts{
 		Mkparents: false,
 		Flush:     true,
@@ -443,6 +448,8 @@ func (m *MfsSmbFs) OpenDir(name string) (vfs.VfsHandle, error) {
 var errHalt = errors.New("halt readdir")
 
 func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
+	log.Errorw("READ DIR", "handle", handle, "pos", pos, "maxEntries", maxEntries)
+
 	hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return nil, err
@@ -501,6 +508,9 @@ func (m *MfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs
 	if err != nil && err != errHalt {
 		return nil, err
 	}
+
+	log.Errorw("READ DIR DONE", "handle", handle, "pos", pos, "maxEntries", maxEntries, "out", out)
+
 	return out, nil
 }
 
