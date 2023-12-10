@@ -5,18 +5,26 @@ package smbtst
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	dag "github.com/ipfs/boxo/ipld/merkledag"
 	ft "github.com/ipfs/boxo/ipld/unixfs"
 	"github.com/ipfs/boxo/mfs"
+	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/macos-fuse-t/go-smb2/vfs"
+	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
+	"io"
 	"os"
+	gopath "path"
 	"strings"
 	"sync"
 	"time"
 )
+
+var log = logging.Logger("mfssmb")
 
 const (
 	blockSize = 4092
@@ -33,19 +41,42 @@ const (
 	ioSize = 256 << 20
 )
 
+var v1CidPrefix = cid.Prefix{
+	Codec:    cid.DagProtobuf,
+	MhLength: -1,
+	MhType:   mh.SHA2_256,
+	Version:  1,
+}
+
 var fileTime = time.Date(2020, 10, 14, 0, 0, 0, 0, time.UTC)
 
 type mfsSmbFs struct {
 	mr *mfs.Root
 
-	fdlk sync.Mutex
-	fds  map[vfs.VfsHandle]*mfsHandle
+	fdlk  sync.Mutex
+	fdctr vfs.VfsHandle
+	fds   map[vfs.VfsHandle]*mfsHandle
 }
 
 type mfsHandle struct {
 	lk sync.Mutex
 
+	mr   *mfs.Root
+	mfdf mfs.FileDescriptor // if file
+	mfdi *mfs.Directory     // if dir
+
 	path string
+}
+
+func (m *mfsSmbFs) allocHandle(fh *mfsHandle) vfs.VfsHandle {
+	m.fdlk.Lock()
+	defer m.fdlk.Unlock()
+
+	out := m.fdctr
+	m.fdctr++
+
+	m.fds[out] = fh
+	return out
 }
 
 func (m *mfsSmbFs) getOpenHandle(handle vfs.VfsHandle) (*mfsHandle, func(), error) {
@@ -144,12 +175,15 @@ func (m *mfsSmbFs) StatFS(handle vfs.VfsHandle) (*vfs.FSAttributes, error) {
 }
 
 func (m *mfsSmbFs) FSync(handle vfs.VfsHandle) error {
-	hnd, done, err := m.getOpenHandle(handle)
+	/*hnd, done, err := m.getOpenHandle(handle)
 	if err != nil {
 		return err
 	}
 	defer done()
 
+	*/
+
+	panic("impl")
 }
 
 func (m *mfsSmbFs) Flush(handle vfs.VfsHandle) error {
@@ -157,9 +191,132 @@ func (m *mfsSmbFs) Flush(handle vfs.VfsHandle) error {
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) Open(s string, i int, i2 int) (vfs.VfsHandle, error) {
-	//TODO implement me
-	panic("implement me")
+func (m *mfsSmbFs) Open(name string, flag int, perm int) (vfs.VfsHandle, error) {
+	return m.open(name, flag, perm, false) // todo allow dir??
+}
+
+func (m *mfsSmbFs) open(name string, flag int, perm int, mustDir bool) (vfs.VfsHandle, error) {
+	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
+
+	path, err := checkPath(name)
+	if err != nil {
+		return 0, err
+	}
+
+	create := flag&os.O_CREATE != 0
+	truncate := flag&os.O_TRUNC != 0
+	exclusive := flag&os.O_EXCL != 0
+	write := flag&os.O_WRONLY != 0 || flag&os.O_RDWR != 0
+	read := flag&os.O_RDWR != 0
+	app := flag&os.O_APPEND != 0
+	flush := flag&os.O_SYNC != 0
+
+	if flag == os.O_RDONLY { // read only (O_RDONLY is 0x0)
+		read = true
+	}
+
+	_ = exclusive
+
+	var fi *mfs.File
+
+	target, err := mfs.Lookup(m.mr, path)
+	switch err {
+	case nil:
+		var ok bool
+		fi, ok = target.(*mfs.File)
+		if !ok {
+			_, isdir := target.(*mfs.Directory)
+			if !isdir {
+				return 0, xerrors.Errorf("file '%s' is neither a file or a directory", path)
+			}
+			if !mustDir {
+				return 0, xerrors.Errorf("can open a dir as a file")
+			}
+			return m.allocHandle(&mfsHandle{
+				mr:   m.mr,
+				mfdf: nil,
+				mfdi: target.(*mfs.Directory),
+				path: path,
+			}), nil
+		}
+
+	case os.ErrNotExist:
+		if !create || mustDir {
+			return 0, err
+		}
+
+		// if create is specified and the file doesn't exist, we create the file
+		dirname, fname := gopath.Split(path)
+		pdir, err := getParentDir(m.mr, dirname)
+		if err != nil {
+			return 0, err
+		}
+
+		nd := dag.NodeWithData(ft.FilePBData(nil, 0))
+		nd.SetCidBuilder(v1CidPrefix)
+		err = pdir.AddChild(fname, nd)
+		if err != nil {
+			return 0, err
+		}
+
+		fsn, err := pdir.Child(fname)
+		if err != nil {
+			return 0, err
+		}
+
+		var ok bool
+		fi, ok = fsn.(*mfs.File)
+		if !ok {
+			return 0, xerrors.New("expected *mfs.File, didn't get it. This is likely a race condition")
+		}
+	default:
+		return 0, err
+	}
+
+	fi.RawLeaves = true
+
+	fd, err := fi.Open(mfs.Flags{Read: read, Write: write, Sync: flush})
+	if err != nil {
+		return 0, xerrors.Errorf("mfsfile open (%t %t %t, %x): %w", read, write, flush, flag, err)
+	}
+
+	if truncate {
+		if err := fd.Truncate(0); err != nil {
+			return 0, xerrors.Errorf("truncate: %w", err)
+		}
+	}
+
+	seek := io.SeekStart
+	if app {
+		seek = io.SeekEnd
+	}
+
+	_, err = fd.Seek(0, seek)
+	if err != nil {
+		return 0, xerrors.Errorf("mfs open seek: %w", err)
+	}
+
+	return m.allocHandle(&mfsHandle{
+		mr: m.mr,
+
+		mfdf: fd,
+		mfdi: nil,
+
+		path: path,
+	}), nil
+}
+
+func getParentDir(root *mfs.Root, dir string) (*mfs.Directory, error) {
+	parent, err := mfs.Lookup(root, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	pdir, ok := parent.(*mfs.Directory)
+	if !ok {
+		return nil, xerrors.New("expected *mfs.Directory, didn't get it. This is likely a race condition")
+	}
+	return pdir, nil
 }
 
 func (m *mfsSmbFs) Close(handle vfs.VfsHandle) error {
@@ -173,9 +330,11 @@ func (m *mfsSmbFs) Lookup(handle vfs.VfsHandle, s string) (*vfs.Attributes, erro
 }
 
 func (m *mfsSmbFs) Mkdir(s string, mode int) (*vfs.Attributes, error) {
+	panic("mkparents")
+
 	err := mfs.Mkdir(m.mr, s, mfs.MkdirOpts{
 		Mkparents: false,
-		Flush:     false,
+		Flush:     true,
 	})
 	if err != nil {
 		return nil, xerrors.Errorf("mfs mkdir: %w", err)
@@ -193,14 +352,72 @@ func (m *mfsSmbFs) Write(handle vfs.VfsHandle, bytes []byte, u uint64, i int) (i
 	panic("implement me")
 }
 
-func (m *mfsSmbFs) OpenDir(s string) (vfs.VfsHandle, error) {
-	//TODO implement me
-	panic("implement me")
+func (m *mfsSmbFs) OpenDir(name string) (vfs.VfsHandle, error) {
+	return m.open(name, 0, 0, true)
 }
 
-func (m *mfsSmbFs) ReadDir(handle vfs.VfsHandle, i int, i2 int) ([]vfs.DirInfo, error) {
-	//TODO implement me
-	panic("implement me")
+var errHalt = errors.New("halt readdir")
+
+func (m *mfsSmbFs) ReadDir(handle vfs.VfsHandle, pos int, maxEntries int) ([]vfs.DirInfo, error) {
+	hnd, done, err := m.getOpenHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	if hnd.mfdi == nil {
+		return nil, xerrors.Errorf("not a directory")
+	}
+
+	var out []vfs.DirInfo
+
+	// todo fd dir pos AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+	err = hnd.mfdi.ForEachEntry(context.TODO(), func(nl mfs.NodeListing) error {
+		if pos > 0 {
+			pos--
+			return nil
+		}
+
+		if maxEntries == 0 {
+			return errHalt
+		}
+
+		if maxEntries > 0 {
+			maxEntries--
+		}
+
+		var a vfs.DirInfo
+		a.Name = nl.Name
+
+		mode := os.FileMode(0644)
+		if nl.Type == int(mfs.TDir) {
+			mode = os.FileMode(0755) | os.ModeDir
+		}
+
+		a.SetInodeNumber(123) // todo this may be very bad)
+		a.SetSizeBytes(uint64(nl.Size))
+		a.SetDiskSizeBytes(uint64(nl.Size))
+		a.SetUnixMode(uint32(mode))
+		a.SetPermissions(vfs.NewPermissionsFromMode(uint32(mode)))
+		a.SetAccessTime(fileTime)
+		a.SetLastDataModificationTime(fileTime)
+		a.SetBirthTime(fileTime)
+		a.SetLastStatusChangeTime(fileTime)
+
+		if nl.Type == int(mfs.TDir) {
+			a.SetFileType(vfs.FileTypeDirectory)
+		} else {
+			a.SetFileType(vfs.FileTypeRegularFile)
+		}
+
+		out = append(out)
+		return nil
+	})
+	if err != nil && err != errHalt {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (m *mfsSmbFs) Readlink(handle vfs.VfsHandle) (string, error) {
@@ -270,4 +487,18 @@ func getNodeFromPath(ctx context.Context, mr *mfs.Root, p string) (format.Node, 
 	}
 }
 
-// todo grep log use of closed file
+func checkPath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("paths must not be empty")
+	}
+
+	if p[0] != '/' {
+		return "", fmt.Errorf("paths must start with a leading slash")
+	}
+
+	cleaned := gopath.Clean(p)
+	if p[len(p)-1] == '/' && p != "/" {
+		cleaned += "/"
+	}
+	return cleaned, nil
+}
