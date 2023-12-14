@@ -350,6 +350,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+										  AND (failed = 0 OR (rejected = 0 AND failed = 1 AND  start_time >= strftime('%s', 'now', '-100 hours')))
 									) and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 15`,
 		group, pieceSize, pieceSize)
 	if err != nil {
@@ -385,6 +386,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+										  AND (failed = 0 OR (rejected = 0 AND failed = 1 AND  start_time >= strftime('%s', 'now', '-100 hours')))
 									) and booster_http = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
@@ -412,6 +414,7 @@ func (r *ribsDB) SelectDealProviders(group iface.GroupKey, pieceSize int64, veri
 									WHERE id NOT IN (
 										SELECT provider_addr FROM deals	WHERE group_id = ?
 										  AND (rejected = 0 OR (rejected = 1 AND start_time >= strftime('%s', 'now', '-24 hours')))
+										  AND (failed = 0 OR (rejected = 0 AND failed = 1 AND  start_time >= strftime('%s', 'now', '-100 hours')))
 									) and booster_bitswap = 1 and ask_min_piece_size <= ? and ask_max_piece_size >= ? order by random() limit 7`, group, pieceSize, pieceSize)
 	if err != nil {
 		return nil, xerrors.Errorf("querying providers: %w", err)
