@@ -292,7 +292,7 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	go r.repairWorker(context.TODO(), 1)
 	go r.repairWorker(context.TODO(), 2)
 	go r.repairWorker(context.TODO(), 3)
-	go r.repairWorker(context.TODO(), 4)
+	/*go r.repairWorker(context.TODO(), 4)
 	go r.repairWorker(context.TODO(), 5)
 	go r.repairWorker(context.TODO(), 6)
 	go r.repairWorker(context.TODO(), 7)

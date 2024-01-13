@@ -27,6 +27,8 @@ type ribsDB struct {
 
 	dealSummaryCq *ributil.CachedQuery[iface.DealSummary]
 	reachableCq   *ributil.CachedQuery[[]iface.ProviderMeta]
+
+	lastAnalyzed time.Time
 }
 
 var pragmas = []string{
@@ -111,6 +113,8 @@ create table if not exists deals (
     retrieval_probe_prev_ttfb_ms integer
 );
 
+CREATE TABLE IF NOT EXISTS deals_archive AS SELECT * FROM deals WHERE 0;
+
 /* SP tracker */
 create table if not exists providers (
     id integer not null constraint providers_pk primary key,
@@ -162,6 +166,7 @@ create table if not exists repairs
 drop view if exists sp_deal_stats_view;
 drop view if exists sp_retr_stats_view;
 drop view if exists bad_providers_new_reject_view;
+drop view if exists good_providers_view;
 
 CREATE VIEW IF NOT EXISTS bad_providers_new_reject_view AS
     SELECT 
@@ -169,7 +174,7 @@ CREATE VIEW IF NOT EXISTS bad_providers_new_reject_view AS
     FROM 
         deals d
     WHERE 
-        d.start_time >= strftime('%%s', 'now', '-2 hours')
+        d.start_time >= strftime('%s', 'now', '-2 hours')
     GROUP BY
         d.provider_addr
     HAVING 
@@ -196,7 +201,7 @@ CREATE VIEW IF NOT EXISTS sp_deal_stats_view AS
             JOIN
         groups g ON d.group_id = g.id
     WHERE
-        d.start_time >= strftime('%%s', 'now', '-3 days')
+        d.start_time >= strftime('%s', 'now', '-3 days')
     GROUP BY
         d.provider_addr;
 
@@ -212,26 +217,30 @@ WHERE
 GROUP BY
     d.provider_addr;
 
-CREATE TABLE if not exists good_providers (
-  id INTEGER PRIMARY KEY,
-  ping_ok INTEGER,
+CREATE TABLE IF NOT EXISTS bad_providers_new_reject AS SELECT * FROM bad_providers_new_reject_view WHERE 0;
+CREATE TABLE IF NOT EXISTS sp_deal_stats AS SELECT * FROM sp_deal_stats_view WHERE 0;
+CREATE TABLE IF NOT EXISTS sp_retr_stats AS SELECT * FROM sp_retr_stats_view WHERE 0;
 
-  boost_deals INTEGER,
-  booster_http INTEGER,
-  booster_bitswap INTEGER,
-
-  indexed_success INTEGER,
-  indexed_fail INTEGER,
-
-  retrprobe_success INTEGER,
-  retrprobe_fail INTEGER,
-  retrprobe_blocks INTEGER, 
-  retrprobe_bytes INTEGER,
-
-  ask_price INTEGER,
-  ask_verif_price INTEGER,
-  ask_min_piece_size INTEGER,
-  ask_max_piece_size INTEGER
+CREATE TABLE IF NOT EXISTS good_providers (
+	id INTEGER PRIMARY KEY,
+	ping_ok INTEGER,
+	
+	boost_deals INTEGER,
+	booster_http INTEGER,
+	booster_bitswap INTEGER,
+	
+	indexed_success INTEGER,
+	indexed_fail INTEGER,
+	
+	retrprobe_success INTEGER,
+	retrprobe_fail INTEGER,
+	retrprobe_blocks INTEGER, 
+	retrprobe_bytes INTEGER,
+	
+	ask_price INTEGER,
+	ask_verif_price INTEGER,
+	ask_min_piece_size INTEGER,
+	ask_max_piece_size INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_providers_eligible ON providers(in_market, ping_ok, ask_ok, ask_min_piece_size, ask_max_piece_size);
@@ -262,6 +271,8 @@ func openRibsDB(root string) (*ribsDB, error) {
 
 	rd := &ribsDB{
 		db: db,
+
+		lastAnalyzed: time.Now(),
 	}
 
 	rd.dealSummaryCq = ributil.NewCachedQuery[iface.DealSummary](1*time.Minute, rd.dealSummary)
@@ -270,16 +281,44 @@ func openRibsDB(root string) (*ribsDB, error) {
 	return rd, nil
 }
 
+var analyzeInterval = 6 * time.Hour
+
 func (r *ribsDB) startDB() error {
-	if err := refreshGoodProviders(r.db); err != nil {
-		return xerrors.Errorf("initial good provider refresh: %w", err)
+	if err := timeDBOp("refresh_bad_providers_new_reject", r.db, refreshViewTable("bad_providers_new_reject")); err != nil {
+		return err
+	}
+	if err := timeDBOp("refresh_sp_deal_stats", r.db, refreshViewTable("sp_deal_stats")); err != nil {
+		return err
+	}
+	if err := timeDBOp("refresh_sp_retr_stats", r.db, refreshViewTable("sp_retr_stats")); err != nil {
+		return err
+	}
+	if err := timeDBOp("refresh_good_providers", r.db, refreshGoodProviders()); err != nil {
+		return err
 	}
 
 	go func() {
 		for {
 			time.Sleep(2 * time.Minute)
-			if err := refreshGoodProviders(r.db); err != nil {
-				log.Errorw("refreshing good providers", "error", err)
+			if err := timeDBOp("refresh_bad_providers_new_reject", r.db, refreshViewTable("bad_providers_new_reject")); err != nil {
+				continue
+			}
+			if err := timeDBOp("refresh_sp_deal_stats", r.db, refreshViewTable("sp_deal_stats")); err != nil {
+				continue
+			}
+			if err := timeDBOp("refresh_sp_retr_stats", r.db, refreshViewTable("sp_retr_stats")); err != nil {
+				continue
+			}
+			if err := timeDBOp("refresh_good_providers", r.db, refreshGoodProviders()); err != nil {
+				continue
+			}
+
+			if time.Since(r.lastAnalyzed) > analyzeInterval {
+				_ = timeDBOp("analyze", r.db, func(db *ributil.RetryDB) error {
+					_, err := db.Exec("ANALYZE")
+					return err
+				})
+				r.lastAnalyzed = time.Now()
 			}
 		}
 	}()
@@ -287,7 +326,67 @@ func (r *ribsDB) startDB() error {
 	return nil
 }
 
-func refreshGoodProviders(db *ributil.RetryDB) error {
+func timeDBOp(name string, db *ributil.RetryDB, f func(db *ributil.RetryDB) error) error {
+	start := time.Now()
+	err := f(db)
+	log.Errorw("DB op time", "name", name, "took", time.Since(start), "error", err)
+	return err
+}
+
+func refreshViewTable(name string) func(db *ributil.RetryDB) error {
+	return func(db *ributil.RetryDB) error {
+		tempTable := name + "_tmp"
+		viewTable := name + "_view"
+		targetTable := name
+
+		_, err := db.Exec(`
+		CREATE TEMP TABLE ` + tempTable + ` AS SELECT * FROM ` + viewTable + `;
+		DELETE FROM ` + targetTable + `;
+		INSERT INTO ` + targetTable + ` SELECT * FROM ` + tempTable + `;
+		DROP TABLE ` + tempTable + `;`)
+
+		return err
+	}
+}
+
+func refreshGoodProviders() func(db *ributil.RetryDB) error {
+	return func(db *ributil.RetryDB) error {
+		_, err := db.Exec(fmt.Sprintf(`
+	CREATE TEMP TABLE good_providers_tmp_imm1 AS SELECT p.* FROM providers p
+		 LEFT JOIN bad_providers_new_reject bp ON p.id = bp.sp_id
+	WHERE p.in_market = 1
+		AND p.ping_ok = 1
+        AND p.ask_ok = 1
+        AND p.ask_min_piece_size <= %d
+        AND p.ask_max_piece_size >= %d
+		AND bp.sp_id IS NULL;  -- Excludes bad providers
+
+	CREATE TEMP TABLE good_providers_tmp AS SELECT 
+        p.id, p.ping_ok, p.boost_deals, p.booster_http, p.booster_bitswap,
+        p.indexed_success, p.indexed_fail,
+        p.retrprobe_success, p.retrprobe_fail, p.retrprobe_blocks, p.retrprobe_bytes,
+        p.ask_price, p.ask_verif_price, p.ask_min_piece_size, p.ask_max_piece_size
+    FROM 
+        good_providers_tmp_imm1 p
+        LEFT JOIN sp_deal_stats ds ON p.id = ds.sp_id
+        LEFT JOIN sp_retr_stats rs ON p.id = rs.sp_id
+    WHERE
+        (ds.failed_all IS NULL OR ds.failed_all = 0)
+        AND (rs.unretrievable_deals IS NULL OR (rs.unretrievable_deals <= 1 OR rs.retrievable_deals >= 0.7 * (rs.retrievable_deals + rs.unretrievable_deals) )) /* has up to 1 unretrievable deals, or most are retrievable  */
+    ORDER BY
+        (p.booster_bitswap + p.booster_http) ASC, p.boost_deals ASC, p.id DESC;
+
+		DROP TABLE good_providers_tmp_imm1;
+
+		DELETE FROM good_providers;
+		INSERT INTO good_providers SELECT * FROM good_providers_tmp;
+		DROP TABLE good_providers_tmp;`, maxPieceSize, minPieceSize))
+
+		return err
+	}
+}
+
+func refreshGoodProviders5(db *ributil.RetryDB) error {
 	// Query to populate good_providers table
 	q := `
     INSERT INTO good_providers
