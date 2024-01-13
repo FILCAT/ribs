@@ -5,9 +5,12 @@ import (
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	trustlessutils "github.com/ipld/go-trustless-utils"
+	pool "github.com/libp2p/go-buffer-pool"
+	"github.com/lotus-web3/ribs/carlog"
 	"github.com/multiformats/go-multiaddr"
+	"io"
 	"math/rand"
-	"sort"
+	"net/http"
 	"sync"
 	"time"
 
@@ -129,11 +132,6 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		samples[candidate.Group] = sample
 	}
 
-	// sort candidates by sp id
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Provider < candidates[j].Provider
-	})
-
 	type timeoutEntry struct {
 		lastTimeout         time.Time
 		consecutiveTimeouts int
@@ -143,10 +141,6 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 	var timeoutLk sync.Mutex
 
 	for _, candidate := range candidates {
-		if candidate.Provider != 2620 {
-			continue
-		}
-
 		r.rckStarted.Add(1)
 
 		timeoutLk.Lock()
@@ -221,8 +215,6 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 				})
 			}*/
 			if len(addrInfo.BitswapMaddrs) > 0 {
-				log.Errorw("candidate has bitswap addrs", "provider", candidate.Provider)
-
 				bsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.BitswapMaddrs...)
 				if err != nil {
 					log.Errorw("failed to bitswap parse addrinfo", "provider", candidate.Provider, "err", err)
@@ -269,7 +261,113 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			})
 		}
 
-		////
+		//// http path, maybe
+		if len(addrInfo.HttpMaddrs) > 0 {
+			u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
+			if err != nil {
+				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				goto lassie
+			}
+
+			start := time.Now()
+			var firstByte time.Time
+
+			err = func() error {
+				ctx, cancel := context.WithTimeout(ctx, retrievalCheckTimeout)
+				defer cancel()
+
+				req, err := http.NewRequestWithContext(ctx, "GET", u.String()+"/ipfs/"+cidToGet.String(), nil)
+				if err != nil {
+					cancel()
+					return xerrors.Errorf("failed to create request: %w", err)
+				}
+
+				req.Header.Set("Accept", "application/vnd.ipld.raw;")
+				req.Header.Set("User-Agent", "ribs/0.0.0")
+
+				resp, err := http.DefaultClient.Do(req) // todo use a tuned client
+				if err != nil {
+					log.Errorw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("failed to do request: %w", err)
+				}
+
+				firstByte = time.Now()
+
+				if resp.StatusCode != 200 {
+					_ = resp.Body.Close()
+					log.Errorw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("non-200 response: %d", resp.StatusCode)
+				}
+
+				// read and validate block
+				/*if carlog.MaxEntryLen < resp.ContentLength {
+					_ = resp.Body.Close()
+					log.Errorw("http retrieval failed (response too large)", "size", resp.ContentLength, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("response too large: %d", resp.ContentLength)
+				}
+
+				if resp.ContentLength < 0 {
+					_ = resp.Body.Close()
+					log.Errorw("http retrieval failed (response has no content length)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("response has no content length, or bad content length: %d", resp.ContentLength)
+				}*/
+
+				//bbuf := pool.Get(int(resp.ContentLength)) todo not easy because promise stuff
+				//buf := make([]byte, carlog.MaxEntryLen)
+				bbuf := pool.Get(carlog.MaxEntryLen)
+				defer pool.Put(bbuf)
+
+				n, err := io.ReadFull(resp.Body, bbuf)
+				if err != nil && err != io.ErrUnexpectedEOF {
+					_ = resp.Body.Close()
+					log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("failed to read response: %w", err)
+				}
+				bbuf = bbuf[:n]
+
+				if err := resp.Body.Close(); err != nil {
+					log.Errorw("http retrieval failed (failed to close response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("failed to close response: %w", err)
+				}
+
+				checkCid, err := cidToGet.Prefix().Sum(bbuf)
+				if err != nil {
+					log.Errorw("http retrieval failed (failed to hash response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+					return xerrors.Errorf("failed to hash response: %w", err)
+				}
+
+				if !checkCid.Equals(cidToGet) {
+					log.Errorw("http retrieval failed (response hash mismatch!!!)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider, "expected", cidToGet, "actual", checkCid)
+					return xerrors.Errorf("response hash mismatch")
+				}
+
+				return nil
+			}()
+			if err != nil {
+				log.Errorw("failed to get http", "provider", candidate.Provider, "err", err)
+				goto lassie
+			}
+
+			// record success
+			err = r.db.RecordRetrievalCheckResult(candidate.DealID, RetrievalResult{
+				Success:         true,
+				Error:           "",
+				Duration:        time.Since(start),
+				TimeToFirstByte: firstByte.Sub(start),
+			})
+			if err != nil {
+				return xerrors.Errorf("failed to record retrieval check result: %w", err)
+			}
+
+			r.rckSuccess.Add(1)
+			r.rckSuccessAll.Add(1)
+
+			log.Errorw("http retrieval check success", "provider", candidate.Provider, "group", candidate.Group, "took", time.Since(start))
+			continue
+		}
+	lassie:
+
+		//// lassie path
 
 		prf.lk.Lock()
 		prf.lookups[cidToGet] = cs
@@ -287,7 +385,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			RetrievalID:       must.One(types.NewRetrievalID()),
 			LinkSystem:        linkSystem,
 			PreloadLinkSystem: linkSystem,
-			Protocols:         []multicodec.Code{multicodec.TransportGraphsyncFilecoinv1, multicodec.TransportBitswap /*, multicodec.TransportIpfsGatewayHttp*/},
+			Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1 /*, multicodec.TransportIpfsGatewayHttp*/},
 			MaxBlocks:         10,
 			FixedPeers:        fixedPeer,
 
@@ -309,7 +407,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		ctx, done := context.WithTimeout(ctx, retrievalCheckTimeout)
 
 		stat, err := lsi.Fetch(ctx, request, types.WithEventsCallback(func(event types.RetrievalEvent) {
-			log.Errorw("retr event", "event", event.String())
+			//log.Errorw("retr event", "event", event.String())
 		}))
 
 		done()
@@ -331,8 +429,8 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			r.rckFail.Add(1)
 			r.rckFailAll.Add(1)
 
+			timeoutLk.Lock()
 			if time.Since(start) > retrievalCheckTimeout {
-				timeoutLk.Lock()
 				v, ok := timeoutCache.Get(candidate.Provider)
 				if !ok {
 					v = &timeoutEntry{
@@ -342,8 +440,14 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 				v.consecutiveTimeouts++
 				v.lastTimeout = time.Now()
 				timeoutCache.Add(candidate.Provider, v)
-				timeoutLk.Unlock()
+			} else {
+				v, ok := timeoutCache.Peek(candidate.Provider)
+				if ok {
+					v.consecutiveTimeouts = 0
+					timeoutCache.Add(candidate.Provider, v)
+				}
 			}
+			timeoutLk.Unlock()
 		}
 
 		prf.lk.Lock()
