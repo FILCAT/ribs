@@ -33,9 +33,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-var retrievalCheckTimeout = 7 * time.Second
+var retrievalCheckTimeout = 30 * time.Second
 var maxConsecutiveTimeouts = 5
 var consecutiveTimoutsForgivePeriod = 10 * time.Minute
+var parallelChecks = 30
 
 type ProbingRetrievalFinder struct {
 	lk      sync.Mutex
@@ -141,7 +142,11 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 	timeoutCache := must.One(lru.New[int64, *timeoutEntry](1000))
 
+	checkThrottle := make(chan struct{}, parallelChecks)
+
 	for _, candidate := range candidates {
+		candidate := candidate
+
 		r.rckStarted.Add(1)
 
 		timeoutLk.Lock()
@@ -217,7 +222,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 					Metadata: metadata.Default.New(&metadata.IpfsGatewayHttp{}),
 				})
 			}*/
-			if len(addrInfo.BitswapMaddrs) > 0 {
+			/*if len(addrInfo.BitswapMaddrs) > 0 {
 				bsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.BitswapMaddrs...)
 				if err != nil {
 					log.Errorw("failed to bitswap parse addrinfo", "provider", candidate.Provider, "err", err)
@@ -233,7 +238,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 						Metadata:  metadata.Default.New(&metadata.Bitswap{}),
 					})
 				}
-			}
+			}*/
 
 			gsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.LibP2PMaddrs...)
 			if err != nil {
@@ -272,11 +277,20 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			})
 		}
 
-		err = r.retrievalCheckCandidate(ctx, candidate, addrInfo, cidToGet, group, fixedPeer, prf, lsi, timeoutCache, cs)
-		if err != nil {
-			log.Errorw("failed to check candidate", "error", err)
-			continue
-		}
+		checkThrottle <- struct{}{}
+		go func() {
+			defer func() {
+				<-checkThrottle
+			}()
+			err = r.retrievalCheckCandidate(ctx, candidate, addrInfo, cidToGet, group, fixedPeer, prf, lsi, timeoutCache, cs)
+			if err != nil {
+				log.Errorw("failed to check candidate", "error", err)
+			}
+		}()
+	}
+
+	for i := 0; i < parallelChecks; i++ {
+		checkThrottle <- struct{}{}
 	}
 
 	return nil
@@ -408,7 +422,7 @@ lassie:
 		RetrievalID:       must.One(types.NewRetrievalID()),
 		LinkSystem:        linkSystem,
 		PreloadLinkSystem: linkSystem,
-		Protocols:         []multicodec.Code{multicodec.TransportBitswap, multicodec.TransportGraphsyncFilecoinv1 /*, multicodec.TransportIpfsGatewayHttp*/},
+		Protocols:         []multicodec.Code{ /*multicodec.TransportBitswap,*/ multicodec.TransportGraphsyncFilecoinv1 /*, multicodec.TransportIpfsGatewayHttp*/},
 		MaxBlocks:         10,
 		FixedPeers:        fixedPeer,
 

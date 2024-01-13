@@ -281,17 +281,17 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	}
 
 	go r.spCrawler()
-	//go r.dealTracker(context.TODO())
+	go r.dealTracker(context.TODO())
 	go r.watchMarket(context.TODO())
 	go r.retrievalChecker(context.TODO())
 	if err := r.setupCarServer(context.TODO(), r.host); err != nil {
 		return nil, xerrors.Errorf("setup car server: %w", err)
 	}
 
-	/*go r.repairWorker(context.TODO(), 0)
+	go r.repairWorker(context.TODO(), 0)
 	go r.repairWorker(context.TODO(), 1)
 	go r.repairWorker(context.TODO(), 2)
-	go r.repairWorker(context.TODO(), 3)*/
+	go r.repairWorker(context.TODO(), 3)
 	/*go r.repairWorker(context.TODO(), 4)
 	go r.repairWorker(context.TODO(), 5)
 	go r.repairWorker(context.TODO(), 6)
