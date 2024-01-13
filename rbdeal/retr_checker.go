@@ -2,8 +2,11 @@ package rbdeal
 
 import (
 	"context"
+	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
 	trustlessutils "github.com/ipld/go-trustless-utils"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -28,6 +31,8 @@ import (
 )
 
 var retrievalCheckTimeout = 7 * time.Second
+var maxConsecutiveTimeouts = 3
+var consecutiveTimoutsForgivePeriod = 15 * time.Minute
 
 type ProbingRetrievalFinder struct {
 	lk      sync.Mutex
@@ -124,11 +129,65 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		samples[candidate.Group] = sample
 	}
 
+	// sort candidates by sp id
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Provider < candidates[j].Provider
+	})
+
+	type timeoutEntry struct {
+		lastTimeout         time.Time
+		consecutiveTimeouts int
+	}
+
+	timeoutCache := must.One(lru.New[int64, *timeoutEntry](1000))
+	var timeoutLk sync.Mutex
+
 	for _, candidate := range candidates {
 		r.rckStarted.Add(1)
 
+		timeoutLk.Lock()
+
+		v, ok := timeoutCache.Get(candidate.Provider)
+		if ok {
+			if v.lastTimeout.Add(consecutiveTimoutsForgivePeriod).Before(time.Now()) {
+				v.consecutiveTimeouts = 0 // forgive
+			}
+			if v.consecutiveTimeouts >= maxConsecutiveTimeouts {
+				log.Errorw("skipping provider due to consecutive timeouts", "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID)
+
+				res := RetrievalResult{
+					Success:         false,
+					Error:           fmt.Sprintf("skipped due to %d consecutive timeouts", v.consecutiveTimeouts),
+					Duration:        time.Second,
+					TimeToFirstByte: 0,
+				}
+
+				err = r.db.RecordRetrievalCheckResult(candidate.DealID, res)
+				if err != nil {
+					return xerrors.Errorf("failed to record retrieval check result: %w", err)
+				}
+
+				r.rckFail.Add(1)
+				r.rckFailAll.Add(1)
+
+				timeoutLk.Unlock()
+				continue
+			}
+		}
+
+		timeoutLk.Unlock()
+
+	retryGetSample:
 		hashToGet := samples[candidate.Group][rand.Intn(len(samples[candidate.Group]))]
 		cidToGet := cid.NewCidV1(cid.Raw, hashToGet)
+
+		prf.lk.Lock()
+		_, ok = prf.lookups[cidToGet]
+		prf.lk.Unlock()
+		if ok {
+			time.Sleep(1 * time.Millisecond)
+			goto retryGetSample
+		}
 
 		group := groups[candidate.Group]
 
@@ -198,7 +257,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 		var res RetrievalResult
 		if err == nil {
-			log.Debugw("retrieval stat", "stat", stat)
+			log.Debugw("retrieval stat", "stat", stat, "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID, "took", time.Since(start))
 			res.Success = true
 			res.Duration = time.Since(start)
 			res.TimeToFirstByte = stat.TimeToFirstByte
@@ -206,12 +265,26 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			r.rckSuccess.Add(1)
 			r.rckSuccessAll.Add(1)
 		} else {
-			log.Errorw("failed to fetch", "error", err)
+			log.Errorw("failed to fetch", "error", err, "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID, "took", time.Since(start))
 			res.Success = false
 			res.Error = err.Error()
 
 			r.rckFail.Add(1)
 			r.rckFailAll.Add(1)
+
+			if time.Since(start) > retrievalCheckTimeout {
+				timeoutLk.Lock()
+				v, ok := timeoutCache.Get(candidate.Provider)
+				if !ok {
+					v = &timeoutEntry{
+						lastTimeout: time.Now(),
+					}
+				}
+				v.consecutiveTimeouts++
+				v.lastTimeout = time.Now()
+				timeoutCache.Add(candidate.Provider, v)
+				timeoutLk.Unlock()
+			}
 		}
 
 		prf.lk.Lock()
