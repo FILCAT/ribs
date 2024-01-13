@@ -5,12 +5,12 @@ import (
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	trustlessutils "github.com/ipld/go-trustless-utils"
+	"github.com/multiformats/go-multiaddr"
 	"math/rand"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/blockstore"
@@ -31,12 +31,12 @@ import (
 )
 
 var retrievalCheckTimeout = 7 * time.Second
-var maxConsecutiveTimeouts = 3
-var consecutiveTimoutsForgivePeriod = 15 * time.Minute
+var maxConsecutiveTimeouts = 5
+var consecutiveTimoutsForgivePeriod = 10 * time.Minute
 
 type ProbingRetrievalFinder struct {
 	lk      sync.Mutex
-	lookups map[cid.Cid]types.RetrievalCandidate
+	lookups map[cid.Cid][]types.RetrievalCandidate
 }
 
 func (p *ProbingRetrievalFinder) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
@@ -49,7 +49,7 @@ func (p *ProbingRetrievalFinder) FindCandidates(ctx context.Context, cid cid.Cid
 		return nil, nil
 	}
 
-	return []types.RetrievalCandidate{lu}, nil
+	return lu, nil
 }
 
 func (p *ProbingRetrievalFinder) FindCandidatesAsync(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
@@ -73,7 +73,7 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 	defer closer()
 
 	rf := &ProbingRetrievalFinder{
-		lookups: map[cid.Cid]types.RetrievalCandidate{},
+		lookups: map[cid.Cid][]types.RetrievalCandidate{},
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithProviderAllowList(map[peer.ID]bool{}),
@@ -143,6 +143,10 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 	var timeoutLk sync.Mutex
 
 	for _, candidate := range candidates {
+		if candidate.Provider != 2620 {
+			continue
+		}
+
 		r.rckStarted.Add(1)
 
 		timeoutLk.Lock()
@@ -162,10 +166,12 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 					TimeToFirstByte: 0,
 				}
 
-				err = r.db.RecordRetrievalCheckResult(candidate.DealID, res)
+				_ = res
+				// don't record for now, just skip trying
+				/*err = r.db.RecordRetrievalCheckResult(candidate.DealID, res)
 				if err != nil {
 					return xerrors.Errorf("failed to record retrieval check result: %w", err)
-				}
+				}*/
 
 				r.rckFail.Add(1)
 				r.rckFailAll.Add(1)
@@ -191,29 +197,82 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 		group := groups[candidate.Group]
 
-		maddr, err := address.NewIDAddress(uint64(candidate.Provider))
-		if err != nil {
-			return xerrors.Errorf("new id address: %w", err)
-		}
-
-		addrInfo, err := GetAddrInfo(ctx, gw, maddr)
+		addrInfo, err := r.db.GetProviderAddrs(candidate.Provider)
 		if err != nil {
 			log.Errorw("failed to get addr info", "error", err)
 			continue
 		}
 
-		cent := types.RetrievalCandidate{
-			MinerPeer: *addrInfo,
-			RootCid:   cidToGet,
-			Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{
-				PieceCID:      group.PieceCid,
-				VerifiedDeal:  candidate.Verified,
-				FastRetrieval: candidate.FastRetr,
-			}),
+		////
+
+		cs := make([]types.RetrievalCandidate, 0, len(candidates))
+		var fixedPeer []peer.AddrInfo
+		{
+			/*if len(addrInfo.HttpMaddrs) > 0 {
+				log.Errorw("candidate has http addrs", "provider", candidate.Provider)
+
+				cs = append(cs, types.RetrievalCandidate{
+					MinerPeer: peer.AddrInfo{
+						ID:    "",
+						Addrs: addrInfo.HttpMaddrs,
+					},
+					RootCid:  cidToGet,
+					Metadata: metadata.Default.New(&metadata.IpfsGatewayHttp{}),
+				})
+			}*/
+			if len(addrInfo.BitswapMaddrs) > 0 {
+				log.Errorw("candidate has bitswap addrs", "provider", candidate.Provider)
+
+				bsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.BitswapMaddrs...)
+				if err != nil {
+					log.Errorw("failed to bitswap parse addrinfo", "provider", candidate.Provider, "err", err)
+					continue
+				}
+
+				for _, ai := range bsAddrInfo {
+					cs = append(cs, types.RetrievalCandidate{
+						MinerPeer: ai,
+						RootCid:   cidToGet,
+						Metadata:  metadata.Default.New(&metadata.Bitswap{}),
+					})
+				}
+			}
+
+			gsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.LibP2PMaddrs...)
+			if err != nil {
+				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				continue
+			}
+
+			if len(gsAddrInfo) == 0 {
+				log.Errorw("no gs addrinfo", "provider", candidate.Provider)
+				continue
+			}
+
+			allMaddrs := append([]multiaddr.Multiaddr{}, addrInfo.BitswapMaddrs...)
+			allMaddrs = append(allMaddrs, addrInfo.LibP2PMaddrs...)
+
+			fixedPeer, err = peer.AddrInfosFromP2pAddrs(allMaddrs...)
+			if err != nil {
+				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				continue
+			}
+
+			cs = append(cs, types.RetrievalCandidate{
+				MinerPeer: gsAddrInfo[0],
+				RootCid:   cidToGet,
+				Metadata: metadata.Default.New(&metadata.GraphsyncFilecoinV1{
+					PieceCID:      group.PieceCid,
+					VerifiedDeal:  candidate.Verified,
+					FastRetrieval: candidate.FastRetr,
+				}),
+			})
 		}
 
+		////
+
 		prf.lk.Lock()
-		prf.lookups[cidToGet] = cent
+		prf.lookups[cidToGet] = cs
 		prf.lk.Unlock()
 
 		wstor := &ributil.IpldStoreWrapper{BS: blockstore.NewMemorySync()}
@@ -228,9 +287,9 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			RetrievalID:       must.One(types.NewRetrievalID()),
 			LinkSystem:        linkSystem,
 			PreloadLinkSystem: linkSystem,
-			Protocols:         []multicodec.Code{multicodec.TransportGraphsyncFilecoinv1},
+			Protocols:         []multicodec.Code{multicodec.TransportGraphsyncFilecoinv1, multicodec.TransportBitswap /*, multicodec.TransportIpfsGatewayHttp*/},
 			MaxBlocks:         10,
-			FixedPeers:        []peer.AddrInfo{*addrInfo},
+			FixedPeers:        fixedPeer,
 
 			Request: trustlessutils.Request{
 				Root:       cidToGet,
@@ -250,7 +309,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 		ctx, done := context.WithTimeout(ctx, retrievalCheckTimeout)
 
 		stat, err := lsi.Fetch(ctx, request, types.WithEventsCallback(func(event types.RetrievalEvent) {
-			//log.Errorw("retr event", "event", event.String())
+			log.Errorw("retr event", "event", event.String())
 		}))
 
 		done()
