@@ -15,6 +15,7 @@ func main() {
 			carlogCmd,
 			idxLevelCmd,
 			ldbcidCmd,
+			groupCmd,
 		},
 	}
 
