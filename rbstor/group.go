@@ -350,6 +350,10 @@ type carStorageWrapper struct {
 	group   iface.GroupKey
 }
 
+func (c *carStorageWrapper) Has(ctx context.Context) (bool, error) {
+	return c.storage.HasCar(ctx, c.group)
+}
+
 func (c *carStorageWrapper) ReadAt(p []byte, off int64) (n int, err error) {
 	rc, err := c.storage.ReadCar(context.TODO(), c.group, off, int64(len(p)))
 	if err != nil {

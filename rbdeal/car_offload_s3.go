@@ -410,6 +410,14 @@ type ribsStagingProvider struct {
 	r *ribs
 }
 
+func (r *ribsStagingProvider) HasCar(ctx context.Context, group iface.GroupKey) (bool, error) {
+	has, err := r.r.db.HasS3Offload(group)
+	if err != nil {
+		return false, xerrors.Errorf("failed to check if group %d has S3 offload: %w", group, err)
+	}
+	return has, nil
+}
+
 func (r *ribsStagingProvider) Upload(ctx context.Context, group iface.GroupKey, size int64, src func(writer io.Writer) error) error {
 	return r.r.maybeDoS3OffloadWithSource(group, func(ctx context.Context, group iface.GroupKey, sz func(int642 int64), out io.Writer) error {
 		sz(size)

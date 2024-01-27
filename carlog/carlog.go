@@ -1218,13 +1218,39 @@ func (j *CarLog) FinDataReload(ctx context.Context, blkEnts int64, carSz int64) 
 	j.idxLk.Lock()
 	defer j.idxLk.Unlock()
 
-	// check if head is open
-	if j.head != nil {
-		return xerrors.Errorf("cannot load data into non-offloaded jbob")
-	}
-
 	if j.staging == nil {
 		return xerrors.Errorf("cannot load data without staging storage yet")
+	}
+
+	// check if head is open
+	if j.head != nil {
+		// already reloaded but didn't persist that we did???
+		var hstate Head
+		err := j.mutHead(func(h *Head) error {
+			hstate = *h
+			return nil
+		})
+		if err != nil {
+			return xerrors.Errorf("getting head state: %w", err)
+		}
+
+		if hstate.Offloaded {
+			return xerrors.Errorf("carlog is offloaded AND somehow has head open")
+		}
+		if hstate.External && hstate.Finalized {
+			// already reloaded??
+
+			has, err := j.staging.Has(ctx)
+			if err != nil {
+				return xerrors.Errorf("checking if staging has data: %w", err)
+			}
+			if !has {
+				return xerrors.Errorf("staging doesn't have data, but the carlog does appear as if it went through FinDataReload")
+			}
+			return nil
+		}
+
+		return xerrors.Errorf("cannot load data into non-offloaded jbob")
 	}
 
 	// closed head means that we're offloaded, open data file
@@ -1984,6 +2010,7 @@ func (ac *appendCounter) Pos() int64 {
 
 type CarStorageProvider interface {
 	Upload(ctx context.Context, size int64, src func(writer io.Writer) error) error
+	Has(ctx context.Context) (bool, error)
 
 	io.ReaderAt
 }
