@@ -6,6 +6,7 @@ import (
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-car/v2/storage/deferred"
 	trustlessutils "github.com/ipld/go-trustless-utils"
+	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/carlog"
 	"io"
 	"math/rand"
@@ -337,6 +338,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		}
 		candidates := cc.candidates
 
+		var hasHttpCandidates bool
 		for _, candidate := range candidates {
 			addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 			if err != nil {
@@ -348,13 +350,16 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				continue
 			}
 
-			u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
+			_, err = ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
 			if err != nil {
 				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 				continue
 			}
 
-			log.Errorw("attempting http retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
+			hasHttpCandidates = true
+		}
+
+		if hasHttpCandidates {
 			r.r.retrHttpTries.Add(1)
 
 			for i, hashToGet := range mh {
@@ -375,17 +380,57 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 				// todo could do in goroutines once FetchBlocks actually calls with multiple hashes
 
-				err = r.doHttpRetrieval(ctx, group, candidate.Provider, u, cidToGet, func(data []byte) {
-					r.ongoingRequestsLk.Lock()
-					delete(r.ongoingRequests, cidToGet)
-					r.ongoingRequestsLk.Unlock()
+				var wg sync.WaitGroup
+				var anySuccess bool
+				var successOnce sync.Once
+				ctx, cancel := context.WithCancel(ctx)
 
-					r.blockCache.Add(mhStr(hashToGet), data) // todo pool copy stuff
+				for _, candidate := range candidates {
+					candidate := candidate
 
-					promise.res = data
-					close(promise.done)
-				})
-				if err != nil {
+					addrInfo, err := r.getAddrInfoCached(candidate.Provider)
+					if err != nil {
+						log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+						continue
+					}
+
+					if len(addrInfo.HttpMaddrs) == 0 {
+						continue
+					}
+
+					u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
+					if err != nil {
+						log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+						continue
+					}
+
+					log.Errorw("attempting http retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
+
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+
+						err = r.doHttpRetrieval(ctx, group, candidate.Provider, u, cidToGet, func(data []byte) {
+							successOnce.Do(func() {
+								r.ongoingRequestsLk.Lock()
+								delete(r.ongoingRequests, cidToGet)
+								r.ongoingRequestsLk.Unlock()
+
+								r.blockCache.Add(mhStr(hashToGet), data) // todo pool copy stuff
+
+								promise.res = data
+								close(promise.done)
+								cancel()
+								anySuccess = true
+							})
+						})
+						_ = err // already logged in doHttpRetrieval
+					}()
+				}
+
+				wg.Wait()
+				cancel()
+				if !anySuccess {
 					promise.claimed = false // lassie fetch will take over the promise
 					continue
 				}
@@ -398,6 +443,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				r.r.retrHttpSuccess.Add(1)
 				r.r.retrHttpBytes.Add(int64(len(promise.res)))
 			}
+
 		}
 	}
 
@@ -495,7 +541,7 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 	}
 
 	// read and validate block
-	if carlog.MaxEntryLen < resp.ContentLength {
+	/*if carlog.MaxEntryLen < resp.ContentLength {
 		log.Errorw("http retrieval failed (response too large)", "size", resp.ContentLength, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("response too large: %d", resp.ContentLength)
 	}
@@ -503,15 +549,20 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 	if resp.ContentLength < 0 {
 		log.Errorw("http retrieval failed (response has no content length)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("response has no content length, or bad content length: %d", resp.ContentLength)
-	}
+	}*/
 
 	//bbuf := pool.Get(int(resp.ContentLength)) todo not easy because promise stuff
-	bbuf := make([]byte, resp.ContentLength)
+	//bbuf := make([]byte, resp.ContentLength)
+	bbuf := pool.Get(carlog.MaxEntryLen)
+	defer pool.Put(bbuf)
 
-	if _, err := io.ReadFull(resp.Body, bbuf); err != nil {
+	n, err := io.ReadFull(resp.Body, bbuf)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		_ = resp.Body.Close()
 		log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("failed to read response: %w", err)
 	}
+	bbuf = bbuf[:n]
 
 	if err := resp.Body.Close(); err != nil {
 		log.Errorw("http retrieval failed (failed to close response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
@@ -529,7 +580,10 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 		return xerrors.Errorf("response hash mismatch")
 	}
 
-	cb(bbuf)
+	cbbuf := make([]byte, len(bbuf))
+	copy(cbbuf, bbuf)
+
+	cb(cbbuf)
 	return nil
 }
 
