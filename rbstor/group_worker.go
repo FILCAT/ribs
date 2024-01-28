@@ -38,11 +38,12 @@ func (r *rbs) workerExecTask(toExec task) {
 		r.lk.Unlock()
 		err := g.Finalize(context.TODO())
 		if err != nil {
-			log.Errorf("finalizing group: %s", err)
+			log.Errorw("finalizing group", "error", err, "group", toExec.group)
 		}
 
 		r.sendSub(toExec.group, iface.GroupStateFull, iface.GroupStateVRCARDone)
 
+		log.Errorw("finalize fallthrough to genCommP", "group", toExec.group)
 		fallthrough
 
 	case taskTypeGenCommP:

@@ -1393,7 +1393,17 @@ func (j *CarLog) genTopCar() error {
 	}
 
 	if j.dataEnd != 0 {
-		return xerrors.Errorf("cannot generate top car - already generated")
+		if len(j.layerOffsets) != 0 {
+			return xerrors.Errorf("cannot generate top car - already generated, have layers")
+		}
+		if j.dataLen != j.dataEnd {
+			return xerrors.Errorf("cannot generate top car - data length mismatch")
+		}
+		if j.dataPos.pos != j.dataEnd {
+			return xerrors.Errorf("cannot generate top car - data position mismatch")
+		}
+
+		log.Errorw("resuming top car generation", "dataLen", j.dataLen, "dataEnd", j.dataEnd, "dataPos", j.dataPos.pos, "dataStart", j.dataStart, "dataPath", j.DataPath, "indexPath", j.IndexPath)
 	}
 	j.dataEnd = j.dataLen
 
