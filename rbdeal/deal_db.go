@@ -264,19 +264,11 @@ func openRibsDB(root string) (*ribsDB, error) {
 		}
 	}
 
-	_, err = db.Exec(dbSchema)
-	if err != nil {
-		return nil, xerrors.Errorf("exec schema: %w", err)
-	}
-
 	rd := &ribsDB{
 		db: db,
 
 		lastAnalyzed: time.Now(),
 	}
-
-	rd.dealSummaryCq = ributil.NewCachedQuery[iface.DealSummary](1*time.Minute, rd.dealSummary)
-	rd.reachableCq = ributil.NewCachedQuery[[]iface.ProviderMeta](1*time.Minute, rd.reachableProviders)
 
 	return rd, nil
 }
@@ -284,6 +276,14 @@ func openRibsDB(root string) (*ribsDB, error) {
 var analyzeInterval = 6 * time.Hour
 
 func (r *ribsDB) startDB() error {
+	_, err := r.db.Exec(dbSchema)
+	if err != nil {
+		return xerrors.Errorf("exec schema: %w", err)
+	}
+
+	r.dealSummaryCq = ributil.NewCachedQuery[iface.DealSummary](1*time.Minute, r.dealSummary)
+	r.reachableCq = ributil.NewCachedQuery[[]iface.ProviderMeta](1*time.Minute, r.reachableProviders)
+
 	if err := timeDBOp("refresh_bad_providers_new_reject", r.db, refreshViewTable("bad_providers_new_reject")); err != nil {
 		return err
 	}
