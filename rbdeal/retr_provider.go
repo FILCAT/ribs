@@ -385,6 +385,8 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 				var successOnce sync.Once
 				ctx, cancel := context.WithCancel(ctx)
 
+				done := make(chan struct{}, 2)
+
 				for _, candidate := range candidates {
 					candidate := candidate
 
@@ -422,13 +424,20 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 								close(promise.done)
 								cancel()
 								anySuccess = true
+								done <- struct{}{}
 							})
 						})
 						_ = err // already logged in doHttpRetrieval
 					}()
 				}
 
-				wg.Wait()
+				go func() {
+					wg.Wait()
+					done <- struct{}{}
+				}()
+
+				<-done
+
 				cancel()
 				if !anySuccess {
 					promise.claimed = false // lassie fetch will take over the promise
