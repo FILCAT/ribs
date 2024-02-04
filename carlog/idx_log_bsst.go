@@ -2,14 +2,17 @@ package carlog
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/lotus-web3/ribs/bsst"
 	"github.com/minio/sha256-simd"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,8 +33,9 @@ type LogBsstIndex struct {
 	root string // root dir
 
 	// mhh salt
-	Salt [32]byte
+	salt [32]byte
 
+	partsRWLk  sync.RWMutex // note that writeLk is an implicit read lock for partitions as we only write partitions while holding it
 	partitions []*partition // last one is write log, rest is compacting or compacted partitions
 
 	writeLk sync.Mutex
@@ -50,18 +54,20 @@ type partition struct {
 	// writing
 	writesSent int64
 	//writesRecv atomic.Int64
-	writesDone atomic.Int64
 
 	writeCh chan []byte
 	closing bool
 
 	bw *bufio.Writer
 
-	writeFlushed atomic.Int64
+	writeFlushed atomic.Int64 // TODO SET ON REOPEN
 
 	lastFinishedWrite atomic.Int64
 
 	// Compacted state
+	salt [32]byte
+
+	bss *bsst.BSST
 }
 
 func OpenLogBsstIndex(root string) (*LogBsstIndex, error) {
@@ -161,13 +167,15 @@ func (l *LogBsstIndex) newLog() error {
 		logIndex: map[string]int64{}, // todo map pool?
 		writeCh:  make(chan []byte, LogWriteCh),
 		bw:       bufio.NewWriterSize(f, LogBufSize),
+		salt:     l.salt,
+		// writeFlushed = 0 is correct, new index
 	}
 
 	prevLast := l.partitions[len(l.partitions)-1]
 	close(prevLast.writeCh)
 
 	l.partitions = append(l.partitions, ilo)
-	go ilo.run()
+	go ilo.run(0) // new index so no writes yet
 
 	return nil
 }
@@ -176,9 +184,7 @@ func (l *LogBsstIndex) Del(c []mh.Multihash) error {
 	panic("implement me")
 }
 
-func (i *partition) run() {
-	var writesRecv int64
-
+func (i *partition) run(writesRecv int64) {
 	for b := range i.writeCh {
 		if len(b) == 0 {
 			if err := i.flush(writesRecv); err != nil {
@@ -202,12 +208,12 @@ func (i *partition) run() {
 		return
 	}
 
-	if i.closing {
-		if err := i.logFile.Close(); err != nil {
-			log.Errorf("closing log file: %s", err)
-			return
-		}
+	if err := i.logFile.Close(); err != nil {
+		log.Errorf("closing log file: %s", err)
+		return
+	}
 
+	if i.closing {
 		return
 	}
 
@@ -216,12 +222,75 @@ func (i *partition) run() {
 
 func (i *partition) compact() {
 	nonSlPath := strings.TrimSuffix(i.logFile.Name(), StringLogExt)
-	bsstPath := nonSlPath + BsstExt
+	bsstPath := nonSlPath + BsstProgExt
+	bsstPathFinal := nonSlPath + BsstExt
 
-	bsst.CreateAdv()
+	// load the whole log
+	logSize := i.writeFlushed.Load() * bsst.EntrySize
+	logData := pool.Get(int(logSize))
+	defer pool.Put(logData)
+
+	data := entrySlice(logData)
+
+	// sort it
+	sort.Sort(data)
+
+	// write bsst
+	bss, err := bsst.CreateAdv(bsstPath, int64(data.Len()), i.salt, data.Entry)
+	if err != nil {
+		log.Errorf("creating bsst: %s", err)
+		return // on restart we'll see that the bsst is or isn't correctly created and potentially redo the compaction
+	}
+
+	i.bss = bss
+
+	// rename bsst to final name
+	if err := os.Rename(bsstPath, bsstPathFinal); err != nil {
+		log.Errorf("renaming bsst: %s", err)
+		return
+	}
+
+	// remove log
+	if err := os.Remove(i.logFile.Name()); err != nil {
+		log.Errorf("removing log: %s", err)
+		return
+	}
+
+	// swap status to compacted
+	i.compacted.Store(true)
+	i.logIndexLk.Lock()
+	i.logIndex = nil // allow gc
+	i.logIndexLk.Unlock()
+}
+
+type entrySlice []byte
+
+func (e entrySlice) Len() int {
+	return len(e) / bsst.EntrySize
+}
+
+func (e entrySlice) Less(i, j int) bool {
+	return bytes.Compare(e[i*bsst.EntrySize:i*bsst.EntrySize+bsst.EntKeyBytes], e[j*bsst.EntrySize:j*bsst.EntKeyBytes+bsst.EntKeyBytes]) < 0
+}
+
+func (e entrySlice) Swap(i, j int) {
+	ii := i * bsst.EntrySize
+	jj := j * bsst.EntrySize
+
+	var temp [bsst.EntrySize]byte
+
+	copy(temp[:], e[ii:ii+bsst.EntrySize])
+	copy(e[ii:ii+bsst.EntrySize], e[jj:jj+bsst.EntrySize])
+	copy(e[jj:jj+bsst.EntrySize], temp[:])
+}
+
+func (e entrySlice) Entry(i int64) []byte {
+	return e[i*bsst.EntrySize : (i+1)*bsst.EntrySize]
 }
 
 func (i *partition) flush(writesRecv int64) error {
+	// note: this method is only called from partition.run
+
 	if writesRecv == 0 {
 		return nil
 	}
@@ -289,7 +358,7 @@ func (l *LogBsstIndex) makeMHH(c mh.Multihash, i int64, off int64) multiHashHash
 func (l *LogBsstIndex) makeMHKey(c mh.Multihash, i int64) [32]byte {
 	// buf = [salt][i: le64][c[:64]]
 	var buf [(32 + 8) + (32 * 2)]byte
-	copy(buf[:], l.Salt[:])
+	copy(buf[:], l.salt[:])
 	binary.LittleEndian.PutUint64(buf[32:], uint64(i))
 	copy(buf[32+8:], c)
 
