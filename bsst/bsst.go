@@ -725,6 +725,7 @@ func (h *BSST) Get(c []multihash.Multihash) ([]int64, error) {
 
 top:
 	for i, k := range keys {
+		out[i] = -1
 		levelBuckets := uint64(h.h.L0Buckets)
 		prevLevelBuckets := uint64(0)
 
