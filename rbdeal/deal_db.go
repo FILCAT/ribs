@@ -47,7 +47,7 @@ const dbSchema = `
 /* deals */
 create table if not exists deals (
     uuid text not null constraint deals_pk primary key,
-    start_time integer default (strftime('%%s','now')) not null,
+    start_time integer default (strftime('%s','now')) not null,
 
     client_addr text not null,
     provider_addr integer not null,
