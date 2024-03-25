@@ -43,26 +43,17 @@ type ProbingRetrievalFinder struct {
 	lookups map[cid.Cid][]types.RetrievalCandidate
 }
 
-func (p *ProbingRetrievalFinder) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
+func (p *ProbingRetrievalFinder) FindCandidates(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
 	lu, ok := p.lookups[cid]
 	if !ok {
 		log.Errorw("no candidate for cid", "cid", cid)
-		return nil, nil
+		return nil
 	}
 
-	return lu, nil
-}
-
-func (p *ProbingRetrievalFinder) FindCandidatesAsync(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
-	c, err := p.FindCandidates(ctx, cid)
-	if err != nil {
-		return err
-	}
-
-	for _, candidate := range c {
+	for _, candidate := range lu {
 		f(candidate)
 	}
 
@@ -81,7 +72,7 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 	}
 
 	lsi, err := lassie.NewLassie(ctx, lassie.WithProviderAllowList(map[peer.ID]bool{}),
-		lassie.WithFinder(rf),
+		lassie.WithCandidateSource(rf),
 		lassie.WithGlobalTimeout(retrievalCheckTimeout),
 		lassie.WithProviderTimeout(retrievalCheckTimeout))
 	if err != nil {
@@ -424,7 +415,14 @@ lassie:
 		PreloadLinkSystem: linkSystem,
 		Protocols:         []multicodec.Code{ /*multicodec.TransportBitswap,*/ multicodec.TransportGraphsyncFilecoinv1 /*, multicodec.TransportIpfsGatewayHttp*/},
 		MaxBlocks:         10,
-		FixedPeers:        fixedPeer,
+		/*Providers: []types.Provider{
+			{
+				Peer: fixedPeer,
+				Protocols: []metadata.Protocol{
+
+				},
+			},
+		},*/
 
 		Request: trustlessutils.Request{
 			Root:       cidToGet,

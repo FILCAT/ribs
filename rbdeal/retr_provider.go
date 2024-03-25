@@ -82,10 +82,6 @@ type requestPromise struct {
 	claimed bool
 }
 
-func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid) ([]types.RetrievalCandidate, error) {
-	return nil, xerrors.Errorf("is this used?")
-}
-
 func (r *retrievalProvider) getAddrInfoCached(provider int64) (ProviderAddrInfo, error) {
 	r.addrLk.Lock()
 	defer r.addrLk.Unlock()
@@ -124,7 +120,7 @@ func (r *retrievalProvider) retrievalCandidatesForGroupCached(source iface.Group
 	return v, nil
 }
 
-func (r *retrievalProvider) FindCandidatesAsync(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
+func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid, f func(types.RetrievalCandidate)) error {
 	var source iface.GroupKey
 
 	r.reqSourcesLk.Lock()
@@ -287,7 +283,7 @@ func newRetrievalProvider(ctx context.Context, r *ribs) (*retrievalProvider, err
 	r.retrHost = retrHost
 
 	lsi, err := lassie.NewLassie(ctx,
-		lassie.WithFinder(rp),
+		lassie.WithCandidateSource(rp),
 		lassie.WithConcurrentSPRetrievals(50),
 		lassie.WithBitswapConcurrency(50),
 		//lassie.WithGlobalTimeout(30*time.Second),
