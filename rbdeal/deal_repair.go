@@ -9,6 +9,7 @@ import (
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 	"io"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -180,11 +181,32 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		r.FetchSize = gm.CarSize
 	})
 
-	for _, candidate := range candidates {
-		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
-			r.State = ribs2.RepairJobStateFetching
-		})
+	type retrievalSource struct {
+		provider string
+		reqUrl   url.URL
+	}
 
+	var sources []retrievalSource
+
+	{
+		// TODO: HACK: make this use the db
+		// local data import
+		envName := fmt.Sprintf("RIBS_IMPORT_%d", group)
+		if importUrl, ok := os.LookupEnv(envName); ok {
+			u, err := url.Parse(importUrl)
+			if err != nil {
+				return xerrors.Errorf("failed to parse import url: %w", err)
+			}
+
+			sources = append(sources, retrievalSource{
+				provider: "local",
+				reqUrl:   *u,
+			})
+		}
+	}
+
+	for _, candidate := range candidates {
+		// booster-http providers
 		addrInfo, err := r.retrProv.getAddrInfoCached(candidate.Provider)
 		if err != nil {
 			log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
@@ -205,7 +227,20 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		reqUrl := *u
 		reqUrl.Path = path.Join(reqUrl.Path, "piece", gm.PieceCid.String())
 
-		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.Provider)
+		sources = append(sources, retrievalSource{
+			provider: fmt.Sprint(candidate.Provider),
+			reqUrl:   reqUrl,
+		})
+	}
+
+	for _, candidate := range sources {
+		r.updateRepairStats(workerID, func(r *ribs2.RepairJob) {
+			r.State = ribs2.RepairJobStateFetching
+		})
+
+		reqUrl := candidate.reqUrl
+
+		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.provider)
 
 		// make the request!!
 
@@ -257,7 +292,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 				return outData, nil
 			}
 
-			log.Errorw("failed to fetch repair block", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			log.Errorw("failed to fetch repair block", "err", err, "group", group, "provider", candidate.provider, "url", reqUrl.String())
 			/*
 				// try bitflip repair
 				NOTE: this bit flip repair is not really useful, apparently bitflips tend to come in groups,
@@ -300,7 +335,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			_ = os.Remove(groupFile)
 			_ = robustReqReader.Close()
 			done()
-			log.Errorw("failed to create repair reader", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			log.Errorw("failed to create repair reader", "err", err, "group", group, "provider", candidate.provider, "url", reqUrl.String())
 			continue
 		}
 
@@ -313,7 +348,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 			_ = f.Close()
 			_ = os.Remove(groupFile)
 			_ = robustReqReader.Close()
-			log.Errorw("failed to copy response body", "err", err, "group", group, "provider", candidate.Provider, "url", reqUrl.String())
+			log.Errorw("failed to copy response body", "err", err, "group", group, "provider", candidate.provider, "url", reqUrl.String())
 			continue
 		}
 
@@ -339,7 +374,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		if dc.PieceCID != gm.PieceCid {
 			//return xerrors.Errorf("piece cid mismatch: %s != %s", dc.PieceCID, gm.PieceCid)
 			// todo record
-			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.Provider, "group", group, "file", groupFile)
+			log.Errorw("piece cid mismatch", "cid", dc.PieceCID, "expected", gm.PieceCid, "provider", candidate.provider, "group", group, "file", groupFile)
 
 			// remove the file
 			_ = os.Remove(groupFile)
