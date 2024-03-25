@@ -112,6 +112,10 @@ func (r *RepairCarLog) Read(p []byte) (n int, err error) {
 
 	maxExpectedCIDLen := 4 // car max extry size is 32MB, so 4 bytes is enough for varint length
 
+	if firstCidInLayer.ByteLen() < 32 {
+		return 0, xerrors.Errorf("cid length less than 32 bytes: %d (%x)", firstCidInLayer.ByteLen(), firstCidInLayer.Bytes())
+	}
+
 	cidLenEnt, err := r.source.Peek(firstCidInLayer.ByteLen() + maxExpectedCIDLen)
 	if err != nil {
 		return 0, xerrors.Errorf("peek entry: %w", err)
