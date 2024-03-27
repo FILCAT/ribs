@@ -148,6 +148,8 @@ type WalletInfo struct {
 	Balance       string
 	MarketBalance string
 	MarketLocked  string
+
+	MarketBalanceDetailed api.MarketBalance
 }
 
 type CrawlState struct {

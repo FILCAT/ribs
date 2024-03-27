@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors"
 	marketactor "github.com/filecoin-project/lotus/chain/actors/builtin/market"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/lib/result"
 	iface "github.com/lotus-web3/ribs"
 	"golang.org/x/xerrors"
 
@@ -107,8 +106,7 @@ func (r *ribs) watchMarket(ctx context.Context) {
 			goto cooldown
 		}
 		{
-			avail := types.BigSub(abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketBalance)).Assert(_must)),
-				abi.TokenAmount(result.Wrap(types.ParseFIL(i.MarketLocked)).Assert(_must)))
+			avail := types.BigSub(i.MarketBalanceDetailed.Escrow, i.MarketBalanceDetailed.Locked)
 
 			if avail.GreaterThan(minMarketBalance) {
 				goto cooldown
@@ -187,11 +185,12 @@ func (r *ribs) WalletInfo() (iface.WalletInfo, error) {
 	}
 
 	wi := iface.WalletInfo{
-		Addr:          addr.String(),
-		IDAddr:        id.String(),
-		Balance:       types.FIL(b).Short(),
-		MarketBalance: types.FIL(mb.Escrow).Short(),
-		MarketLocked:  types.FIL(mb.Locked).Short(),
+		Addr:                  addr.String(),
+		IDAddr:                id.String(),
+		Balance:               types.FIL(b).Short(),
+		MarketBalance:         types.FIL(mb.Escrow).Short(),
+		MarketLocked:          types.FIL(mb.Locked).Short(),
+		MarketBalanceDetailed: mb,
 	}
 
 	if dc != nil {
