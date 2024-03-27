@@ -138,6 +138,9 @@ func (r *ribs) watchMarket(ctx context.Context) {
 
 func _must(err error, msgAndArgs ...interface{}) {
 	if err != nil {
+		if len(msgAndArgs) == 0 {
+			panic(err)
+		}
 		panic(xerrors.Errorf(msgAndArgs[0].(string)+": %w", err))
 	}
 }
