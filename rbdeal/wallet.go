@@ -20,6 +20,9 @@ import (
 )
 
 func (r *ribs) MarketAdd(ctx context.Context, amount abi.TokenAmount) (cid.Cid, error) {
+	r.msgSendLk.Lock()
+	defer r.msgSendLk.Unlock()
+
 	r.marketFundsLk.Lock()
 	defer r.marketFundsLk.Unlock()
 

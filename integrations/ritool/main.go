@@ -16,6 +16,7 @@ func main() {
 			idxLevelCmd,
 			ldbcidCmd,
 			groupCmd,
+			claimsExtendCmd,
 		},
 	}
 

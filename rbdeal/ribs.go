@@ -79,6 +79,8 @@ type ribs struct {
 
 	lotusRPCAddr string
 
+	msgSendLk sync.Mutex
+
 	marketFundsLk        sync.Mutex
 	cachedWalletInfo     *iface.WalletInfo
 	lastWalletInfoUpdate time.Time
@@ -301,6 +303,8 @@ func Open(root string, opts ...OpenOption) (iface.RIBS, error) {
 	go r.repairWorker(context.TODO(), 10)*/
 
 	r.subGroupChanges()
+
+	go r.claimChecker()
 
 	return r, nil
 }
