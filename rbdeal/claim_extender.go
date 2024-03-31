@@ -156,7 +156,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 
 		m := &types.Message{
 			To:     verifreg2.Address,
-			From:   clientAddr,
+			From:   clkey,
 			Method: verifreg2.Methods.ExtendClaimTerms,
 			Params: enc,
 			Value:  types.NewInt(0),
@@ -191,7 +191,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 			return nil, err
 		}
 
-		fmt.Printf("(claim ext) Estimate: %d Exts GasLimit=%d (%02d%% blk lim), GasFeeCap=%s, GasPremium=%s, Fee=%s\n", len(params.Terms),
+		fmt.Printf("(claim ext) Message: %d Exts GasLimit=%d (%02d%% blk lim), GasFeeCap=%s, GasPremium=%s, Fee=%s\n", len(params.Terms),
 			m.GasLimit, m.GasLimit*100/build.BlockGasLimit, m.GasFeeCap, m.GasPremium, types.FIL(m.RequiredFunds()))
 
 		totalGas += m.GasLimit
@@ -212,7 +212,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 
 			c, aerr := chain.MpoolPush(ctx, sm)
 			if aerr != nil {
-				return nil, aerr
+				return nil, xerrors.Errorf("push: %w", aerr)
 			}
 
 			fmt.Printf("(claim ext) Pushed EXTEND message: %s\n", c)
