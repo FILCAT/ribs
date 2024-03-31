@@ -68,7 +68,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Getting claims for %d providers\n", len(provs))
+	fmt.Printf("(claim ext) Getting claims for %d providers\n", len(provs))
 
 	chain, closer, err := aclient.NewGatewayRPCV1(ctx, r.lotusRPCAddr, nil)
 	if err != nil {
@@ -107,7 +107,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 	claims := map[address.Address]map[verifreg.ClaimId]verifreg.Claim{}
 
 	for n, prov := range provs {
-		fmt.Printf("Getting claims for %s (%d/%d)\n", prov, n, len(provs))
+		fmt.Printf("(claim ext) Getting claims for %s (%d/%d)\n", prov, n, len(provs))
 		allProvClaims, err := chain.StateGetClaims(ctx, prov, types.EmptyTSK)
 		if err != nil {
 			return xerrors.Errorf("getting claims: %w", err)
@@ -126,7 +126,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Got %d claims, creating messages\n", nclaims)
+	fmt.Printf("(claim ext) Got %d claims, creating messages\n", nclaims)
 
 	tmax := abi.ChainEpoch(verifregtypes13.MaximumVerifiedAllocationTerm)
 	params := verifreg.ExtendClaimTermsParams{}
@@ -191,7 +191,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 			return nil, err
 		}
 
-		fmt.Printf("Estimate: %d Exts GasLimit=%d (%02d%% blk lim), GasFeeCap=%s, GasPremium=%s, Fee=%s\n", len(params.Terms),
+		fmt.Printf("(claim ext) Estimate: %d Exts GasLimit=%d (%02d%% blk lim), GasFeeCap=%s, GasPremium=%s, Fee=%s\n", len(params.Terms),
 			m.GasLimit, m.GasLimit*100/build.BlockGasLimit, m.GasFeeCap, m.GasPremium, types.FIL(m.RequiredFunds()))
 
 		totalGas += m.GasLimit
@@ -215,7 +215,7 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 				return nil, aerr
 			}
 
-			fmt.Printf("Pushed EXTEND message: %s\n", c)
+			fmt.Printf("(claim ext) Pushed EXTEND message: %s\n", c)
 
 			nonce++
 
@@ -264,8 +264,8 @@ func (r *ribs) claimExtendCycle(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Total gas: %d (%.2f blks)\n", totalGas, float64(totalGas)/float64(build.BlockGasLimit))
-	fmt.Printf("Total fee: %s\n", types.FIL(totalFee))
+	fmt.Printf("(claim ext) Total gas: %d (%.2f blks)\n", totalGas, float64(totalGas)/float64(build.BlockGasLimit))
+	fmt.Printf("(claim ext) Total fee: %s\n", types.FIL(totalFee))
 
 	return nil
 }
