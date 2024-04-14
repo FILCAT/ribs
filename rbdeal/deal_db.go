@@ -1365,7 +1365,7 @@ type noSectorDealInfo struct {
 }
 
 func (r *ribsDB) GetSealedDealsWithNoSectorNums() ([]noSectorDealInfo, error) {
-	res, err := r.db.Query(`select uuid, provider_addr, deal_id from deals where sealed = 1 and sector_number is null order by provider_addr limit 1000`)
+	res, err := r.db.Query(`select uuid, provider_addr, deal_id from deals where deal_id is not null and sector_number is null order by provider_addr limit 1000`)
 	if err != nil {
 		return nil, xerrors.Errorf("getting deals: %w", err)
 	}
