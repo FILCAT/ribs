@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/lotus/blockstore"
+	"github.com/filecoin-project/lotus/chain/actors/adt"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
+	"github.com/filecoin-project/lotus/lib/must"
+	cbor "github.com/ipfs/go-ipld-cbor"
 	"sort"
 	"time"
 
@@ -210,6 +216,59 @@ func (r *ribs) runDealCheckLoop(ctx context.Context) error {
 		// todo make configurable, 60 is 30min
 		if err := r.db.MarkExpiredDeals(int64(head.Height()) - 60); err != nil {
 			return xerrors.Errorf("marking expired deals: %w", err)
+		}
+	}
+
+	/* fill deal sector numbers */
+	{
+		toFill, err := r.db.GetSealedDealsWithNoSectorNums()
+		if err != nil {
+			return xerrors.Errorf("getting sealed deals with no sector nums: %w", err)
+		}
+
+		var curProviderDeals map[abi.DealID]abi.SectorNumber
+		curProvider := abi.ActorID(0)
+
+		store := adt.WrapStore(ctx, cbor.NewCborStore(blockstore.NewAPIBlockstore(gw)))
+
+		for _, deal := range toFill {
+			if abi.ActorID(deal.Provider) != curProvider {
+				// TODO post v13 actors sector numbers are in market deal state
+
+				act, err := gw.StateGetActor(ctx, must.One(address.NewIDAddress(uint64(deal.Provider))), types2.EmptyTSK)
+				if err != nil {
+					return xerrors.Errorf("getting actor: %w", err)
+				}
+
+				mas, err := miner.Load(store, act)
+				if err != nil {
+					return xerrors.Errorf("loading miner actor state: %w", err)
+				}
+
+				ms, err := mas.LoadSectors(nil)
+				if err != nil {
+					return xerrors.Errorf("loading miner sectors: %w", err)
+				}
+
+				curProviderDeals = make(map[abi.DealID]abi.SectorNumber)
+				for _, s := range ms {
+					for _, d := range s.DealIDs {
+						curProviderDeals[d] = s.SectorNumber
+					}
+				}
+
+				curProvider = abi.ActorID(deal.Provider)
+			}
+
+			sector, ok := curProviderDeals[abi.DealID(deal.DealID)]
+			if !ok {
+				log.Warnw("deal sector not found", "deal", deal.DealID, "provider", deal.Provider)
+				continue
+			}
+
+			if err := r.db.FillDealSectorNumber(deal.UUID, sector); err != nil {
+				return xerrors.Errorf("filling deal sector number: %w", err)
+			}
 		}
 	}
 

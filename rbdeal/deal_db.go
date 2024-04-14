@@ -247,7 +247,26 @@ CREATE INDEX IF NOT EXISTS idx_providers_eligible ON providers(in_market, ping_o
 CREATE INDEX IF NOT EXISTS idx_deals_provider ON deals(provider_addr, group_id, rejected, start_time);
 CREATE INDEX IF NOT EXISTS idx_deals_group ON deals(group_id, rejected, start_time);
 CREATE INDEX IF NOT EXISTS idx_deals_retrieval ON deals(last_retrieval_check, last_retrieval_check_success);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version_number INTEGER PRIMARY KEY,
+    description TEXT,
+    applied_on DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `
+
+type schema struct {
+	VersionNumber int
+	Description   string
+	Schema        string
+}
+
+var schemas = []schema{
+	{
+		VersionNumber: 2,
+		Description:   "Add sector_number to deals table",
+		Schema:        `ALTER TABLE deals ADD COLUMN sector_number INTEGER;`,
+	}}
 
 func openRibsDB(root string) (*ribsDB, error) {
 	rdb, err := sql.Open("sqlite3", filepath.Join(root, "store.db"))
@@ -279,6 +298,25 @@ func (r *ribsDB) startDB() error {
 	_, err := r.db.Exec(dbSchema)
 	if err != nil {
 		return xerrors.Errorf("exec schema: %w", err)
+	}
+
+	// Apply any pending schema updates
+	for i, s := range schemas {
+		var version int
+		err := r.db.QueryRow("SELECT version_number FROM schema_version WHERE version_number = ?", s.VersionNumber).Scan(&version)
+		if err == sql.ErrNoRows {
+			_, err = r.db.Exec(s.Schema)
+			if err != nil {
+				return xerrors.Errorf("exec schema update %d: %w", i, err)
+			}
+
+			_, err = r.db.Exec("INSERT INTO schema_version (version_number, description) VALUES (?, ?)", s.VersionNumber, s.Description)
+			if err != nil {
+				return xerrors.Errorf("insert schema version %d: %w", i, err)
+			}
+		} else if err != nil {
+			return xerrors.Errorf("query schema version %d: %w", i, err)
+		}
 	}
 
 	r.dealSummaryCq = ributil.NewCachedQuery[iface.DealSummary](1*time.Minute, r.dealSummary)
@@ -1318,6 +1356,40 @@ func (r *ribsDB) GroupDeals(gk iface.GroupKey) ([]iface.DealMeta, error) {
 	}
 
 	return dealMeta, nil
+}
+
+type noSectorDealInfo struct {
+	UUID     string
+	Provider int64
+	DealID   int64
+}
+
+func (r *ribsDB) GetSealedDealsWithNoSectorNums() ([]noSectorDealInfo, error) {
+	res, err := r.db.Query(`select uuid, provider_addr, deal_id from deals where sealed = 1 and sector_number is null order by provider_addr limit 1000`)
+	if err != nil {
+		return nil, xerrors.Errorf("getting deals: %w", err)
+	}
+	defer res.Close()
+
+	var out []noSectorDealInfo
+	for res.Next() {
+		var d noSectorDealInfo
+		if err := res.Scan(&d.UUID, &d.Provider, &d.DealID); err != nil {
+			return nil, xerrors.Errorf("scanning deal: %w", err)
+		}
+		out = append(out, d)
+	}
+
+	return out, nil
+}
+
+func (r *ribsDB) FillDealSectorNumber(uuid string, sectorNum abi.SectorNumber) error {
+	_, err := r.db.Exec(`update deals set sector_number = ? where uuid = ?`, sectorNum, uuid)
+	if err != nil {
+		return xerrors.Errorf("updating deal: %w", err)
+	}
+
+	return nil
 }
 
 type GroupDealStats struct {
