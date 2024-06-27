@@ -282,6 +282,24 @@ func (r *ribBatch) Unlink(ctx context.Context, c []mh.Multihash) error {
 	panic("implement me")
 }
 
+func (r *ribBatch) Delete(ctx context.Context, c []mh.Multihash) error {
+	sizes := make([]int32, len(c))
+
+	r.r.index.GetSizes(ctx, c, func(s []int32) error {
+		copy(sizes, s)
+		return nil
+	})
+
+	_, err := r.r.withWritableGroup(ctx, r.currentWriteTarget, func(g *Group) error {
+		return g.Delete(ctx, c, sizes)
+	})
+	if err != nil {
+		return xerrors.Errorf("write to group: %w", err)
+	}
+
+	return nil
+}
+
 func (r *ribBatch) Flush(ctx context.Context) error {
 	r.r.lk.Lock()
 	defer r.r.lk.Unlock()

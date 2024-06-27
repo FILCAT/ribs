@@ -289,6 +289,15 @@ func (m *Group) Unlink(ctx context.Context, c []mh.Multihash) error {
 	panic("implement me")
 }
 
+func (m *Group) Delete(ctx context.Context, c []mh.Multihash, sz []int32) error {
+	m.dataLk.Lock()
+	defer m.dataLk.Unlock()
+
+	m.jb.Delete(c, sz)
+
+	return nil
+}
+
 func (m *Group) View(ctx context.Context, c []mh.Multihash, cb func(cidx int, found bool, data []byte)) error {
 	m.readers.Add(1)
 	defer m.readers.Done()

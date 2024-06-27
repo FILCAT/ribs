@@ -764,6 +764,47 @@ func (j *CarLog) flushBuffered() error {
 	return nil
 }
 
+func (j *CarLog) Delete(c []mh.Multihash, sz []int32) error {
+	j.idxLk.RLock()
+	defer j.idxLk.RUnlock()
+
+	if j.wIdx == nil {
+		return xerrors.Errorf("cannot write to read-only (or closing) jbob")
+	}
+
+	if len(c) != len(sz) {
+		return xerrors.Errorf("hash list length doesn't match block sizes length")
+	}
+
+	// delete indexes
+	err := j.wIdx.Del(c)
+	if err != nil {
+		return xerrors.Errorf("deleting index: %w", err)
+	}
+
+	offs, err := j.rIdx.Get(c)
+	if err != nil {
+		return xerrors.Errorf("getting value locations: %w", err)
+	}
+
+	for i, off := range offs {
+		if off == -1 {
+			continue
+		}
+
+		// seems cleans up carlog and the index
+		j.truncate(off, int64(sz[i]), func(to int64, h []mh.Multihash) error {
+			return nil
+		})
+	}
+
+	// Finalize ???
+	ctx := context.Background()
+	j.Finalize(ctx)
+
+	return nil
+}
+
 /* READ SIDE */
 
 func (j *CarLog) View(c []mh.Multihash, cb func(cidx int, found bool, data []byte) error) error {

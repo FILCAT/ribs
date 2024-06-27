@@ -47,6 +47,10 @@ type Batch interface {
 	// In case of conflicts, Put operation will be preferred over Unlink
 	Unlink(ctx context.Context, c []multihash.Multihash) error
 
+	// Delete deletes block from the blockstore
+	// NOTE: this method is best-effort. Might be better solutions for this.
+	Delete(ctx context.Context, c []multihash.Multihash) error
+
 	// Flush commits data to the blockstore. The batch can be reused after commit
 	Flush(ctx context.Context) error
 
