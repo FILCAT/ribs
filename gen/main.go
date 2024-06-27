@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lotus-web3/ribs/bsst"
-	"github.com/lotus-web3/ribs/carlog"
+	"github.com/atboosty/ribs/bsst"
+	"github.com/atboosty/ribs/carlog"
 
 	gen "github.com/whyrusleeping/cbor-gen"
 )

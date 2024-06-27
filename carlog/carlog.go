@@ -27,7 +27,7 @@ import (
 	"github.com/ipld/go-car"
 	pool "github.com/libp2p/go-buffer-pool"
 
-	"github.com/lotus-web3/ribs/bsst"
+	"github.com/atboosty/ribs/bsst"
 	mh "github.com/multiformats/go-multihash"
 )
 

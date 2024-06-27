@@ -3,7 +3,7 @@ package rbstor
 import (
 	"context"
 
-	iface "github.com/lotus-web3/ribs"
+	iface "github.com/atboosty/ribs"
 )
 
 func (r *rbs) groupWorker(i int) {

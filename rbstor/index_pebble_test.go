@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	iface "github.com/lotus-web3/ribs"
+	iface "github.com/atboosty/ribs"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )

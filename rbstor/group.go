@@ -9,10 +9,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	iface "github.com/atboosty/ribs"
+	"github.com/atboosty/ribs/carlog"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/carlog"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/sync/errgroup"
 

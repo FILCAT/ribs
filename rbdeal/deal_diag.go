@@ -5,10 +5,10 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 
+	iface "github.com/atboosty/ribs"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
-	iface "github.com/lotus-web3/ribs"
 )
 
 func (r *ribs) DealDiag() iface.RIBSDiag {

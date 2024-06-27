@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	iface "github.com/atboosty/ribs"
 	blocks "github.com/ipfs/go-block-format"
-	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )

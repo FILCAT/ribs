@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	types "github.com/atboosty/ribs/ributil/boosttypes"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime/codec/dagcbor"
@@ -12,7 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 )
 
 var clog = logging.Logger("boost:lp2p:tspt:client")

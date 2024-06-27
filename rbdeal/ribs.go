@@ -10,6 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	iface "github.com/atboosty/ribs"
+	"github.com/atboosty/ribs/rbstor"
+	"github.com/atboosty/ribs/ributil"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -17,9 +20,6 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/rbstor"
-	"github.com/lotus-web3/ribs/ributil"
 	"golang.org/x/xerrors"
 )
 

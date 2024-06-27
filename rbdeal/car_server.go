@@ -12,14 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	iface "github.com/atboosty/ribs"
+	"github.com/atboosty/ribs/ributil"
+	types "github.com/atboosty/ribs/ributil/boosttypes"
 	"github.com/gbrlsnchs/jwt/v3"
 	"github.com/google/uuid"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/ributil"
-	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"golang.org/x/xerrors"
 )
 

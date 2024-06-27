@@ -1,7 +1,7 @@
 package carlog
 
 import (
-	"github.com/lotus-web3/ribs/bsst"
+	"github.com/atboosty/ribs/bsst"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

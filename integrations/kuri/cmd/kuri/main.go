@@ -6,7 +6,7 @@ import (
 	"github.com/ipfs/kubo/cmd/ipfs/kubo"
 	"github.com/ipfs/kubo/plugin/loader"
 
-	"github.com/lotus-web3/ribs/ributil"
+	"github.com/atboosty/ribs/ributil"
 	kuboribs "github.com/lotus_web3/ribs/integrations/kuri/ribsplugin"
 )
 

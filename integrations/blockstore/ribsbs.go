@@ -6,12 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/atboosty/ribs"
 	lotusbstore "github.com/filecoin-project/lotus/blockstore"
 	blockstore "github.com/ipfs/boxo/blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

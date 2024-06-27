@@ -2,17 +2,18 @@ package rbstor
 
 import (
 	"context"
-	"github.com/lotus-web3/ribs/ributil"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 
+	"github.com/atboosty/ribs/ributil"
+
+	iface "github.com/atboosty/ribs"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
-	iface "github.com/lotus-web3/ribs"
 	_ "github.com/mattn/go-sqlite3"
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"

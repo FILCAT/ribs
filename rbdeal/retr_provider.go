@@ -2,12 +2,6 @@ package rbdeal
 
 import (
 	"context"
-	"github.com/filecoin-project/lassie/pkg/storage"
-	"github.com/ipld/go-car/v2"
-	"github.com/ipld/go-car/v2/storage/deferred"
-	trustlessutils "github.com/ipld/go-trustless-utils"
-	pool "github.com/libp2p/go-buffer-pool"
-	"github.com/lotus-web3/ribs/carlog"
 	"io"
 	"math/rand"
 	"net/http"
@@ -15,6 +9,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atboosty/ribs/carlog"
+	"github.com/filecoin-project/lassie/pkg/storage"
+	"github.com/ipld/go-car/v2"
+	"github.com/ipld/go-car/v2/storage/deferred"
+	trustlessutils "github.com/ipld/go-trustless-utils"
+	pool "github.com/libp2p/go-buffer-pool"
+
+	iface "github.com/atboosty/ribs"
+	"github.com/atboosty/ribs/ributil"
 	"github.com/filecoin-project/lassie/pkg/lassie"
 	"github.com/filecoin-project/lassie/pkg/net/host"
 	"github.com/filecoin-project/lassie/pkg/types"
@@ -29,8 +32,6 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipni/go-libipni/metadata"
 	"github.com/libp2p/go-libp2p/core/peer"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/ributil"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"

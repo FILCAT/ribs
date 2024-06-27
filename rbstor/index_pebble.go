@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"sync"
 
+	iface "github.com/atboosty/ribs"
 	"github.com/cockroachdb/pebble"
-	iface "github.com/lotus-web3/ribs"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )

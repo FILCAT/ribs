@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"golang.org/x/xerrors"
 
-	iface "github.com/lotus-web3/ribs"
+	iface "github.com/atboosty/ribs"
 )
 
 func (r *ribs) maybeInitS3Offload() error {

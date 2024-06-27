@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 
-	"github.com/lotus-web3/ribs"
+	"github.com/atboosty/ribs"
 )
 
 type RIBSRpc struct {

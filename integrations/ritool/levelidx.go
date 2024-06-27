@@ -4,16 +4,17 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"github.com/cheggaaa/pb"
-	"github.com/ipld/go-car"
-	carutil "github.com/ipld/go-car/util"
-	"github.com/multiformats/go-multihash"
 	"io"
 	"math/bits"
 	"os"
 
+	"github.com/cheggaaa/pb"
+	"github.com/ipld/go-car"
+	carutil "github.com/ipld/go-car/util"
+	"github.com/multiformats/go-multihash"
+
+	"github.com/atboosty/ribs/carlog"
 	"github.com/ipfs/go-cid"
-	"github.com/lotus-web3/ribs/carlog"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 
-	iface "github.com/lotus-web3/ribs"
+	iface "github.com/atboosty/ribs"
 	"github.com/multiformats/go-multihash"
 )
 

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	txtempl "text/template"
 
+	"github.com/atboosty/ribs"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/lotus-web3/ribs"
 )
 
 var log = logging.Logger("ribsweb")

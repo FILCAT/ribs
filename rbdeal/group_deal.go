@@ -8,6 +8,9 @@ import (
 	gobig "math/big"
 	"time"
 
+	iface "github.com/atboosty/ribs"
+	"github.com/atboosty/ribs/ributil"
+	types "github.com/atboosty/ribs/ributil/boosttypes"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
@@ -21,9 +24,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/host"
-	iface "github.com/lotus-web3/ribs"
-	"github.com/lotus-web3/ribs/ributil"
-	types "github.com/lotus-web3/ribs/ributil/boosttypes"
 	"golang.org/x/xerrors"
 )
 
