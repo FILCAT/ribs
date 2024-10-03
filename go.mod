@@ -25,7 +25,7 @@ require (
 	github.com/gbrlsnchs/jwt/v3 v3.0.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/ipfs/boxo v0.23.0
+	github.com/ipfs/boxo v0.24.0
 	github.com/ipfs/go-block-format v0.2.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
@@ -41,7 +41,7 @@ require (
 	github.com/ipld/go-trustless-utils v0.4.1
 	github.com/ipni/go-libipni v0.5.7
 	github.com/libp2p/go-buffer-pool v0.1.0
-	github.com/libp2p/go-libp2p v0.36.3
+	github.com/libp2p/go-libp2p v0.36.4
 	github.com/libp2p/go-libp2p-gostream v0.6.0
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/minio/sha256-simd v1.0.1
@@ -195,7 +195,7 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr-dns v0.3.1 // indirect
+	github.com/multiformats/go-multiaddr-dns v0.4.0 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/multiformats/go-multistream v0.5.0 // indirect

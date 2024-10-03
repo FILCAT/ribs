@@ -69,6 +69,9 @@ type mfsDavFile struct {
 	mr  *mfs.Root
 	mfd mfs.FileDescriptor
 
+	mode  os.FileMode
+	mtime time.Time
+
 	path string
 }
 
@@ -97,8 +100,8 @@ func (m *mfsDavFile) Stat() (fs.FileInfo, error) {
 	return &basicFileInfos{
 		name:    gopath.Base(m.path),
 		size:    fsz,
-		mode:    0644,
-		modTime: time.Unix(0, 0),
+		mode:    m.mode,
+		modTime: m.mtime,
 		isDir:   false,
 	}, nil
 }
@@ -247,6 +250,16 @@ func (m *mfsDavFs) OpenFile(ctx context.Context, name string, flag int, perm os.
 
 	fi.RawLeaves = true
 
+	var mode os.FileMode
+	if m, err := fi.Mode(); err == nil {
+		mode = m
+	}
+
+	var mtime time.Time
+	if m, err := fi.ModTime(); err == nil {
+		mtime = m
+	}
+
 	fd, err := fi.Open(mfs.Flags{Read: read, Write: write, Sync: flush})
 	if err != nil {
 		return nil, xerrors.Errorf("mfsfile open (%t %t %t, %x): %w", read, write, flush, flag, err)
@@ -271,6 +284,9 @@ func (m *mfsDavFs) OpenFile(ctx context.Context, name string, flag int, perm os.
 	return &mfsDavFile{
 		mr:  m.mr,
 		mfd: fd,
+
+		mode:  mode,
+		mtime: mtime,
 
 		path: name,
 	}, nil
