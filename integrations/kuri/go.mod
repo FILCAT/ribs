@@ -5,6 +5,7 @@ go 1.21
 toolchain go1.21.5
 
 require (
+	github.com/docker/go-p9p v0.0.0-20191112112554-37d97cf40d03
 	github.com/filecoin-project/lotus v1.26.0
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/ipfs/boxo v0.18.0

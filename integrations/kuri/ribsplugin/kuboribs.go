@@ -78,6 +78,7 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 		fx.Decorate(RibsFiles),
 
 		fx.Invoke(StartMfsDav),
+		fx.Invoke(StartMfs9p),
 		fx.Invoke(StartMfsNFSFs),
 	)
 	return opts, nil
