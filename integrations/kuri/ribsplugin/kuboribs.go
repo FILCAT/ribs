@@ -52,6 +52,8 @@ func (p *ribsPlugin) Version() string {
 }
 
 func (p *ribsPlugin) Init(env *plugin.Environment) error {
+	logging.SetLogLevel("ribsplugin", "DEBUG")
+
 	return nil
 }
 
