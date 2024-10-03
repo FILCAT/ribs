@@ -396,9 +396,9 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 	}
 lassie:
 
-	var allowLassie bool = false
-	if os.Getenv("RIBS_ALLOW_LASSIE") == "true" {
-		allowLassie = true
+	var allowLassie bool = true
+	if os.Getenv("RIBS_ALLOW_LASSIE") == "false" {
+		allowLassie = false
 	}
 
 	if !allowLassie {
