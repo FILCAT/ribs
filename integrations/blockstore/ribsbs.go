@@ -50,7 +50,7 @@ func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 	b := &Blockstore{
 		r:    r,
 		sess: r.Session(ctx),
-		puts: make(chan Request[[]blocks.Block, error], 64), // todo make this configurable
+		puts: make(chan Request[[]blocks.Block, error], 640), // todo make this configurable
 
 		flush: make(chan struct{}, 1),
 
@@ -63,8 +63,8 @@ func New(ctx context.Context, r ribs.RIBS) *Blockstore {
 }
 
 var (
-	BlockstoreMaxQueuedBlocks    = 64
-	BlockstoreMaxUnflushedBlocks = 1024
+	BlockstoreMaxQueuedBlocks    = 640
+	BlockstoreMaxUnflushedBlocks = 10240
 )
 
 func (b *Blockstore) start(ctx context.Context) {

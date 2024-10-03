@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -394,6 +395,28 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 		return nil
 	}
 lassie:
+
+	var allowLassie bool = false
+	if os.Getenv("RIBS_ALLOW_LASSIE") == "true" {
+		allowLassie = true
+	}
+
+	if !allowLassie {
+		log.Errorw("no http addrs, and lassie disabled", "provider", candidate.Provider)
+		r.rckFail.Add(1)
+		r.rckFailAll.Add(1)
+
+		var res RetrievalResult
+		res.Success = false
+		res.Error = "no http addrs, and lassie disabled"
+
+		err := r.db.RecordRetrievalCheckResult(candidate.DealID, res)
+		if err != nil {
+			return xerrors.Errorf("failed to record retrieval check result: %w", err)
+		}
+
+		return nil
+	}
 
 	//// lassie path
 

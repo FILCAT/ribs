@@ -23,9 +23,8 @@ import (
 
 var (
 	// TODO: make this configurable
-	maxGroupSize int64 = 30500 << 20
+	maxGroupSize int64 = 29500 << 20
 
-	// todo enforce this
 	maxGroupBlocks int64 = 20 << 20
 )
 
@@ -142,7 +141,7 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 		return 0, nil
 	}
 
-	// jbob writes are not thread safe, take the lock to get serial access
+	// carlog writes are not thread safe, take the lock to get serial access
 	m.dataLk.Lock()
 	defer m.dataLk.Unlock()
 
@@ -157,7 +156,7 @@ func (m *Group) Put(ctx context.Context, b []blocks.Block) (int, error) {
 	var writeBlocks int
 
 	for _, blk := range b {
-		if int64(len(blk.RawData()))+writeSize > availSpace {
+		if int64(len(blk.RawData()))+writeSize > availSpace || m.committedBlocks+int64(writeBlocks) >= maxGroupBlocks {
 			break
 		}
 		writeSize += int64(len(blk.RawData()))

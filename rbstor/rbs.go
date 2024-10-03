@@ -2,10 +2,13 @@ package rbstor
 
 import (
 	"context"
+	"github.com/filecoin-project/lotus/lib/must"
 	"github.com/lotus-web3/ribs/ributil"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -32,7 +35,21 @@ func WithDB(db *ributil.RetryDB) OpenOption {
 	}
 }
 
-const workerCount = 8
+var workerCount = func() int {
+	var wc int
+	if wcs := os.Getenv("RBS_WORKERS"); wcs != "" {
+		wc = int(must.One(strconv.ParseInt(wcs, 10, 64)))
+	}
+
+	if wc == 0 {
+		wc = runtime.NumCPU() / 8
+		if wc < 4 {
+			wc = 4
+		}
+	}
+
+	return wc
+}()
 
 // todo root as option, separate data / data index / index (/ staging?) paths
 func Open(root string, opts ...OpenOption) (iface.RBS, error) {
@@ -72,7 +89,7 @@ func Open(root string, opts ...OpenOption) (iface.RBS, error) {
 	}
 
 	for i := 0; i < workerCount; i++ {
-		r.workerClosed[i] = make(chan struct{})
+		r.workerClosed = append(r.workerClosed, make(chan struct{}))
 	}
 
 	return r, nil
@@ -117,7 +134,7 @@ type rbs struct {
 	/* storage */
 
 	close        chan struct{}
-	workerClosed [workerCount]chan struct{}
+	workerClosed []chan struct{}
 
 	tasks chan task
 
