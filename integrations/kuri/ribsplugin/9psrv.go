@@ -217,7 +217,6 @@ func (s *MfsSession) Open(ctx context.Context, fid p9p.Fid, mode p9p.Flag) (p9p.
 		return p9p.Qid{}, 0, p9p.ErrUnknownfid
 	}
 
-	// Open the file
 	if fc.open {
 		log.Warnw("9P open on already open fid", "fid", fid)
 		return p9p.Qid{}, 0, p9p.ErrUnexpectedMsg
@@ -225,30 +224,26 @@ func (s *MfsSession) Open(ctx context.Context, fid p9p.Fid, mode p9p.Flag) (p9p.
 
 	var err error
 
-	if mode&p9p.OREAD != 0 || mode&p9p.ORDWR != 0 {
-		// Open for reading
-		err = s.openFile(fc, os.O_RDONLY)
+	switch fc.node.(type) {
+	case *mfs.Directory:
+		// Directories can be opened without opening a file descriptor
+		log.Debugf("Open: fid %d is a directory", fid)
+		fc.open = true
+	case *mfs.File:
+		// Open the file
+		err = s.openFile(fc, int(mode))
 		if err != nil {
-			log.Errorf("Open: error opening fid %d for reading: %v", fid, err)
+			log.Errorf("Open: error opening fid %d: %v", fid, err)
 			return p9p.Qid{}, 0, err
 		}
+		fc.open = true
+	default:
+		log.Errorf("Open: unknown node type for fid %d", fid)
+		return p9p.Qid{}, 0, fmt.Errorf("unknown node type")
 	}
-
-	if mode&p9p.OWRITE != 0 || mode&p9p.ORDWR != 0 {
-		// Open for writing
-		err = s.openFile(fc, os.O_WRONLY)
-		if err != nil {
-			log.Errorf("Open: error opening fid %d for writing: %v", fid, err)
-			return p9p.Qid{}, 0, err
-		}
-	}
-
-	fc.open = true
 
 	qid, _ := s.nodeToQid(fc.node, true)
-
 	log.Debugf("Open: fid %d opened", fid)
-
 	return qid, 0, nil // iounit set to 0
 }
 
@@ -260,15 +255,6 @@ func (s *MfsSession) Read(ctx context.Context, fid p9p.Fid, p []byte, offset int
 	if !exists {
 		log.Warnf("Read: unknown fid %d", fid)
 		return 0, p9p.ErrUnknownfid
-	}
-
-	// If fc.fd is nil, we need to open it
-	if fc.fd == nil {
-		err = s.openFile(fc, os.O_RDONLY)
-		if err != nil {
-			log.Errorf("Read: error opening fid %d for reading: %v", fid, err)
-			return 0, err
-		}
 	}
 
 	// For directories, we need to return directory entries
@@ -306,6 +292,14 @@ func (s *MfsSession) Read(ctx context.Context, fid p9p.Fid, p []byte, offset int
 
 	case *mfs.File:
 		log.Debugf("Read: fid %d is a file", fid)
+		// If fc.fd is nil, we need to open it
+		if fc.fd == nil {
+			err = s.openFile(fc, os.O_RDONLY)
+			if err != nil {
+				log.Errorf("Read: error opening fid %d for reading: %v", fid, err)
+				return 0, err
+			}
+		}
 		// Read from file
 		// Seek to the offset
 		_, err := fc.fd.Seek(offset, io.SeekStart)
@@ -338,30 +332,36 @@ func (s *MfsSession) Write(ctx context.Context, fid p9p.Fid, p []byte, offset in
 		return 0, p9p.ErrUnknownfid
 	}
 
-	// If fc.fd is nil, we need to open it
-	if fc.fd == nil {
-		err = s.openFile(fc, os.O_WRONLY)
+	switch fc.node.(type) {
+	case *mfs.File:
+		// If fc.fd is nil, we need to open it
+		if fc.fd == nil {
+			err = s.openFile(fc, os.O_WRONLY)
+			if err != nil {
+				log.Errorf("Write: error opening fid %d for writing: %v", fid, err)
+				return 0, err
+			}
+		}
+
+		// Seek to the offset
+		_, err = fc.fd.Seek(offset, io.SeekStart)
 		if err != nil {
-			log.Errorf("Write: error opening fid %d for writing: %v", fid, err)
+			log.Errorf("Write: error seeking in fid %d: %v", fid, err)
 			return 0, err
 		}
-	}
 
-	// Seek to the offset
-	_, err = fc.fd.Seek(offset, io.SeekStart)
-	if err != nil {
-		log.Errorf("Write: error seeking in fid %d: %v", fid, err)
-		return 0, err
+		// Write from p
+		n, err = fc.fd.Write(p)
+		if err != nil {
+			log.Errorf("Write: error writing to fid %d: %v", fid, err)
+		} else {
+			log.Debugf("Write: wrote %d bytes to fid %d", n, fid)
+		}
+		return n, err
+	default:
+		log.Errorf("Write: cannot write to fid %d: not a file", fid)
+		return 0, fmt.Errorf("cannot write to directory or unknown node type")
 	}
-
-	// Write from p
-	n, err = fc.fd.Write(p)
-	if err != nil {
-		log.Errorf("Write: error writing to fid %d: %v", fid, err)
-	} else {
-		log.Debugf("Write: wrote %d bytes to fid %d", n, fid)
-	}
-	return n, err
 }
 
 func (s *MfsSession) Clunk(ctx context.Context, fid p9p.Fid) error {
@@ -536,7 +536,10 @@ func (s *MfsSession) openFile(fc *fidContext, flags int) error {
 		return fmt.Errorf("node is not a file")
 	}
 
-	fd, err := fileNode.Open(mfs.Flags{Read: flags&os.O_RDONLY != 0, Write: flags&os.O_WRONLY != 0 || flags&os.O_RDWR != 0})
+	fd, err := fileNode.Open(mfs.Flags{
+		Read:  flags&os.O_RDONLY != 0,
+		Write: flags&os.O_WRONLY != 0 || flags&os.O_RDWR != 0,
+	})
 	if err != nil {
 		log.Errorf("openFile: error opening file at %s: %v", fc.path, err)
 		return err
