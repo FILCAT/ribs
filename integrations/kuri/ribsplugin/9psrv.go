@@ -284,7 +284,7 @@ func (s *MfsSession) Read(ctx context.Context, fid p9p.Fid, p []byte, offset int
 		data := buf.Bytes()
 		if offset >= int64(len(data)) {
 			log.Debugf("Read: offset %d beyond data length %d", offset, len(data))
-			return 0, io.EOF
+			return 0, nil // Return zero bytes with no error
 		}
 		n = copy(p, data[offset:])
 		log.Debugf("Read: read %d bytes from directory fid %d", n, fid)
@@ -312,9 +312,10 @@ func (s *MfsSession) Read(ctx context.Context, fid p9p.Fid, p []byte, offset int
 		n, err = fc.fd.Read(p)
 		if err != nil && err != io.EOF {
 			log.Errorf("Read: error reading from fid %d: %v", fid, err)
-		} else {
-			log.Debugf("Read: read %d bytes from fid %d", n, fid)
+		} else if err == io.EOF {
+			err = nil // Return zero bytes with no error
 		}
+		log.Debugf("Read: read %d bytes from fid %d", n, fid)
 		return n, err
 	default:
 		log.Errorf("Read: unknown node type for fid %d", fid)
@@ -643,6 +644,9 @@ func (s *MfsSession) entryToDir(entry mfs.NodeListing) p9p.Dir {
 		Mode:    uint32(0644),
 		Length:  uint64(entry.Size),
 		ModTime: time.Unix(0, 0),
+
+		GID: "root",
+		UID: "root",
 	}
 
 	if qtype == p9p.QTDIR {
