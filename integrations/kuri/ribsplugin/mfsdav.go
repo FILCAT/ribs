@@ -454,7 +454,7 @@ func (m *mfsDavFs) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 		}, nil*/
 
 		mode := os.FileMode(0644)
-		if d.Type() == ft.TDirectory {
+		if d.Type() == ft.TDirectory || d.Type() == ft.THAMTShard {
 			mode = os.FileMode(0755) | os.ModeDir
 		}
 
@@ -463,7 +463,7 @@ func (m *mfsDavFs) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 			size:    int64(d.FileSize()), // nd.Size?
 			mode:    mode,
 			modTime: time.Unix(0, 0),
-			isDir:   d.Type() == ft.TDirectory,
+			isDir:   d.Type() == ft.TDirectory || d.Type() == ft.THAMTShard,
 		}, nil
 	case *dag.RawNode:
 		return &basicFileInfos{
