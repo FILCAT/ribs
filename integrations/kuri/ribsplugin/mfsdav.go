@@ -62,7 +62,7 @@ type mfsDavFs struct {
 }
 
 func (m *mfsDavFs) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
-	return mfs.Mkdir(m.mr, name, mfs.MkdirOpts{Mkparents: true})
+	return mfs.Mkdir(m.mr, name, mfs.MkdirOpts{Mkparents: true, Mode: perm, ModTime: time.Now()})
 }
 
 type mfsDavFile struct {
@@ -245,7 +245,7 @@ func (m *mfsDavFs) OpenFile(ctx context.Context, name string, flag int, perm os.
 			return nil, err
 		}
 
-		nd := dag.NodeWithData(ft.FilePBData(nil, 0))
+		nd := dag.NodeWithData(ft.FilePBDataWithStat(nil, 0, perm, time.Now()))
 		nd.SetCidBuilder(v1CidPrefix)
 		err = pdir.AddChild(fname, nd)
 		if err != nil {
