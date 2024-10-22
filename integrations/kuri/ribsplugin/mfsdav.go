@@ -164,13 +164,31 @@ func (m *mfsDavDir) Readdir(count int) ([]fs.FileInfo, error) {
 }
 
 func (m *mfsDavDir) Stat() (fs.FileInfo, error) {
-	return &basicFileInfos{
+	nd, err := m.mfd.GetNode()
+	if err != nil {
+		return nil, xerrors.Errorf("get node for dir stat: %w", err)
+	}
+
+	out := &basicFileInfos{
 		name:    gopath.Base(m.path),
 		size:    0,
 		mode:    0755,
 		modTime: time.Unix(0, 0),
 		isDir:   true,
-	}, nil
+	}
+
+	switch n := nd.(type) {
+	case *dag.ProtoNode:
+		d, err := ft.FSNodeFromBytes(n.Data())
+		if err != nil {
+			return nil, err
+		}
+
+		out.mode = d.Mode()
+		out.modTime = d.ModTime()
+	}
+
+	return out, nil
 }
 
 func (m *mfsDavDir) Write(p []byte) (n int, err error) {
@@ -453,16 +471,11 @@ func (m *mfsDavFs) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 			Type:           ndtype,
 		}, nil*/
 
-		mode := os.FileMode(0644)
-		if d.Type() == ft.TDirectory || d.Type() == ft.THAMTShard {
-			mode = os.FileMode(0755) | os.ModeDir
-		}
-
 		return &basicFileInfos{
 			name:    gopath.Base(path),
 			size:    int64(d.FileSize()), // nd.Size?
-			mode:    mode,
-			modTime: time.Unix(0, 0),
+			mode:    d.Mode(),
+			modTime: d.ModTime(),
 			isDir:   d.Type() == ft.TDirectory || d.Type() == ft.THAMTShard,
 		}, nil
 	case *dag.RawNode:
