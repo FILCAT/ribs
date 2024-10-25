@@ -367,7 +367,7 @@ func (r *ribsDB) startDB() error {
 func timeDBOp(name string, db *ributil.RetryDB, f func(db *ributil.RetryDB) error) error {
 	start := time.Now()
 	err := f(db)
-	log.Errorw("DB op time", "name", name, "took", time.Since(start), "error", err)
+	log.Debugw("DB op time", "name", name, "took", time.Since(start), "error", err)
 	return err
 }
 

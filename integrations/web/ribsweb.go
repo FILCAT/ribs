@@ -32,7 +32,7 @@ func (ri *RIBSWeb) Index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Errorw("index", "path", r.URL.Path)
+	log.Debugw("index", "path", r.URL.Path)
 
 	tpl, err := txtempl.New("index.html").ParseFS(dres, "ribswebapp/build/index.html")
 	if err != nil {

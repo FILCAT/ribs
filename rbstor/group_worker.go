@@ -43,7 +43,7 @@ func (r *rbs) workerExecTask(toExec task) {
 
 		r.sendSub(toExec.group, iface.GroupStateFull, iface.GroupStateVRCARDone)
 
-		log.Errorw("finalize fallthrough to genCommP", "group", toExec.group)
+		log.Debugw("finalize fallthrough to genCommP", "group", toExec.group)
 		fallthrough
 
 	case taskTypeGenCommP:

@@ -50,7 +50,7 @@ func (p *ProbingRetrievalFinder) FindCandidates(ctx context.Context, cid cid.Cid
 
 	lu, ok := p.lookups[cid]
 	if !ok {
-		log.Errorw("no candidate for cid", "cid", cid)
+		log.Debugw("no candidate for cid", "cid", cid)
 		return nil
 	}
 
@@ -83,7 +83,7 @@ func (r *ribs) retrievalChecker(ctx context.Context) {
 	for {
 		err := r.doRetrievalCheck(ctx, gw, rf, lsi)
 		if err != nil {
-			log.Errorw("failed to do retrieval check", "error", err)
+			log.Warnw("failed to do retrieval check", "error", err)
 		}
 
 		time.Sleep(15 * time.Minute)
@@ -149,7 +149,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 				v.consecutiveTimeouts = 0 // forgive
 			}
 			if v.consecutiveTimeouts >= maxConsecutiveTimeouts {
-				log.Errorw("skipping provider due to consecutive timeouts", "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID)
+				log.Infow("skipping provider due to consecutive timeouts", "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID)
 
 				res := RetrievalResult{
 					Success:         false,
@@ -191,7 +191,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 		addrInfo, err := r.db.GetProviderAddrs(candidate.Provider)
 		if err != nil {
-			log.Errorw("failed to get addr info", "error", err)
+			log.Debugw("failed to get addr info", "error", err)
 			r.rckFail.Add(1)
 			r.rckFailAll.Add(1)
 			continue
@@ -234,14 +234,14 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 			gsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.LibP2PMaddrs...)
 			if err != nil {
-				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 				r.rckFail.Add(1)
 				r.rckFailAll.Add(1)
 				continue
 			}
 
 			if len(gsAddrInfo) == 0 {
-				log.Errorw("no gs addrinfo", "provider", candidate.Provider)
+				log.Debugw("no gs addrinfo", "provider", candidate.Provider)
 				r.rckFail.Add(1)
 				r.rckFailAll.Add(1)
 				continue
@@ -252,7 +252,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 
 			fixedPeer, err = peer.AddrInfosFromP2pAddrs(allMaddrs...)
 			if err != nil {
-				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 				r.rckFail.Add(1)
 				r.rckFailAll.Add(1)
 				continue
@@ -276,7 +276,7 @@ func (r *ribs) doRetrievalCheck(ctx context.Context, gw api.Gateway, prf *Probin
 			}()
 			err = r.retrievalCheckCandidate(ctx, candidate, addrInfo, cidToGet, group, fixedPeer, prf, lsi, timeoutCache, cs)
 			if err != nil {
-				log.Errorw("failed to check candidate", "error", err)
+				log.Warnw("failed to check candidate", "error", err)
 			}
 		}()
 	}
@@ -294,7 +294,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 	if len(addrInfo.HttpMaddrs) > 0 {
 		u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
 		if err != nil {
-			log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 			goto lassie
 		}
 
@@ -316,7 +316,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 
 			resp, err := http.DefaultClient.Do(req) // todo use a tuned client
 			if err != nil {
-				log.Errorw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+				log.Warnw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
 				return xerrors.Errorf("failed to do request: %w", err)
 			}
 
@@ -324,7 +324,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 
 			if resp.StatusCode != 200 {
 				_ = resp.Body.Close()
-				log.Errorw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+				log.Warnw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
 				return xerrors.Errorf("non-200 response: %d", resp.StatusCode)
 			}
 
@@ -349,7 +349,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 			n, err := io.ReadFull(resp.Body, bbuf)
 			if err != nil && err != io.ErrUnexpectedEOF {
 				_ = resp.Body.Close()
-				log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
+				log.Warnw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", candidate.Provider)
 				return xerrors.Errorf("failed to read response: %w", err)
 			}
 			bbuf = bbuf[:n]
@@ -373,7 +373,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 			return nil
 		}()
 		if err != nil {
-			log.Errorw("failed to get http", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to get http", "provider", candidate.Provider, "err", err)
 			goto lassie
 		}
 
@@ -391,7 +391,7 @@ func (r *ribs) retrievalCheckCandidate(ctx context.Context, candidate RetrCheckC
 		r.rckSuccess.Add(1)
 		r.rckSuccessAll.Add(1)
 
-		log.Errorw("http retrieval check success", "provider", candidate.Provider, "group", candidate.Group, "took", time.Since(start))
+		log.Debugw("http retrieval check success", "provider", candidate.Provider, "group", candidate.Group, "took", time.Since(start))
 		return nil
 	}
 lassie:
@@ -402,7 +402,7 @@ lassie:
 	}
 
 	if !allowLassie {
-		log.Errorw("no http addrs, and lassie disabled", "provider", candidate.Provider)
+		log.Debugw("no http addrs, and lassie disabled", "provider", candidate.Provider)
 		r.rckFail.Add(1)
 		r.rckFailAll.Add(1)
 
@@ -480,7 +480,7 @@ lassie:
 		r.rckSuccess.Add(1)
 		r.rckSuccessAll.Add(1)
 	} else {
-		log.Errorw("failed to fetch", "error", err, "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID, "took", time.Since(start))
+		log.Warnw("failed to fetch", "error", err, "provider", candidate.Provider, "group", candidate.Group, "deal", candidate.DealID, "took", time.Since(start))
 		res.Success = false
 		res.Error = err.Error()
 

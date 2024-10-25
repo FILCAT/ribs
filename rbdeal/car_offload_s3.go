@@ -41,7 +41,7 @@ func (r *ribs) maybeInitS3Offload() error {
 		return nil
 	}
 
-	log.Errorw("S3 offload enabled", "endpoint", endpoint)
+	log.Infow("S3 offload enabled", "endpoint", endpoint)
 
 	region := os.Getenv("S3_REGION")
 	accessKey := os.Getenv("S3_ACCESS_KEY")
@@ -194,10 +194,10 @@ func CalculateChunkSize(fileSize int64) int {
 
 		numParts = int64(math.Ceil(float64(fileSize) / float64(chunkSize)))
 		lastPartSize = fileSize - ((numParts - 1) * chunkSize)
-		log.Errorw("try chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
+		log.Debugw("try chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
 	}
 
-	log.Errorw("using chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
+	log.Debugw("using chunk size", "chunkSize", chunkSize, "lastPartSize", lastPartSize, "numParts", numParts, "fileSize", fileSize)
 
 	return int(chunkSize)
 }
@@ -260,7 +260,7 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) (e
 
 		if len(nextPart) < minPartSize && len(nextPart) > 0 {
 			// last part is too small, merge it with the current one
-			log.Errorw("last part merge", "cur", len(curPart), "next", len(nextPart), "total", len(curPart)+len(nextPart))
+			log.Debugw("last part merge", "cur", len(curPart), "next", len(nextPart), "total", len(curPart)+len(nextPart))
 
 			temp := pool.Get(len(curPart) + len(nextPart))
 
@@ -314,7 +314,7 @@ func (r *ribs) uploadGroupData(gid iface.GroupKey, size int64, src io.Reader) (e
 						PartNumber: aws.Int64(partNumber),
 					})
 					partsLk.Unlock()
-					log.Errorw("uploaded part", "part", partNumber, "group", gid, "size", len(part))
+					log.Infow("uploaded part", "part", partNumber, "group", gid, "size", len(part))
 					break
 				}
 				partsLk.Unlock()

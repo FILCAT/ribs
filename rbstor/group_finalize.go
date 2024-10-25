@@ -92,7 +92,7 @@ func (m *Group) LoadFilCar(ctx context.Context, f io.Reader, sz int64) error {
 }
 
 func (m *Group) FinDataReload(ctx context.Context) error {
-	log.Errorw("FIN DATA REEELOAD")
+	log.Infow("FIN DATA RELOAD")
 
 	if m.state != iface.GroupStateReload {
 		return xerrors.Errorf("group not in state for finishing data reload: %d", m.state)

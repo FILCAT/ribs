@@ -209,7 +209,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 		// booster-http providers
 		addrInfo, err := r.retrProv.getAddrInfoCached(candidate.Provider)
 		if err != nil {
-			log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
 			continue
 		}
 
@@ -219,7 +219,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
 		if err != nil {
-			log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 			continue
 		}
 
@@ -240,7 +240,7 @@ func (r *ribs) fetchGroupHttp(ctx context.Context, workerID int, group ribs2.Gro
 
 		reqUrl := candidate.reqUrl
 
-		log.Errorw("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.provider)
+		log.Infow("attempting http repair retrieval", "url", reqUrl.String(), "group", group, "provider", candidate.provider)
 
 		// make the request!!
 
@@ -399,7 +399,7 @@ func (r *ribs) fetchGroupLassie(ctx context.Context, workerID int, group ribs2.G
 		return xerrors.Errorf("failed to get group metadata: %w", err)
 	}
 
-	log.Errorw("attempting lassie repair retrieval", "group", group, "root", gm.RootCid, "piece", gm.PieceCid, "file", groupFile, "worker", workerID)
+	log.Infow("attempting lassie repair retrieval", "group", group, "root", gm.RootCid, "piece", gm.PieceCid, "file", groupFile, "worker", workerID)
 
 	tempDir := fmt.Sprintf("%s.temp", groupFile)
 	err = os.MkdirAll(tempDir, 0755)

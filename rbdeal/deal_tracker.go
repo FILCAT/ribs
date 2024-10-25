@@ -48,7 +48,7 @@ func (r *ribs) dealTracker(ctx context.Context) {
 
 		checkDuration := time.Since(checkStart)
 
-		log.Errorw("deal check loop finished", "duration", checkDuration)
+		log.Infow("deal check loop finished", "duration", checkDuration)
 
 		if checkDuration < DealCheckInterval {
 			select {
@@ -294,10 +294,10 @@ func (r *ribs) runDealCheckLoop(ctx context.Context) error {
 		} else if gs.Retrievable >= int64(minimumReplicaCount) {
 			upStat := r.CarUploadStats().ByGroup
 			if upStat[gid] == nil {
-				log.Errorw("OFFLOAD GROUP", "group", gid)
+				log.Infow("OFFLOAD GROUP", "group", gid)
 
 				if err := r.Storage().Offload(ctx, gid); err != nil {
-					log.Errorw("offloading group", "group", gid, "error", err)
+					log.Infow("offloading group", "group", gid, "error", err)
 					return xerrors.Errorf("offloading group %d: %w", gid, err)
 				}
 
@@ -305,7 +305,7 @@ func (r *ribs) runDealCheckLoop(ctx context.Context) error {
 					return xerrors.Errorf("cleaning up S3 offload: %w", err)
 				}
 			} else {
-				log.Errorw("NOT OFFLOADING GROUP yet", "group", gid, "retrievable", gs.Retrievable, "uploads", upStat[gid].ActiveRequests)
+				log.Infow("NOT OFFLOADING GROUP yet", "group", gid, "retrievable", gs.Retrievable, "uploads", upStat[gid].ActiveRequests)
 			}
 		}
 	}

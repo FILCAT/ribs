@@ -384,7 +384,7 @@ func Open(staging CarStorageProvider, indexPath, dataPath string, tc TruncCleanu
 					return nil, xerrors.Errorf("opening fixed leveldb index: %w", err)
 				}
 
-				log.Errorw("leveldb index fixed", "path", filepath.Join(indexPath, LevelIndex))
+				log.Infow("leveldb index fixed", "path", filepath.Join(indexPath, LevelIndex))
 			}
 
 			jb.rIdx = idx

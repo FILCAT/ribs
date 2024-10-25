@@ -241,7 +241,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				return
 			}
 
-			log.Errorw("got boost tpt", "tpt", boostTpt, "provider", maddr)
+			log.Debugw("got boost tpt", "tpt", boostTpt, "provider", maddr)
 
 			res.BoostDeals = true // todo this is technically not necesarily true, but for now it is good enough
 			atomic.AddInt64(&boost, 1)
@@ -280,7 +280,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				case "http":
 					u, err := ributil.MaddrsToUrl(protocol.Addresses)
 					if err != nil {
-						log.Errorw("error parsing http addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
+						log.Warnw("error parsing http addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
 						continue
 					}
 
@@ -296,28 +296,28 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 					req, err := http.NewRequestWithContext(ctx, "GET", qurl.String(), nil)
 					if err != nil {
-						log.Errorw("error creating http request", "err", err, "provider", maddr, "url", qurl.String())
+						log.Warnw("error creating http request", "err", err, "provider", maddr, "url", qurl.String())
 						cancel()
 						continue
 					}
 
-					log.Errorw("pinging http", "provider", maddr, "url", qurl.String())
+					log.Debugw("pinging http", "provider", maddr, "url", qurl.String())
 
 					resp, err := http.DefaultClient.Do(req)
 					if err != nil {
-						log.Errorw("error querying http", "err", err, "provider", maddr, "url", qurl.String())
+						log.Warnw("error querying http", "err", err, "provider", maddr, "url", qurl.String())
 						cancel()
 						continue
 					}
 
 					if resp.ContentLength > 1024 {
-						log.Errorw("http response too large", "provider", maddr, "url", qurl.String(), "size", resp.ContentLength)
+						log.Warnw("http response too large", "provider", maddr, "url", qurl.String(), "size", resp.ContentLength)
 						cancel()
 						continue
 					}
 
 					if err := json.NewDecoder(resp.Body).Decode(&qres); err != nil {
-						log.Errorw("error decoding http response", "err", err, "provider", maddr, "url", qurl.String())
+						log.Warnw("error decoding http response", "err", err, "provider", maddr, "url", qurl.String())
 						cancel()
 						continue
 					}
@@ -332,7 +332,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				case "bitswap":
 					bswapPIs, err := peer.AddrInfosFromP2pAddrs(protocol.Addresses...)
 					if err != nil {
-						log.Errorw("error parsing bitswap addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
+						log.Warnw("error parsing bitswap addrs", "err", err, "provider", maddr, "addrs", protocol.Addresses)
 						continue
 					}
 
@@ -355,9 +355,9 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 							if pres.Error == nil {
 								res.BoosterBitswap = true
 							}
-							log.Errorw("pinging bitswap", "err", pres.Error, "provider", maddr, "peer", pi.ID)
+							log.Warnw("pinging bitswap", "err", pres.Error, "provider", maddr, "peer", pi.ID)
 						case <-ctx.Done():
-							log.Errorw("error pinging bitswap", "err", ctx.Err(), "provider", maddr, "peer", pi.ID)
+							log.Warnw("error pinging bitswap", "err", ctx.Err(), "provider", maddr, "peer", pi.ID)
 						}
 						cancel()
 
@@ -378,7 +378,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 
 			res.LibP2PMaddrs, err = peer.AddrInfoToP2pAddrs(libp2pPi)
 			if err != nil {
-				log.Errorw("error converting libp2p pi to addrs", "err", err, "pi", libp2pPi)
+				log.Warnw("error converting libp2p pi to addrs", "err", err, "pi", libp2pPi)
 				return
 			}
 
@@ -399,12 +399,12 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 			}
 
 			if resp.Ask == nil {
-				log.Errorw("got nil ask", "actor", actor)
+				log.Warnw("got nil ask", "actor", actor)
 				return
 			}
 
 			if resp.Ask.Ask == nil {
-				log.Errorw("got nil ask", "actor", actor)
+				log.Warnw("got nil ask", "actor", actor)
 				return
 			}
 

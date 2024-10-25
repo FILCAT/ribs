@@ -259,7 +259,7 @@ func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {
 
 	if s3u != "" {
 		// in s3, redirect
-		log.Errorw("car request: redir to s3 url", "error", err, "url", s3u)
+		log.Debugw("car request: redir to s3 url", "error", err, "url", s3u)
 
 		r.s3Redirects.Add(1)
 

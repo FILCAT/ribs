@@ -146,23 +146,23 @@ func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid, f f
 		return xerrors.Errorf("failed to get group metadata: %w", err)
 	}
 
-	log.Errorw("got retrieval candidates", "cid", cid, "candidates", len(candidates))
+	log.Debugw("got retrieval candidates", "cid", cid, "candidates", len(candidates))
 
 	cs := make([]types.RetrievalCandidate, 0, len(candidates))
 
 	for _, candidate := range candidates {
 		addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 		if err != nil {
-			log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
 			continue
 		}
 
 		if len(addrInfo.BitswapMaddrs) > 0 {
-			log.Errorw("candidate has bitswap addrs", "provider", candidate.Provider)
+			log.Debugw("candidate has bitswap addrs", "provider", candidate.Provider)
 
 			bsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.BitswapMaddrs...)
 			if err != nil {
-				log.Errorw("failed to bitswap parse addrinfo", "provider", candidate.Provider, "err", err)
+				log.Warnw("failed to parse bitswap addrinfo", "provider", candidate.Provider, "err", err)
 				continue
 			}
 
@@ -177,12 +177,12 @@ func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid, f f
 
 		gsAddrInfo, err := peer.AddrInfosFromP2pAddrs(addrInfo.LibP2PMaddrs...)
 		if err != nil {
-			log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+			log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 			continue
 		}
 
 		if len(gsAddrInfo) == 0 {
-			log.Errorw("no gs addrinfo", "provider", candidate.Provider)
+			log.Warnw("no gs addrinfo", "provider", candidate.Provider)
 			continue
 		}
 
@@ -232,7 +232,7 @@ func (r *retrievalProvider) FindCandidates(ctx context.Context, cid cid.Cid, f f
 
 	for _, c := range cs /*[:n]*/ {
 		r.statLk.Lock()
-		log.Errorw("select", "p", c.MinerPeer.ID, "tpt", c.Metadata.Protocols()[0].String(), "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID], "success", r.success[c.MinerPeer.ID])
+		log.Debugw("select", "p", c.MinerPeer.ID, "tpt", c.Metadata.Protocols()[0].String(), "attempts", r.attempts[c.MinerPeer.ID], "fails", r.fails[c.MinerPeer.ID], "success", r.success[c.MinerPeer.ID])
 		r.statLk.Unlock()
 
 		f(c)
@@ -338,7 +338,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 		for _, candidate := range candidates {
 			addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 			if err != nil {
-				log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+				log.Warnw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
 				continue
 			}
 
@@ -348,7 +348,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 			_, err = ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
 			if err != nil {
-				log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+				log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 				continue
 			}
 
@@ -388,7 +388,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 					addrInfo, err := r.getAddrInfoCached(candidate.Provider)
 					if err != nil {
-						log.Errorw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
+						log.Warnw("failed to get addrinfo", "provider", candidate.Provider, "err", err)
 						continue
 					}
 
@@ -398,11 +398,11 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 
 					u, err := ributil.MaddrsToUrl(addrInfo.HttpMaddrs)
 					if err != nil {
-						log.Errorw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
+						log.Warnw("failed to parse addrinfo", "provider", candidate.Provider, "err", err)
 						continue
 					}
 
-					log.Errorw("attempting http retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
+					log.Debugw("attempting http retrieval", "url", u.String(), "group", group, "provider", candidate.Provider)
 
 					wg.Add(1)
 					go func() {
@@ -453,7 +453,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 	}
 
 	if cacheHits+httpHits == len(mh) {
-		log.Errorw("http retrieval success before lassie!", "group", group, "cacheHits", cacheHits, "httpHits", httpHits)
+		log.Debugw("http retrieval success before lassie!", "group", group, "cacheHits", cacheHits, "httpHits", httpHits)
 		return nil
 	}
 
@@ -508,7 +508,7 @@ func (r *retrievalProvider) FetchBlocks(ctx context.Context, group iface.GroupKe
 			if err == nil {
 				break
 			}
-			log.Errorw("failed to fetch block", "error", err, "attempt", j, "hash", hashToGet)
+			log.Warnw("failed to fetch block", "error", err, "attempt", j, "hash", hashToGet)
 		}
 		if err != nil {
 			return xerrors.Errorf("fetchOne: %w", err)
@@ -536,52 +536,39 @@ func (r *retrievalProvider) doHttpRetrieval(ctx context.Context, group iface.Gro
 
 	resp, err := http.DefaultClient.Do(req) // todo use a tuned client
 	if err != nil {
-		log.Errorw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		log.Warnw("http retrieval failed", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("failed to do request: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		log.Errorw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		log.Warnw("http retrieval failed (non-200 response)", "status", resp.StatusCode, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("non-200 response: %d", resp.StatusCode)
 	}
 
-	// read and validate block
-	/*if carlog.MaxEntryLen < resp.ContentLength {
-		log.Errorw("http retrieval failed (response too large)", "size", resp.ContentLength, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
-		return xerrors.Errorf("response too large: %d", resp.ContentLength)
-	}
-
-	if resp.ContentLength < 0 {
-		log.Errorw("http retrieval failed (response has no content length)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
-		return xerrors.Errorf("response has no content length, or bad content length: %d", resp.ContentLength)
-	}*/
-
-	//bbuf := pool.Get(int(resp.ContentLength)) todo not easy because promise stuff
-	//bbuf := make([]byte, resp.ContentLength)
 	bbuf := pool.Get(carlog.MaxEntryLen)
 	defer pool.Put(bbuf)
 
 	n, err := io.ReadFull(resp.Body, bbuf)
 	if err != nil && err != io.ErrUnexpectedEOF {
 		_ = resp.Body.Close()
-		log.Errorw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		log.Warnw("http retrieval failed (failed to read response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("failed to read response: %w", err)
 	}
 	bbuf = bbuf[:n]
 
 	if err := resp.Body.Close(); err != nil {
-		log.Errorw("http retrieval failed (failed to close response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		log.Warnw("http retrieval failed (failed to close response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("failed to close response: %w", err)
 	}
 
 	checkCid, err := cidToGet.Prefix().Sum(bbuf)
 	if err != nil {
-		log.Errorw("http retrieval failed (failed to hash response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
+		log.Warnw("http retrieval failed (failed to hash response)", "error", err, "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov)
 		return xerrors.Errorf("failed to hash response: %w", err)
 	}
 
 	if !checkCid.Equals(cidToGet) {
-		log.Errorw("http retrieval failed (response hash mismatch!!!)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov, "expected", cidToGet, "actual", checkCid)
+		log.Warnw("http retrieval failed (response hash mismatch!!!)", "url", u.String()+"/ipfs/"+cidToGet.String(), "group", group, "provider", prov, "expected", cidToGet, "actual", checkCid)
 		return xerrors.Errorf("response hash mismatch")
 	}
 
@@ -656,7 +643,7 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 	}
 
 	stat, err := r.lsi.Fetch(ctx, request, types.WithEventsCallback(func(event types.RetrievalEvent) {
-		log.Errorw("retrieval event", "cid", cidToGet, "event", event)
+		log.Debugw("retrieval event", "cid", cidToGet, "event", event)
 
 		/*if event.Code() == types.StartedCode && event.StorageProviderId() != "" {
 			r.statLk.Lock()
@@ -664,7 +651,7 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 			r.statLk.Unlock()
 		}*/
 		if event.Code() == types.FailedCode /* && event.StorageProviderId() != "" */ {
-			log.Errorw("RETR ERROR", "cid", cidToGet, "event", event)
+			log.Warnw("RETR ERROR", "cid", cidToGet, "event", event)
 			/*r.statLk.Lock()
 			r.fails[event.StorageProviderId()]++
 			r.statLk.Unlock()*/
@@ -690,7 +677,7 @@ func (r *retrievalProvider) fetchOne(ctx context.Context, hashToGet multihash.Mu
 		return xerrors.Errorf("failed to fetch %s: %w", cidToGet, err)
 	}
 
-	log.Errorw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
+	log.Debugw("retr stat", "dur", stat.Duration, "size", stat.Size, "cid", cidToGet, "provider", stat.StorageProviderId)
 
 	b, err := wstor.BS.Get(ctx, cidToGet)
 	if err != nil {
@@ -802,6 +789,6 @@ func (r *retrievalProvider) FetchDeal(ctx context.Context, group iface.GroupKey,
 		spid = types.BitswapIndentifier
 	}
 
-	log.Errorw("retr stat", "dur", stats.Duration, "size", stats.Size, "cid", root, "provider", spid)
+	log.Debugw("retr stat", "dur", stats.Duration, "size", stats.Size, "cid", root, "provider", spid)
 	return nil
 }

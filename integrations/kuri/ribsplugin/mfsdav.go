@@ -47,7 +47,7 @@ func StartMfsDav(lc fx.Lifecycle, fr *mfs.Root) {
 					log.Errorf("failed to start ribs http server: %s", err)
 				}
 
-				log.Errorw("dav http at http://localhost:8077")
+				fmt.Println("dav http at http://localhost:8077")
 			}()
 			return nil
 		},
@@ -196,7 +196,7 @@ func (m *mfsDavDir) Write(p []byte) (n int, err error) {
 }
 
 func (m *mfsDavFs) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	log.Errorw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
+	log.Debugw("OPEN FILE", "name", name, "flag", flag, "perm", perm)
 
 	path, err := checkPath(name)
 	if err != nil {
