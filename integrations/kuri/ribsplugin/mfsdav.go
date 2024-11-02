@@ -273,7 +273,7 @@ func (m *mfsDavFs) OpenFile(ctx context.Context, name string, flag int, perm os.
 		mode = m
 	}
 
-	var mtime time.Time
+	mtime := time.Unix(0, 0)
 	if m, err := fi.ModTime(); err == nil {
 		mtime = m
 	}

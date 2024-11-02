@@ -52,6 +52,8 @@ func (p *ribsPlugin) Version() string {
 }
 
 func (p *ribsPlugin) Init(env *plugin.Environment) error {
+	logging.SetLogLevel("ribsplugin", "DEBUG")
+
 	return nil
 }
 
@@ -78,6 +80,7 @@ func (p *ribsPlugin) Options(info core.FXNodeInfo) ([]fx.Option, error) {
 		fx.Decorate(RibsFiles),
 
 		fx.Invoke(StartMfsDav),
+		fx.Invoke(StartMfs9p),
 		fx.Invoke(StartMfsNFSFs),
 	)
 	return opts, nil
