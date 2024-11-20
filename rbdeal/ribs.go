@@ -328,7 +328,7 @@ func (r *ribs) onSub(group iface.GroupKey, from, to iface.GroupState) {
 		}
 
 		go func() {
-			err = r.makeMoreDeals(context.TODO(), group, r.host, r.wallet)
+			err = r.makeMoreDeals(context.TODO(), group, r.wallet)
 			if err != nil {
 				log.Errorf("starting new deals: %s", err)
 			}

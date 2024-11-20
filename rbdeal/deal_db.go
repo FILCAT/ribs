@@ -248,6 +248,10 @@ CREATE INDEX IF NOT EXISTS idx_deals_provider ON deals(provider_addr, group_id, 
 CREATE INDEX IF NOT EXISTS idx_deals_group ON deals(group_id, rejected, start_time);
 CREATE INDEX IF NOT EXISTS idx_deals_retrieval ON deals(last_retrieval_check, last_retrieval_check_success);
 
+CREATE INDEX IF NOT EXISTS idx_deals_start_time_rejected_failed
+    ON deals (rejected, failed, start_time);
+
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version_number INTEGER PRIMARY KEY,
     description TEXT,

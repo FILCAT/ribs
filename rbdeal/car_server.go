@@ -2,11 +2,16 @@ package rbdeal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr/net"
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -156,7 +161,7 @@ func (r *ribs) verify(ctx context.Context, token string) (carRequestToken, error
 	return payload, nil
 }
 
-func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout time.Duration, carSize int64, deal uuid.UUID) ([]byte, error) {
+func (r *ribs) makeCarRequestToken(group int64, timeout time.Duration, carSize int64, deal uuid.UUID) ([]byte, error) {
 	p := carRequestToken{
 		Group:    group,
 		Timeout:  time.Now().Add(timeout).Unix(),
@@ -165,6 +170,171 @@ func (r *ribs) makeCarRequestToken(ctx context.Context, group int64, timeout tim
 	}
 
 	return jwt.Sign(&p, jwtKey)
+}
+
+func (r *ribs) makeCarRequest(group int64, timeout time.Duration, carSize int64, deal uuid.UUID) (types.Transfer, error) {
+	reqToken, err := r.makeCarRequestToken(group, timeout, carSize, deal)
+	if err != nil {
+		return types.Transfer{}, xerrors.Errorf("make car request token: %w", err)
+	}
+
+	prefAddrs := getPreferredAddrs(r.host)
+
+	transferParams := &types.HttpRequest{URL: "libp2p://" + prefAddrs[0].String() + "/p2p/" + r.host.ID().String()} // todo get from autonat / config
+	transferParams.Headers = map[string]string{
+		"Authorization": string(reqToken),
+	}
+
+	paramsBytes, err := json.Marshal(transferParams)
+	if err != nil {
+		return types.Transfer{}, fmt.Errorf("marshalling request parameters: %w", err)
+	}
+
+	transfer := types.Transfer{
+		Type:   "libp2p",
+		Params: paramsBytes,
+		Size:   uint64(carSize),
+	}
+
+	if os.Getenv("S3_ENDPOINT") != "" {
+		// with s3 we don't need to transfer the data, use a p2p proxy for more reliable connectivity
+		transfer, err = convertLibp2pTransferToProxy(transfer, r.host.ID(), prefAddrs)
+		if err != nil {
+			return types.Transfer{}, fmt.Errorf("convert libp2p transfer to proxy: %w", err)
+		}
+	}
+
+	return transfer, nil
+}
+
+// ConvertLibp2pTransferToProxy takes a libp2p Transfer and outputs a proxied HTTP Transfer
+func convertLibp2pTransferToProxy(transfer types.Transfer, peerid peer.ID, prefAddrs []ma.Multiaddr) (types.Transfer, error) {
+	// Check that the transfer is of Type "libp2p"
+	if transfer.Type != "libp2p" {
+		return types.Transfer{}, fmt.Errorf("transfer is not of type libp2p")
+	}
+
+	// Unmarshal the Params field to get the HttpRequest
+	var httpReq types.HttpRequest
+	err := json.Unmarshal(transfer.Params, &httpReq)
+	if err != nil {
+		return types.Transfer{}, fmt.Errorf("unmarshal transfer Params: %w", err)
+	}
+
+	// Construct new URL pointing to the proxy server
+	proxyURL := fmt.Sprintf("https://libp2p.me/%s/", peerid.String())
+
+	// Create new Headers, including the X-Multiaddr headers
+	headers := httpReq.Headers
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+
+	// Add X-Multiaddr headers
+	headers["X-Multiaddr"] = ""
+	for _, maddr := range prefAddrs {
+		headers["X-Multiaddr"] = headers["X-Multiaddr"] + maddr.String() + ","
+	}
+	headers["X-Multiaddr"] = strings.TrimSuffix(headers["X-Multiaddr"], ",")
+
+	// Add X-P2P-Protocol header
+	headers["X-P2P-Protocol"] = types.DataTransferProtocol
+
+	// Create new HttpRequest with the proxy URL and updated headers
+	newHttpReq := types.HttpRequest{
+		URL:     proxyURL,
+		Headers: headers,
+	}
+
+	// Marshal the new HttpRequest to Params
+	newParams, err := json.Marshal(newHttpReq)
+	if err != nil {
+		return types.Transfer{}, fmt.Errorf("marshal new HttpRequest: %w", err)
+	}
+
+	// Create new Transfer object of type "http"
+	newTransfer := types.Transfer{
+		Type:   "http",
+		Params: newParams,
+		Size:   transfer.Size,
+	}
+
+	return newTransfer, nil
+}
+
+func getPreferredAddrs(h host.Host) []ma.Multiaddr {
+	type addrWithPref struct {
+		addr ma.Multiaddr
+		pref int
+	}
+
+	var addrs []addrWithPref
+
+	for _, addr := range h.Addrs() {
+		// Default preference for 'other' addresses
+		pref := 4
+
+		// Extract the protocols from the multiaddress
+		protocols := addr.Protocols()
+
+		// Flags to identify the type of address
+		isDNS := false
+		isIP4 := false
+		isIP6 := false
+
+		for _, p := range protocols {
+			switch p.Code {
+			case ma.P_DNS, ma.P_DNS4, ma.P_DNS6, ma.P_DNSADDR:
+				isDNS = true
+			case ma.P_IP4:
+				isIP4 = true
+			case ma.P_IP6:
+				isIP6 = true
+			}
+		}
+
+		// Handle DNS addresses
+		if isDNS {
+			pref = 1
+			addrs = append(addrs, addrWithPref{addr: addr, pref: pref})
+			continue
+		}
+
+		// Skip private addresses
+		if manet.IsPrivateAddr(addr) {
+			continue
+		}
+
+		// Handle public IP addresses
+		if isIP4 {
+			pref = 2
+		} else if isIP6 {
+			pref = 3
+		}
+
+		addrs = append(addrs, addrWithPref{addr: addr, pref: pref})
+	}
+
+	if len(addrs) == 0 {
+		for _, a := range h.Addrs() {
+			addrs = append(addrs, addrWithPref{addr: a, pref: 4})
+		}
+
+		log.Errorw("no non-private addresses found, using all addresses", "addrs", h.Addrs())
+	}
+
+	// Sort the addresses based on the preference
+	sort.SliceStable(addrs, func(i, j int) bool {
+		return addrs[i].pref < addrs[j].pref
+	})
+
+	// Extract the sorted multiaddresses
+	var sortedAddrs []ma.Multiaddr
+	for _, ap := range addrs {
+		sortedAddrs = append(sortedAddrs, ap.addr)
+	}
+
+	return sortedAddrs
 }
 
 func (r *ribs) handleCarRequest(w http.ResponseWriter, req *http.Request) {

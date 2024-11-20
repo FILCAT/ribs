@@ -3,7 +3,6 @@ package rbdeal
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	gobig "math/big"
 	"time"
@@ -20,7 +19,6 @@ import (
 	ctypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p/core/host"
 	iface "github.com/lotus-web3/ribs"
 	"github.com/lotus-web3/ribs/ributil"
 	types "github.com/lotus-web3/ribs/ributil/boosttypes"
@@ -37,7 +35,7 @@ func (e ErrRejected) Error() string {
 	return fmt.Sprintf("deal proposal rejected: %s", e.Reason)
 }
 
-func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host, w *ributil.LocalWallet) error {
+func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, w *ributil.LocalWallet) error {
 	r.dealsLk.Lock()
 	if _, ok := r.moreDealsLocks[id]; ok {
 		r.dealsLk.Unlock()
@@ -163,25 +161,9 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 		}
 
 		// generate transfer token
-		reqToken, err := r.makeCarRequestToken(context.TODO(), id, time.Hour*36, dealInfo.CarSize, dealUuid)
+		transfer, err := r.makeCarRequest(id, time.Hour*36, dealInfo.CarSize, dealUuid)
 		if err != nil {
 			return xerrors.Errorf("make car request token: %w", err)
-		}
-
-		transferParams := &types.HttpRequest{URL: "libp2p://" + h.Addrs()[0].String() + "/p2p/" + h.ID().String()} // todo get from autonat / config
-		transferParams.Headers = map[string]string{
-			"Authorization": string(reqToken),
-		}
-
-		paramsBytes, err := json.Marshal(transferParams)
-		if err != nil {
-			return fmt.Errorf("marshalling request parameters: %w", err)
-		}
-
-		transfer := types.Transfer{
-			Type:   "libp2p",
-			Params: paramsBytes,
-			Size:   uint64(dealInfo.CarSize),
 		}
 
 		dealParams := types.DealParams{
@@ -220,7 +202,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return fmt.Errorf("price %d is greater than max price %f", price, maxToPay)
 		}
 
-		if err := h.Connect(ctx, *addrInfo); err != nil {
+		if err := r.host.Connect(ctx, *addrInfo); err != nil {
 			err = r.db.StoreRejectedDeal(di.DealUUID, fmt.Sprintf("failed to connect to miner: %s", err), 0)
 			if err != nil {
 				return fmt.Errorf("saving rejected deal info: %w", err)
@@ -229,7 +211,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 			return xerrors.Errorf("connect to miner: %w", err)
 		}
 
-		x, err := h.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
+		x, err := r.host.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120)
 		if err != nil {
 			err = r.db.StoreRejectedDeal(di.DealUUID, fmt.Sprintf("failed to connect to miner: %s", err), 0)
 			if err != nil {
@@ -251,7 +233,7 @@ func (r *ribs) makeMoreDeals(ctx context.Context, id iface.GroupKey, h host.Host
 
 		// MAKE THE DEAL
 
-		s, err := h.NewStream(ctx, addrInfo.ID, DealProtocolv120)
+		s, err := r.host.NewStream(ctx, addrInfo.ID, DealProtocolv120)
 		if err != nil {
 			err = r.db.StoreRejectedDeal(di.DealUUID, xerrors.Errorf("opening deal proposal stream: %w", err).Error(), 0)
 			if err != nil {
