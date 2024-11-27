@@ -208,7 +208,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				defer stlk.Unlock()
 
 				if err != nil {
-					log.Debugw("error querying provider", "actor", actor, "err", err)
+					log.Errorw("error querying provider", "actor", actor, "err", err)
 				}
 
 				if err := r.db.UpdateProviderProtocols(actor, res); err != nil {
@@ -229,7 +229,7 @@ func (r *ribs) spCrawlLoop(ctx context.Context, gw api.Gateway, pingP2P host.Hos
 				return
 			}
 
-			if err := pingP2P.Connect(ctx, *libp2pPi); err != nil {
+			if err = pingP2P.Connect(ctx, *libp2pPi); err != nil {
 				return
 			}
 
